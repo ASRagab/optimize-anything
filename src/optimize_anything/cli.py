@@ -99,6 +99,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     budget_parser.add_argument("seed_file", help="Path to seed artifact file")
 
+    # score subcommand
+    score_parser = subparsers.add_parser(
+        "score", help="Score an artifact with an evaluator (without optimizing)"
+    )
+    score_parser.add_argument("artifact_file", help="Path to artifact file to score")
+    score_parser.add_argument(
+        "--evaluator-command", nargs="+", help="Shell command for evaluation"
+    )
+    score_parser.add_argument("--evaluator-url", help="HTTP endpoint for evaluation")
+    score_parser.add_argument(
+        "--evaluator-cwd",
+        help="Working directory for evaluator command execution",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "optimize":
@@ -111,12 +125,18 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_explain(args)
     elif args.command == "budget":
         return _cmd_budget(args)
+    elif args.command == "score":
+        return _cmd_score(args)
     return 1
 
 
 def _cmd_optimize(args: argparse.Namespace) -> int:
     seed = _read_seed(args.seed_file)
     if seed is None:
+        return 1
+
+    if args.budget < 1:
+        print("Error: --budget must be at least 1", file=sys.stderr)
         return 1
 
     intake_spec = _load_and_normalize_intake_spec(
@@ -178,15 +198,38 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             )
         return 1
 
-    config = GEPAConfig(engine=EngineConfig(max_metric_calls=args.budget))
-    result = optimize_anything(
-        seed_candidate=seed,
-        evaluator=eval_fn,
-        objective=args.objective,
-        background=args.background,
-        config=config,
+    if args.evaluator_command:
+        evaluator_label = shlex.join(args.evaluator_command)
+    else:
+        evaluator_label = args.evaluator_url
+
+    print(
+        f"Running optimization (budget: {args.budget}, evaluator: {evaluator_label})...",
+        file=sys.stderr,
     )
 
+    config = GEPAConfig(engine=EngineConfig(max_metric_calls=args.budget))
+    try:
+        result = optimize_anything(
+            seed_candidate=seed,
+            evaluator=eval_fn,
+            objective=args.objective,
+            background=args.background,
+            config=config,
+        )
+    except Exception as exc:
+        exc_str = str(exc).lower()
+        if "api_key" in exc_str or "authentication" in exc_str or "unauthorized" in exc_str:
+            print(
+                f"Error: optimization failed — API authentication error. "
+                f"Check your API key environment variables.\nDetail: {exc}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: optimization failed: {exc}", file=sys.stderr)
+        return 1
+
+    print("Optimization complete.", file=sys.stderr)
     summary = build_optimize_summary(result)
     best = summary["best_artifact"]
     if args.output:
@@ -315,6 +358,51 @@ def _cmd_budget(args: argparse.Namespace) -> int:
             indent=2,
         )
     )
+    return 0
+
+
+def _cmd_score(args: argparse.Namespace) -> int:
+    """Score a single artifact using an evaluator without running optimization."""
+    artifact = _read_seed(args.artifact_file)
+    if artifact is None:
+        return 1
+
+    if args.evaluator_command and args.evaluator_url:
+        print(
+            "Error: provide either --evaluator-command or --evaluator-url, not both",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not args.evaluator_command and not args.evaluator_url:
+        print(
+            "Error: provide --evaluator-command or --evaluator-url",
+            file=sys.stderr,
+        )
+        return 1
+
+    from optimize_anything.evaluators import command_evaluator, http_evaluator
+
+    if args.evaluator_command:
+        preflight_error = _preflight_command_evaluator(
+            args.evaluator_command,
+            cwd=args.evaluator_cwd,
+        )
+        if preflight_error is not None:
+            print(preflight_error, file=sys.stderr)
+            return 1
+        eval_fn = command_evaluator(args.evaluator_command, cwd=args.evaluator_cwd)
+    else:
+        eval_fn = http_evaluator(args.evaluator_url)
+
+    try:
+        score, side_info = eval_fn(artifact)
+    except Exception as exc:
+        print(f"Error: evaluator call failed: {exc}", file=sys.stderr)
+        return 1
+
+    result = {"score": score, **side_info}
+    print(json.dumps(result, indent=2, default=str))
     return 0
 
 

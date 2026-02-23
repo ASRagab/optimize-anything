@@ -1,4 +1,4 @@
-"""Canonical optimize output contract shared by CLI and MCP."""
+"""Canonical optimize output contract for CLI."""
 
 from __future__ import annotations
 

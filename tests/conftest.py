@@ -10,17 +10,25 @@ import pytest
 
 
 @pytest.fixture
+def project_root() -> Path:
+    """Return the project root directory."""
+    return Path(__file__).parent.parent
+
+
+@pytest.fixture
 def tmp_evaluator_script(tmp_path: Path) -> Path:
-    """Create a temporary evaluator script that returns a fixed score."""
+    """Create a temporary evaluator script that returns a normalized score."""
     script = tmp_path / "eval.sh"
     script.write_text(
         textwrap.dedent("""\
             #!/usr/bin/env bash
-            # Read JSON from stdin, echo a score based on candidate length
-            input=$(cat)
-            candidate=$(echo "$input" | python3 -c "import sys,json; print(json.load(sys.stdin)['candidate'])")
-            length=${#candidate}
-            echo "{\\"score\\": 0.${length}, \\"length\\": $length}"
+            python3 -c "
+            import json, sys, math
+            data = json.load(sys.stdin)
+            length = len(data['candidate'])
+            score = round(1.0 - math.exp(-length / 100.0), 4)
+            print(json.dumps({'score': score, 'length': length}))
+            "
         """)
     )
     script.chmod(0o755)

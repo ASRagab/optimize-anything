@@ -586,6 +586,182 @@ class TestCLI:
         captured = capsys.readouterr()
         assert "not both" in captured.err or "mutually exclusive" in captured.err
 
+    def test_optimize_rejects_budget_zero(self, tmp_path: Path, capsys):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test artifact")
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "0",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "--budget must be at least 1" in captured.err
+
+    def test_optimize_rejects_budget_negative(self, tmp_path: Path, capsys):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test artifact")
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "-5",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "--budget must be at least 1" in captured.err
+
+    def test_optimize_accepts_budget_one(self, tmp_path: Path, capsys, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "1",
+        ])
+        assert result == 0
+
+    def test_optimize_prints_progress_to_stderr(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 5
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "10",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Running optimization" in captured.err
+        assert "budget: 10" in captured.err
+        assert "bash eval.sh" in captured.err
+        assert "Optimization complete." in captured.err
+        json.loads(captured.out)
+
+    def test_optimize_progress_shows_url_for_http_evaluator(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 5
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.http_evaluator",
+            lambda url: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-url", "http://localhost:8080/eval",
+            "--budget", "5",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "http://localhost:8080/eval" in captured.err
+
+    def test_optimize_catches_optimize_anything_exception(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        def raise_runtime(**kwargs):
+            raise RuntimeError("gepa internal error")
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            raise_runtime,
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "optimization failed" in captured.err
+        assert "gepa internal error" in captured.err
+        assert "Traceback" not in captured.err
+
+    def test_optimize_catches_api_key_error(self, tmp_path: Path, capsys, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        def raise_api_key(**kwargs):
+            raise ValueError("Invalid api_key provided")
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            raise_api_key,
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "API authentication error" in captured.err
+
     def test_optimize_summary_includes_failure_signal(self, tmp_path: Path, capsys, monkeypatch):
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("test")
@@ -622,3 +798,147 @@ class TestCLI:
 
         payload = json.loads(capsys.readouterr().out)
         assert payload["evaluator_failure_signal"]["kind"] == "repeated_zero_scores"
+
+
+class TestEchoScoreEvaluator:
+    """Tests for examples/evaluators/echo_score.sh."""
+
+    def test_echo_score_evaluator_valid_json(self, project_root):
+        import subprocess
+
+        evaluator = project_root / "examples" / "evaluators" / "echo_score.sh"
+        payload = json.dumps({"candidate": "hello world"})
+        proc = subprocess.run(
+            ["bash", str(evaluator)],
+            input=payload, capture_output=True, text=True,
+        )
+        assert proc.returncode == 0
+        result = json.loads(proc.stdout)
+        assert "score" in result
+        assert isinstance(result["score"], float)
+        assert 0.0 <= result["score"] <= 1.0
+
+    def test_echo_score_evaluator_empty_candidate(self, project_root):
+        import subprocess
+
+        evaluator = project_root / "examples" / "evaluators" / "echo_score.sh"
+        payload = json.dumps({"candidate": ""})
+        proc = subprocess.run(
+            ["bash", str(evaluator)],
+            input=payload, capture_output=True, text=True,
+        )
+        assert proc.returncode == 0
+        result = json.loads(proc.stdout)
+        assert result["score"] == 0.0
+        assert result["length"] == 0
+
+
+class TestScoreCommand:
+    def test_score_help(self, capsys):
+        try:
+            main(["score", "--help"])
+        except SystemExit as e:
+            assert e.code == 0
+        captured = capsys.readouterr()
+        assert "artifact_file" in captured.out
+        assert "--evaluator-command" in captured.out
+
+    def test_score_requires_evaluator(self, tmp_path: Path, capsys):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("some text")
+        result = main(["score", str(artifact)])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "provide --evaluator-command" in captured.err
+
+    def test_score_rejects_both_evaluator_inputs(self, tmp_path: Path, capsys):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("some text")
+        result = main([
+            "score", str(artifact),
+            "--evaluator-command", "bash", "eval.sh",
+            "--evaluator-url", "http://localhost:8000/eval",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "not both" in captured.err
+
+    def test_score_missing_artifact(self, capsys):
+        result = main([
+            "score", "/nonexistent/artifact.txt",
+            "--evaluator-command", "bash", "eval.sh",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "file not found" in captured.err
+
+    def test_score_command_evaluator_returns_json(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("hello world")
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.75, {"feedback": "looks good"}),
+        )
+
+        result = main([
+            "score", str(artifact),
+            "--evaluator-command", "bash", "eval.sh",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["score"] == 0.75
+        assert payload["feedback"] == "looks good"
+
+    def test_score_http_evaluator_returns_json(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("hello world")
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.http_evaluator",
+            lambda url: lambda c: (0.9, {"confidence": 0.85}),
+        )
+
+        result = main([
+            "score", str(artifact),
+            "--evaluator-url", "http://localhost:8000/eval",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["score"] == 0.9
+
+    def test_score_evaluator_exception_returns_1(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("test")
+
+        def failing_evaluator(candidate):
+            raise ConnectionError("connection refused")
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: failing_evaluator,
+        )
+
+        result = main([
+            "score", str(artifact),
+            "--evaluator-command", "bash", "eval.sh",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "evaluator call failed" in captured.err

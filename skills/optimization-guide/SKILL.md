@@ -42,7 +42,7 @@ result = optimize_anything(
 
 ### 4. Set Budget and Configuration
 
-Use `recommend_budget` for a starting point, then adjust:
+Use the `budget` subcommand for a starting point, then adjust:
 
 | Seed length | Recommended budget | Rationale |
 |---|---|---|

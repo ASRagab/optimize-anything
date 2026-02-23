@@ -117,7 +117,7 @@ claude plugin add /path/to/optimize-anything
 | Error | Cause | Fix |
 |---|---|---|
 | `uv: command not found` | uv not installed | Run the CLI installer (installs uv) or install from https://docs.astral.sh/uv/ |
-| `ANTHROPIC_API_KEY missing` | Env var not set | Export in shell or add `env` block to MCP config |
+| `ANTHROPIC_API_KEY missing` | Env var not set | Export in shell before running CLI |
 | `ModuleNotFoundError` | Dependencies not installed | Run `uv sync` in the project directory (source install) |
 | Evaluator command fails repeatedly | Script path/cwd mismatch | Use `artifacts/eval.sh` directly or set `--evaluator-cwd` correctly, then validate with `echo '{"candidate":"test"}' | <command>` |
 | `Error: --output must be a file path` | Passed directory to CLI output | Use a file path like `artifacts/result.txt` instead of `artifacts/` |

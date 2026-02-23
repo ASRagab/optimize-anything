@@ -10,8 +10,12 @@ uv run pytest                                     # Run full test suite
 uv run pytest tests/test_cli.py                   # Run one test module
 uv run pytest -k "optimize"                       # Run tests by pattern
 uv run optimize-anything --help                   # CLI entry point
+uv run optimize-anything score FILE --evaluator-command bash eval.sh  # Score one artifact
+uv run python scripts/check.py                    # Unified gate: pytest + smoke + score_check
+uv run python scripts/check.py --skip-smoke       # Unified gate without smoke (offline)
 uv run python scripts/smoke_harness.py --budget 1 # CLI smoke check
-uv run python scripts/consecutive_smoke_gate.py --budget 1
+uv run python scripts/score_check.py              # Score regression check
+uv run python scripts/score_check.py --update     # Update baselines after improvement
 ```
 
 ## Architecture
@@ -34,7 +38,7 @@ Input/output contract for external evaluators:
 ## Delivery Surfaces
 
 - `src/optimize_anything/cli.py`
-  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`
+  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`
   - Supports evaluator source flags (`--evaluator-command` or `--evaluator-url`)
   - Supports intake flags (`--intake-json`, `--intake-file`) and `--evaluator-cwd`
 
@@ -51,7 +55,7 @@ Input/output contract for external evaluators:
     - `evaluator_cwd`
 
 - `src/optimize_anything/result_contract.py`
-  - Canonical optimize summary for both CLI and MCP outputs
+  - Canonical optimize summary for CLI output
 
 ## Important Distinction
 

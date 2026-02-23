@@ -160,16 +160,9 @@ with open("evaluator.sh", "w") as f:
     f.write(script)
 ```
 
-Or use the MCP tool:
-```json
-{
-  "tool": "generate_evaluator",
-  "arguments": {
-    "seed": "Your seed text",
-    "objective": "maximize clarity",
-    "evaluator_type": "command"
-  }
-}
+Or use the CLI:
+```bash
+uv run optimize-anything generate-evaluator seed.txt --objective "maximize clarity"
 ```
 
 The generated evaluator is a starting point. Customize the scoring logic to match your specific objective.

@@ -57,13 +57,15 @@ def run_evaluator(evaluator_path: Path, candidate: str, cwd: Path) -> float:
     return float(score)
 
 
-def check_scores(scores_path: Path, root: Path) -> int:
+def check_scores(scores_path: Path, root: Path, *, update: bool = False) -> int:
     """Run all evaluators and compare scores to baselines.
 
     Returns 0 if all artifacts pass, 1 if any fail.
+    When update=True and all checks pass, writes measured scores back as new baselines.
     """
     scores = load_scores(scores_path)
     any_failed = False
+    measured: dict[str, float] = {}
 
     for artifact_rel, entry in scores.items():
         artifact_path = root / artifact_rel
@@ -91,6 +93,8 @@ def check_scores(scores_path: Path, root: Path) -> int:
             any_failed = True
             continue
 
+        measured[artifact_rel] = score
+
         if score >= baseline - TOLERANCE:
             print(f"PASS  {artifact_rel}  score={score:.4f}  baseline={baseline:.4f}")
         else:
@@ -100,7 +104,32 @@ def check_scores(scores_path: Path, root: Path) -> int:
             )
             any_failed = True
 
+    if not any_failed and update:
+        _write_back_scores(scores_path, scores, measured)
+        print(f"Updated baselines written to {scores_path}")
+
     return 1 if any_failed else 0
+
+
+def _write_back_scores(
+    scores_path: Path,
+    original: dict,
+    measured: dict[str, float],
+) -> None:
+    """Write measured scores back to scores.json as new baselines."""
+    from datetime import datetime, timezone
+
+    updated = {}
+    for artifact_rel, entry in original.items():
+        new_entry = dict(entry)
+        if artifact_rel in measured:
+            new_entry["baseline"] = round(measured[artifact_rel], 6)
+            new_entry["last_run"] = datetime.now(timezone.utc).isoformat()
+        updated[artifact_rel] = new_entry
+
+    with open(scores_path, "w", encoding="utf-8") as f:
+        json.dump(updated, f, indent=2)
+        f.write("\n")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -117,6 +146,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=".",
         help="Root directory for resolving artifact and evaluator paths (default: .)",
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        default=False,
+        help=(
+            "After all checks pass, write measured scores back to scores.json "
+            "as new baselines. Does not update if any check fails."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -129,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: scores file not found: {scores_path}", file=sys.stderr)
         return 1
 
-    return check_scores(scores_path, root)
+    return check_scores(scores_path, root, update=args.update)
 
 
 if __name__ == "__main__":

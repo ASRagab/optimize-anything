@@ -158,7 +158,7 @@ Two similarly named fields serve different purposes:
 
 | Field | What it answers | Allowed values | What it affects |
 |---|---|---|---|
-| `execution_mode` (runtime type) | How the evaluator is executed | `command`, `http` | CLI/MCP wiring, infra, and failure modes |
+| `execution_mode` (runtime type) | How the evaluator is executed | `command`, `http` | CLI wiring, infra, and failure modes |
 | `evaluation_pattern` (scoring strategy) | How scoring logic is designed | `verification`, `judge`, `simulation`, `composite` | Evaluator design intent and intake metadata |
 
 Example (full intake spec):

@@ -22,7 +22,7 @@ class TestCommandEvaluator:
     def test_returns_score_and_side_info(self, tmp_evaluator_script: Path):
         evaluate = command_evaluator([str(tmp_evaluator_script)])
         score, info = evaluate("test")
-        assert score == pytest.approx(0.4, abs=0.01)
+        assert score == pytest.approx(0.0392, abs=0.01)
         assert info["length"] == 4
 
     def test_invalid_json_output(self, tmp_bad_evaluator_script: Path):

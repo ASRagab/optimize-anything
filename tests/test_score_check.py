@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+# Import directly for unit-style tests
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+import score_check as _score_check
 
 SCRIPT = "scripts/score_check.py"
 
@@ -130,3 +133,66 @@ class TestScoreCheck:
             f"Expected exit 1 but got {result.returncode}\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
+
+
+class TestScoreCheckUpdate:
+    """Tests for the --update write-back feature."""
+
+    def _setup_passing(self, tmp_path: Path, score: float, baseline: float):
+        """Create artifact + evaluator + scores.json that will pass."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("hello")
+
+        evaluator = _make_evaluator(tmp_path, score)
+
+        scores_data = {
+            "artifact.txt": {
+                "evaluator": str(evaluator.relative_to(tmp_path)),
+                "baseline": baseline,
+            }
+        }
+        scores_file = tmp_path / "scores.json"
+        scores_file.write_text(json.dumps(scores_data))
+        return scores_file
+
+    def test_update_writes_back_on_pass(self, tmp_path: Path):
+        scores_file = self._setup_passing(tmp_path, score=0.9, baseline=0.5)
+
+        rc = _score_check.check_scores(scores_file, tmp_path, update=True)
+        assert rc == 0
+
+        updated = json.loads(scores_file.read_text())
+        assert updated["artifact.txt"]["baseline"] == pytest.approx(0.9, abs=0.001)
+        assert "last_run" in updated["artifact.txt"]
+
+    def test_no_update_without_flag(self, tmp_path: Path):
+        scores_file = self._setup_passing(tmp_path, score=0.9, baseline=0.5)
+
+        rc = _score_check.check_scores(scores_file, tmp_path, update=False)
+        assert rc == 0
+
+        unchanged = json.loads(scores_file.read_text())
+        assert unchanged["artifact.txt"]["baseline"] == 0.5
+        assert "last_run" not in unchanged["artifact.txt"]
+
+    def test_no_update_on_failure(self, tmp_path: Path):
+        """--update does NOT write back when a check fails."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("hello")
+
+        evaluator = _make_evaluator(tmp_path, 0.3)
+
+        scores_data = {
+            "artifact.txt": {
+                "evaluator": str(evaluator.relative_to(tmp_path)),
+                "baseline": 0.8,
+            }
+        }
+        scores_file = tmp_path / "scores.json"
+        scores_file.write_text(json.dumps(scores_data))
+
+        rc = _score_check.check_scores(scores_file, tmp_path, update=True)
+        assert rc == 1
+
+        unchanged = json.loads(scores_file.read_text())
+        assert unchanged["artifact.txt"]["baseline"] == 0.8
