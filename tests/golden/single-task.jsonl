@@ -1,0 +1,13 @@
+{"type":"optimization_start"}
+{"type":"evaluation_start"}
+{"type":"evaluation_end"}
+{"type":"frontier_updated"}
+{"type":"iteration_start"}
+{"type":"candidate_proposed"}
+{"type":"evaluation_start"}
+{"type":"evaluation_end"}
+{"type":"frontier_updated"}
+{"type":"candidate_accepted"}
+{"type":"iteration_end"}
+{"type":"stop_condition_met"}
+{"type":"optimization_end"}
