@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "optimize-anything": {
-      "command": "uv",
-      "args": ["--directory", "${CLAUDE_PLUGIN_ROOT}", "run", "python", "-m", "optimize_anything.server"]
-    }
-  }
-}

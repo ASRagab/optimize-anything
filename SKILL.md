@@ -19,21 +19,12 @@ Any text artifact with a measurable quality signal:
 
 1. **Prepare a seed** — the text you want to optimize
 2. **Create an evaluator** — use the **generate-evaluator** skill to build one matched to your objective
-3. **Run optimization** — use `/optimize`, the `optimize` MCP tool, or the CLI
+3. **Run optimization** — use `/optimize` or the CLI
 
 ## Available Skills
 
 - **generate-evaluator** — Choose the right evaluator pattern (verification, LLM-as-judge, simulation, composite) and generate a script
 - **optimization-guide** — Full workflow walkthrough covering optimization modes, configuration, budget, and result interpretation
-
-## Available Tools (MCP)
-
-| Tool | Use |
-|---|---|
-| `optimize` | Run optimization with a seed + evaluator |
-| `explain` | Preview what optimization would do |
-| `recommend_budget` | Get budget recommendation for your artifact |
-| `generate_evaluator` | Generate a starter evaluator script |
 
 ## Key Concept: Evaluator Quality = Optimization Quality
 

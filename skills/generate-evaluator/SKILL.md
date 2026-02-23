@@ -104,7 +104,7 @@ Return sub-scores as extra fields — gepa sees them all:
 2. **Ask intake questions** and lock scoring criteria before coding.
 3. **Choose evaluator pattern** from above.
 4. **Define scoring dimensions** (include sub-scores and a weighted total score).
-5. **Generate evaluator** using the `generate_evaluator` tool as a starter.
+5. **Generate evaluator** using the `generate-evaluator` CLI subcommand as a starter.
 6. **Add rich feedback** — include errors, strengths, and specific suggestions.
 7. **Test evaluator**: `echo '{"candidate": "..."}' | bash evaluator.sh`
 8. **Validate score range** — seed should usually score in the middle (0.3-0.7).

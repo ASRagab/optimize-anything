@@ -369,6 +369,223 @@ class TestCLI:
         payload = json.loads(capsys.readouterr().out)
         assert payload["best_artifact"] == "candidate after preflight"
 
+    def test_generate_evaluator_basic(self, tmp_path: Path, capsys, monkeypatch):
+        """generate-evaluator produces bash script with shebang by default."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluator_generator.generate_evaluator_script",
+            lambda **kwargs: "#!/usr/bin/env bash\n# mock evaluator\n",
+        )
+
+        result = main(
+            ["generate-evaluator", str(seed_file), "--objective", "maximize clarity"]
+        )
+        assert result == 0
+        captured = capsys.readouterr()
+        assert captured.out.startswith("#!/usr/bin/env bash")
+
+    def test_generate_evaluator_http_type(self, tmp_path: Path, capsys, monkeypatch):
+        """--evaluator-type http produces Python script."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+
+        calls: dict[str, object] = {}
+
+        def fake_generate(**kwargs):
+            calls.update(kwargs)
+            return "#!/usr/bin/env python3\n# mock http evaluator\n"
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluator_generator.generate_evaluator_script",
+            fake_generate,
+        )
+
+        result = main(
+            [
+                "generate-evaluator",
+                str(seed_file),
+                "--objective",
+                "maximize clarity",
+                "--evaluator-type",
+                "http",
+            ]
+        )
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "python3" in captured.out
+        assert calls["evaluator_type"] == "http"
+
+    def test_generate_evaluator_with_intake_json(self, tmp_path: Path, capsys, monkeypatch):
+        """intake execution_mode=http infers Python evaluator type."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+
+        calls: dict[str, object] = {}
+
+        def fake_generate(**kwargs):
+            calls.update(kwargs)
+            return "#!/usr/bin/env python3\n# inferred http\n"
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluator_generator.generate_evaluator_script",
+            fake_generate,
+        )
+
+        intake_json = json.dumps({"execution_mode": "http"})
+        result = main(
+            [
+                "generate-evaluator",
+                str(seed_file),
+                "--objective",
+                "maximize clarity",
+                "--intake-json",
+                intake_json,
+            ]
+        )
+        assert result == 0
+        assert calls["intake"]["execution_mode"] == "http"
+
+    def test_generate_evaluator_explicit_type_overrides_intake(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """--evaluator-type command wins over intake execution_mode=http."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+
+        calls: dict[str, object] = {}
+
+        def fake_generate(**kwargs):
+            calls.update(kwargs)
+            return "#!/usr/bin/env bash\n# explicit override\n"
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluator_generator.generate_evaluator_script",
+            fake_generate,
+        )
+
+        intake_json = json.dumps({"execution_mode": "http"})
+        result = main(
+            [
+                "generate-evaluator",
+                str(seed_file),
+                "--objective",
+                "maximize clarity",
+                "--evaluator-type",
+                "command",
+                "--intake-json",
+                intake_json,
+            ]
+        )
+        assert result == 0
+        assert calls["evaluator_type"] == "command"
+
+    def test_generate_evaluator_invalid_intake(self, tmp_path: Path, capsys):
+        """Bad intake returns exit 1."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+
+        result = main(
+            [
+                "generate-evaluator",
+                str(seed_file),
+                "--objective",
+                "maximize clarity",
+                "--intake-json",
+                '{"execution_mode": "grpc"}',
+            ]
+        )
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "invalid intake spec" in captured.err
+
+    def test_generate_evaluator_missing_objective(self, capsys):
+        """Missing --objective causes argparse error (exit 2)."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["generate-evaluator", "some-file.txt"])
+        assert exc_info.value.code == 2
+
+    def test_intake_defaults(self, capsys):
+        """No args returns canonical defaults."""
+        result = main(["intake"])
+        assert result == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["artifact_class"] == "general_text"
+        assert data["execution_mode"] == "command"
+        assert data["evaluation_pattern"] == "judge"
+        assert len(data["quality_dimensions"]) == 3
+
+    def test_intake_with_options(self, capsys):
+        """Flag-based options normalize correctly."""
+        result = main(
+            [
+                "intake",
+                "--artifact-class",
+                "prompt",
+                "--execution-mode",
+                "http",
+                "--evaluation-pattern",
+                "verification",
+                "--hard-constraint",
+                "must be under 500 chars",
+            ]
+        )
+        assert result == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["artifact_class"] == "prompt"
+        assert data["execution_mode"] == "http"
+        assert data["evaluation_pattern"] == "verification"
+        assert "must be under 500 chars" in data["hard_constraints"]
+
+    def test_intake_from_json(self, capsys):
+        """--intake-json parses and normalizes."""
+        intake_json = json.dumps(
+            {"artifact_class": "config", "execution_mode": "http"}
+        )
+        result = main(["intake", "--intake-json", intake_json])
+        assert result == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["artifact_class"] == "config"
+        assert data["execution_mode"] == "http"
+
+    def test_intake_from_file(self, tmp_path: Path, capsys):
+        """--intake-file reads and normalizes."""
+        intake_file = tmp_path / "intake.json"
+        intake_file.write_text(json.dumps({"execution_mode": "http"}))
+        result = main(["intake", "--intake-file", str(intake_file)])
+        assert result == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["execution_mode"] == "http"
+
+    def test_intake_invalid_execution_mode(self, capsys):
+        """Bad execution_mode returns exit 1."""
+        result = main(
+            ["intake", "--intake-json", '{"execution_mode": "grpc"}']
+        )
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "invalid intake spec" in captured.err
+
+    def test_intake_rejects_json_and_flags_together(self, capsys):
+        """Mutually exclusive: --intake-json and flags together error."""
+        result = main(
+            [
+                "intake",
+                "--intake-json",
+                '{"execution_mode": "http"}',
+                "--artifact-class",
+                "prompt",
+            ]
+        )
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "not both" in captured.err or "mutually exclusive" in captured.err
+
     def test_optimize_summary_includes_failure_signal(self, tmp_path: Path, capsys, monkeypatch):
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("test")

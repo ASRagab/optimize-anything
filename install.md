@@ -2,21 +2,21 @@
 
 optimize-anything can be installed three ways. Each gives you different capabilities:
 
-| Method | MCP tools in Claude Code | Skills + `/optimize` | Terminal CLI | Prerequisites |
-|---|---|---|---|---|
-| **Claude Code plugin** | Yes | Yes | No | [uv](https://docs.astral.sh/uv/), Python >= 3.10 |
-| **CLI installer** | No | No | Yes | None (installs uv automatically) |
-| **From source** | Via `uv run` | If used as plugin | Via `uv run` | uv, Python >= 3.10 |
+| Method | Skills + `/optimize` | Terminal CLI | Prerequisites |
+|---|---|---|---|
+| **Claude Code plugin** | Yes | No | [uv](https://docs.astral.sh/uv/), Python >= 3.10 |
+| **CLI installer** | No | Yes | None (installs uv automatically) |
+| **From source** | If used as plugin | Via `uv run` | uv, Python >= 3.10 |
 
-> **Plugin vs CLI:** The plugin gives you MCP tools and skills *inside Claude Code*. The CLI gives you the `optimize-anything` command *in your terminal*. They are independent — install either or both.
+> **Plugin vs CLI:** The plugin gives you skills *inside Claude Code*. The CLI gives you the `optimize-anything` command *in your terminal*. They are independent -- install either or both.
 
 ---
 
 ## Claude Code Plugin (recommended for Claude Code users)
 
-The plugin auto-discovers the MCP server, skills, and `/optimize` command. The MCP server self-bootstraps via `uv run` on first use — no manual dependency install needed.
+The plugin auto-discovers skills and the `/optimize` command.
 
-**Prerequisite:** [uv](https://docs.astral.sh/uv/) and Python >= 3.10 must be installed on your system. The plugin's MCP server is launched via `uv --directory <plugin-root> run python -m optimize_anything.server`, which auto-installs dependencies into an isolated environment.
+**Prerequisite:** [uv](https://docs.astral.sh/uv/) and Python >= 3.10 must be installed on your system.
 
 ### Install
 
@@ -32,13 +32,12 @@ claude plugin add /path/to/optimize-anything
 
 ### What you get
 
-- **MCP tools** — `optimize`, `explain`, `recommend_budget`, `generate_evaluator`
 - **Skills** — `generate-evaluator` and `optimization-guide`
 - **Command** — `/optimize` slash command
 
 ### Verify
 
-In Claude Code, run `/optimize` or ask Claude to use the optimize tool.
+In Claude Code, run `/optimize` or ask Claude to use the optimization-guide skill.
 
 ### Uninstall
 
@@ -113,93 +112,6 @@ claude plugin add /path/to/optimize-anything
 
 ---
 
-## Manual MCP Configuration (non-plugin)
-
-If you're not using Claude Code's plugin system (e.g., Claude Desktop, other MCP clients), configure the MCP server manually.
-
-**Prerequisite:** `uv` and Python >= 3.10 installed, and the repo cloned locally.
-
-### Claude Desktop (macOS)
-
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "optimize-anything": {
-      "command": "uv",
-      "args": ["run", "--directory", "/absolute/path/to/optimize-anything", "python", "-m", "optimize_anything.server"],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-..."
-      }
-    }
-  }
-}
-```
-
-### Claude Desktop (Linux)
-
-Edit `~/.config/Claude/claude_desktop_config.json` with the same structure.
-
-### Claude Desktop (Windows)
-
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "optimize-anything": {
-      "command": "uv",
-      "args": ["run", "--directory", "C:\\Users\\you\\optimize-anything", "python", "-m", "optimize_anything.server"],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-..."
-      }
-    }
-  }
-}
-```
-
-### Other MCP Clients
-
-Any stdio-compatible MCP client works:
-
-```json
-{
-  "command": "uv",
-  "args": ["run", "--directory", "/path/to/optimize-anything", "python", "-m", "optimize_anything.server"]
-}
-```
-
-### Verify MCP
-
-1. Restart the MCP client
-2. Confirm the `optimize` tool appears in the tool listing
-3. Test with:
-   ```json
-   {
-     "seed": "hello world",
-     "evaluator_command": ["bash", "-c", "echo '{\"score\": 1}'"],
-     "evaluator_cwd": "/absolute/path/to/your/project",
-     "max_metric_calls": 1
-   }
-   ```
-
-`evaluator_cwd` is recommended when evaluator commands use repo-relative scripts or files.
-For example, with an evaluator at `artifacts/eval.sh`, either use:
-- `evaluator_command: ["bash", "artifacts/eval.sh"]`
-- or `evaluator_command: ["bash", "eval.sh"]` with `evaluator_cwd: "/absolute/path/to/project/artifacts"`
-
-Before running optimize loops, validate command evaluators manually:
-```bash
-echo '{"candidate":"test"}' | bash artifacts/eval.sh
-```
-
-### Uninstall MCP
-
-Remove the `optimize-anything` entry from your MCP client config and restart the client.
-
----
-
 ## Common Errors
 
 | Error | Cause | Fix |
@@ -207,8 +119,6 @@ Remove the `optimize-anything` entry from your MCP client config and restart the
 | `uv: command not found` | uv not installed | Run the CLI installer (installs uv) or install from https://docs.astral.sh/uv/ |
 | `ANTHROPIC_API_KEY missing` | Env var not set | Export in shell or add `env` block to MCP config |
 | `ModuleNotFoundError` | Dependencies not installed | Run `uv sync` in the project directory (source install) |
-| Server starts but no tools | MCP config syntax error | Validate JSON: `jq . < config.json` |
-| Tool call hangs | Evaluator not executable | Run `chmod +x evaluator.sh` |
-| Evaluator command fails repeatedly | Script path/cwd mismatch | Use `artifacts/eval.sh` directly or set `evaluator_cwd` correctly, then validate with `echo '{"candidate":"test"}' | <command>` |
+| Evaluator command fails repeatedly | Script path/cwd mismatch | Use `artifacts/eval.sh` directly or set `--evaluator-cwd` correctly, then validate with `echo '{"candidate":"test"}' | <command>` |
 | `Error: --output must be a file path` | Passed directory to CLI output | Use a file path like `artifacts/result.txt` instead of `artifacts/` |
-| Plugin MCP fails to start | uv not on PATH | Ensure `uv` is installed and available in your shell's PATH |
+| Plugin not working | uv not on PATH | Ensure `uv` is installed and available in your shell's PATH |

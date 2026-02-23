@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Run repeatable CLI + MCP smoke checks with saved artifacts/logs."""
+"""Run repeatable CLI smoke checks with saved artifacts/logs."""
 
 from __future__ import annotations
 
 import argparse
-import asyncio
-import contextlib
-import io
 import json
 import shlex
 import subprocess
@@ -156,43 +153,67 @@ def _run_cli_smoke(
     return summary
 
 
-async def _run_mcp_smoke(
+def _run_generate_evaluator_smoke(
     *,
-    seed: str,
-    evaluator_path: Path,
-    evaluator_cwd: Path,
-    budget: int,
+    seed_path: Path,
     output_dir: Path,
-) -> dict[str, Any]:
-    from optimize_anything.server import optimize as mcp_optimize
+) -> None:
+    command = [
+        sys.executable,
+        "-m",
+        "optimize_anything.cli",
+        "generate-evaluator",
+        str(seed_path),
+        "--objective",
+        "maximize clarity",
+    ]
 
-    captured_stdout = io.StringIO()
-    captured_stderr = io.StringIO()
-    with contextlib.redirect_stdout(captured_stdout), contextlib.redirect_stderr(
-        captured_stderr
-    ):
-        response = await mcp_optimize(
-            seed=seed,
-            evaluator_command=["bash", evaluator_path.name],
-            evaluator_cwd=str(evaluator_cwd),
-            max_metric_calls=budget,
-            objective="Smoke-run objective",
+    proc = subprocess.run(command, capture_output=True, text=True)
+
+    _write_text(output_dir / "generate_evaluator_stdout.log", proc.stdout)
+    _write_text(output_dir / "generate_evaluator_stderr.log", proc.stderr)
+
+    if proc.returncode != 0:
+        raise SmokeFailure(
+            f"generate-evaluator: command failed (exit {proc.returncode}). "
+            "See generate_evaluator_stderr.log."
         )
 
-    _write_text(output_dir / "mcp_raw.log", response)
-    _write_text(output_dir / "mcp_stdout.log", captured_stdout.getvalue())
-    _write_text(output_dir / "mcp_stderr.log", captured_stderr.getvalue())
+    if not proc.stdout.startswith("#!/"):
+        raise SmokeFailure(
+            "generate-evaluator: output missing shebang (expected script)"
+        )
 
-    summary = _parse_json_with_optional_prefix(response, "mcp")
 
-    if "error" in summary:
-        raise SmokeFailure(f"mcp: tool returned error: {summary['error']}")
+def _run_intake_smoke(*, output_dir: Path) -> None:
+    command = [
+        sys.executable,
+        "-m",
+        "optimize_anything.cli",
+        "intake",
+        "--artifact-class",
+        "prompt",
+        "--execution-mode",
+        "command",
+    ]
 
-    _write_json(output_dir / "mcp_summary.json", summary)
-    best = summary.get("best_artifact", "")
-    if isinstance(best, str):
-        _write_text(output_dir / "mcp_best_artifact.txt", best)
-    return summary
+    proc = subprocess.run(command, capture_output=True, text=True)
+
+    _write_text(output_dir / "intake_stdout.log", proc.stdout)
+    _write_text(output_dir / "intake_stderr.log", proc.stderr)
+
+    if proc.returncode != 0:
+        raise SmokeFailure(
+            f"intake: command failed (exit {proc.returncode}). See intake_stderr.log."
+        )
+
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        raise SmokeFailure("intake: output is not valid JSON")
+
+    if not isinstance(data, dict) or "execution_mode" not in data:
+        raise SmokeFailure("intake: output missing expected fields")
 
 
 def run_smoke_suite(*, budget: int, output_dir: Path) -> dict[str, Any]:
@@ -211,25 +232,17 @@ def run_smoke_suite(*, budget: int, output_dir: Path) -> dict[str, Any]:
         )
         _assert_summary("cli", cli_summary)
 
-        mcp_summary = asyncio.run(
-            _run_mcp_smoke(
-                seed=seed_text,
-                evaluator_path=evaluator_path,
-                evaluator_cwd=tmp_dir,
-                budget=budget,
-                output_dir=output_dir,
-            )
-        )
-        _assert_summary("mcp", mcp_summary)
+        _run_generate_evaluator_smoke(seed_path=seed_path, output_dir=output_dir)
+        _run_intake_smoke(output_dir=output_dir)
 
-    combined = {"budget": budget, "cli": cli_summary, "mcp": mcp_summary}
+    combined = {"budget": budget, "cli": cli_summary}
     _write_json(output_dir / "combined_summary.json", combined)
     return combined
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run CLI + MCP optimize smokes and enforce output contract checks."
+        description="Run CLI optimize smokes and enforce output contract checks."
     )
     parser.add_argument(
         "--budget",
@@ -267,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"reason=unexpected exception: {type(exc).__name__}: {exc}")
         return 1
 
-    print(f"cli=PASS mcp=PASS overall=PASS output_dir={output_dir}")
+    print(f"cli=PASS overall=PASS output_dir={output_dir}")
     return 0
 
 

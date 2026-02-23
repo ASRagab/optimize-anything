@@ -11,18 +11,17 @@ optimize-anything takes a seed artifact (prompt, code snippet, config, etc.), ev
 Key features:
 - **BYO evaluator** -- shell commands or HTTP endpoints
 - **Powered by gepa** -- evolutionary search with LLM-guided mutations
-- **MCP server** -- integrate directly with Claude Desktop or any MCP client
 - **CLI** -- run optimizations from the terminal
 - **Evaluator generator** -- auto-generate starter evaluator scripts
 
 ## Install
 
-**Claude Code plugin** — MCP tools + skills + `/optimize` command inside Claude Code:
+**Claude Code plugin** — skills + `/optimize` command inside Claude Code:
 
 ```bash
 claude plugin add https://github.com/ASRagab/optimize-anything
 ```
-> Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10. The MCP server auto-installs its dependencies on first use.
+> Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10.
 
 **Terminal CLI** — installs the `optimize-anything` command in your shell:
 
@@ -33,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/inst
 # Or directly with uv:
 uv tool install git+https://github.com/ASRagab/optimize-anything
 ```
-> Plugin and CLI are independent — install either or both.
+> Plugin and CLI are independent -- install either or both.
 
 **From source** (for development):
 
@@ -42,7 +41,7 @@ git clone https://github.com/ASRagab/optimize-anything.git && cd optimize-anythi
 uv sync
 ```
 
-See [install.md](install.md) for manual MCP config, platform-specific setup, and troubleshooting.
+See [install.md](install.md) for platform-specific setup and troubleshooting.
 
 ## Quickstart
 
@@ -128,33 +127,6 @@ If your evaluator script is under `artifacts/`, use one of these path-safe forms
 --evaluator-command bash eval.sh --evaluator-cwd artifacts
 ```
 
-### MCP (Model Context Protocol)
-
-Add to your MCP client config (see [install.md](install.md) for platform-specific paths):
-
-```json
-{
-  "mcpServers": {
-    "optimize-anything": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/optimize-anything", "python", "-m", "optimize_anything.server"],
-      "env": { "ANTHROPIC_API_KEY": "sk-..." }
-    }
-  }
-}
-```
-
-Then call the `optimize` tool:
-
-```json
-{
-  "seed": "Write a haiku about the ocean",
-  "evaluator_command": ["bash", "eval.sh"],
-  "evaluator_cwd": "/absolute/path/to/your/project",
-  "max_metric_calls": 10
-}
-```
-
 ## Evaluator Contract
 
 Your evaluator receives JSON on stdin and must return JSON on stdout:
@@ -189,16 +161,19 @@ Two similarly named fields serve different purposes:
 | `execution_mode` (runtime type) | How the evaluator is executed | `command`, `http` | CLI/MCP wiring, infra, and failure modes |
 | `evaluation_pattern` (scoring strategy) | How scoring logic is designed | `verification`, `judge`, `simulation`, `composite` | Evaluator design intent and intake metadata |
 
-Example (both fields together in intake):
+Example (full intake spec):
 
 ```json
 {
+  "artifact_class": "prompt",
   "execution_mode": "command",
   "evaluation_pattern": "judge",
   "quality_dimensions": [
     {"name": "clarity", "weight": 0.5},
     {"name": "constraint_adherence", "weight": 0.5}
-  ]
+  ],
+  "hard_constraints": ["must be under 500 tokens"],
+  "evaluator_cwd": "/path/to/project"
 }
 ```
 
@@ -245,17 +220,39 @@ uv run optimize-anything budget <seed_file>
 
 Get a recommended evaluation budget based on the seed artifact length.
 
-## MCP Tools
+### generate-evaluator
 
-| Tool | Description |
-|---|---|
-| `optimize` | Run LLM-guided optimization with BYO evaluator |
-| `explain` | Preview what optimization would do |
-| `recommend_budget` | Get budget recommendations based on artifact size |
-| `generate_evaluator` | Generate a starter evaluator script |
-| `evaluator_intake` | Normalize/validate evaluator intake schema |
+```bash
+uv run optimize-anything generate-evaluator <seed_file> --objective <text> [--evaluator-type command|http] [--intake-json <json>] [--intake-file <path>]
+```
 
-See [docs/mcp-protocol.md](docs/mcp-protocol.md) for full tool schemas.
+Generate a starter evaluator script from a seed artifact and objective. Outputs to stdout.
+
+| Flag | Description | Default |
+|---|---|---|
+| `seed_file` | Path to seed artifact file | (required) |
+| `--objective <text>` | Natural language optimization objective | (required) |
+| `--evaluator-type` | Script type: `command` (bash) or `http` (Python) | inferred from intake or `command` |
+| `--intake-json <json>` | Inline intake spec JSON | -- |
+| `--intake-file <path>` | Path to intake spec JSON file | -- |
+
+### intake
+
+```bash
+uv run optimize-anything intake [options]
+```
+
+Normalize and validate an evaluator intake specification. Outputs canonical JSON to stdout.
+
+| Flag | Description | Default |
+|---|---|---|
+| `--artifact-class <text>` | Type of artifact being optimized | `general_text` |
+| `--execution-mode` | Evaluator transport: `command` or `http` | `command` |
+| `--evaluation-pattern` | Scoring strategy: `verification`, `judge`, `simulation`, `composite` | `judge` |
+| `--hard-constraint <text>` | Hard constraint (repeatable) | -- |
+| `--evaluator-cwd <path>` | Working directory for evaluator | -- |
+| `--intake-json <json>` | Inline intake spec JSON (mutually exclusive with flags) | -- |
+| `--intake-file <path>` | Path to intake spec JSON file (mutually exclusive with flags) | -- |
 
 ## Architecture
 
@@ -264,8 +261,9 @@ src/optimize_anything/
   __init__.py              # Public API re-exports
   evaluators.py            # Command and HTTP evaluator factories
   evaluator_generator.py   # Generate evaluator scripts from seed + objective
-  server.py                # FastMCP server with 5 tools
   cli.py                   # CLI entry point (argparse)
+  intake.py                # Intake schema normalization
+  result_contract.py       # Canonical optimize summary output
   __main__.py              # python -m support
 
 commands/
@@ -278,11 +276,6 @@ skills/
 examples/
   evaluators/              # Sample evaluator scripts
   seeds/                   # Sample seed artifacts
-
-docs/
-  install.md               # Installation and MCP client setup
-  evaluator-cookbook.md     # Guide to writing evaluators
-  mcp-protocol.md          # MCP tool schemas and protocol docs
 ```
 
 ## Programmatic API
@@ -329,7 +322,6 @@ This produces a bash script (or Python HTTP server) that you can customize.
 | `Seed file not found` | Check the seed file path is correct |
 | `Evaluator command failed` | Manually run `echo '{"candidate":"test"}' | <your evaluator command>` and verify it exits 0 with valid JSON |
 | `Evaluator script not found` | Use a full relative script path (for example, `artifacts/eval.sh`) or set `--evaluator-cwd artifacts` |
-| MCP server not responding | Check MCP config paths match your clone location |
 | `Invalid JSON` from evaluator | Ensure evaluator writes only JSON to stdout (logs go to stderr) |
 | `Error: --output must be a file path` | Pass a filename like `artifacts/result.txt`, not a directory path like `artifacts/` |
 
@@ -351,5 +343,4 @@ claude plugin remove optimize-anything
 
 - [Installation Guide](install.md)
 - [Evaluator Cookbook](evaluator-cookbook.md)
-- [MCP Protocol](docs/mcp-protocol.md)
 - [Examples](examples/)

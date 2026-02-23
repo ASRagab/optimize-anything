@@ -44,6 +44,50 @@ def main(argv: list[str] | None = None) -> int:
     )
     opt_parser.add_argument("--output", "-o", help="Output file for best candidate")
 
+    # generate-evaluator subcommand
+    gen_parser = subparsers.add_parser(
+        "generate-evaluator", help="Generate an evaluator script"
+    )
+    gen_parser.add_argument("seed_file", help="Path to seed artifact file")
+    gen_parser.add_argument(
+        "--objective", required=True, help="Natural language objective"
+    )
+    gen_parser.add_argument(
+        "--evaluator-type",
+        choices=["command", "http"],
+        help="Script type: 'command' (bash) or 'http' (Python server)",
+    )
+    gen_parser.add_argument(
+        "--intake-json", help="Evaluator intake spec as an inline JSON string"
+    )
+    gen_parser.add_argument(
+        "--intake-file", help="Path to evaluator intake specification JSON file"
+    )
+
+    # intake subcommand
+    intake_parser = subparsers.add_parser(
+        "intake", help="Normalize evaluator intake specification"
+    )
+    intake_parser.add_argument("--artifact-class", help="Type of artifact being optimized")
+    intake_parser.add_argument(
+        "--execution-mode", choices=["command", "http"], help="Evaluator transport"
+    )
+    intake_parser.add_argument(
+        "--evaluation-pattern",
+        choices=["verification", "judge", "simulation", "composite"],
+        help="Scoring strategy",
+    )
+    intake_parser.add_argument(
+        "--hard-constraint", action="append", dest="hard_constraints", help="Hard constraint (repeatable)"
+    )
+    intake_parser.add_argument("--evaluator-cwd", help="Working directory for evaluator")
+    intake_parser.add_argument(
+        "--intake-json", help="Evaluator intake spec as an inline JSON string"
+    )
+    intake_parser.add_argument(
+        "--intake-file", help="Path to evaluator intake specification JSON file"
+    )
+
     # explain subcommand
     explain_parser = subparsers.add_parser("explain", help="Explain optimization plan")
     explain_parser.add_argument("seed_file", help="Path to seed artifact file")
@@ -59,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "optimize":
         return _cmd_optimize(args)
+    elif args.command == "generate-evaluator":
+        return _cmd_generate_evaluator(args)
+    elif args.command == "intake":
+        return _cmd_intake(args)
     elif args.command == "explain":
         return _cmd_explain(args)
     elif args.command == "budget":
@@ -151,6 +199,85 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         summary["output_file"] = args.output
 
     print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
+def _cmd_intake(args: argparse.Namespace) -> int:
+    from optimize_anything.intake import normalize_intake_spec
+
+    # Detect if user passed any individual flags
+    flag_fields = {
+        "artifact_class": args.artifact_class,
+        "execution_mode": args.execution_mode,
+        "evaluation_pattern": args.evaluation_pattern,
+        "hard_constraints": args.hard_constraints,
+        "evaluator_cwd": args.evaluator_cwd,
+    }
+    has_flags = any(v is not None for v in flag_fields.values())
+    has_json_source = args.intake_json is not None or args.intake_file is not None
+
+    if has_flags and has_json_source:
+        print(
+            "Error: provide individual flags or --intake-json/--intake-file, not both",
+            file=sys.stderr,
+        )
+        return 1
+
+    if has_json_source:
+        intake_spec = _load_and_normalize_intake_spec(
+            intake_json=args.intake_json,
+            intake_file=args.intake_file,
+        )
+        if intake_spec is None:
+            return 1
+        print(json.dumps(intake_spec, indent=2))
+        return 0
+
+    # Build spec from flags
+    spec: dict[str, object] = {}
+    if args.artifact_class is not None:
+        spec["artifact_class"] = args.artifact_class
+    if args.execution_mode is not None:
+        spec["execution_mode"] = args.execution_mode
+    if args.evaluation_pattern is not None:
+        spec["evaluation_pattern"] = args.evaluation_pattern
+    if args.hard_constraints is not None:
+        spec["hard_constraints"] = args.hard_constraints
+    if args.evaluator_cwd is not None:
+        spec["evaluator_cwd"] = args.evaluator_cwd
+
+    try:
+        normalized = normalize_intake_spec(spec)
+    except ValueError as e:
+        print(f"Error: invalid intake spec: {e}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(normalized, indent=2))
+    return 0
+
+
+def _cmd_generate_evaluator(args: argparse.Namespace) -> int:
+    seed = _read_seed(args.seed_file)
+    if seed is None:
+        return 1
+
+    intake_spec = _load_and_normalize_intake_spec(
+        intake_json=args.intake_json,
+        intake_file=args.intake_file,
+    )
+    intake_requested = args.intake_json is not None or args.intake_file is not None
+    if intake_requested and intake_spec is None:
+        return 1
+
+    from optimize_anything.evaluator_generator import generate_evaluator_script
+
+    script = generate_evaluator_script(
+        seed=seed,
+        objective=args.objective,
+        evaluator_type=args.evaluator_type,
+        intake=intake_spec,
+    )
+    print(script, end="")
     return 0
 
 

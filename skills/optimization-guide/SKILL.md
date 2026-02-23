@@ -66,11 +66,6 @@ config = GEPAConfig(
 
 ### 5. Run Optimization
 
-**Via MCP tool:**
-```json
-{"seed": "...", "evaluator_command": ["bash", "eval.sh"], "evaluator_cwd": "/absolute/path/to/project", "objective": "maximize clarity", "max_metric_calls": 100}
-```
-
 **Via CLI:**
 ```bash
 optimize-anything optimize seed.txt --evaluator-command bash eval.sh --budget 100 --objective "maximize clarity" -o result.txt

@@ -3,13 +3,13 @@ name = "optimize-anything"
 version = "0.1.0"
 description = "Optimize any text artifact using gepa — prompts, code, configs, skills"
 requires-python = ">=3.10"
-dependencies = ["gepa", "mcp[cli]", "httpx", "litellm"]
+dependencies = ["gepa", "httpx", "litellm"]
 
 [project.scripts]
 optimize-anything = "optimize_anything.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio"]
+dev = ["pytest"]
 
 [build-system]
 requires = ["hatchling"]

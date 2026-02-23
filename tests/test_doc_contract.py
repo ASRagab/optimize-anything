@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DOC_PATHS = (Path("README.md"), Path("docs/mcp-protocol.md"))
+DOC_PATHS = (Path("README.md"),)
 
 
 def _read_text(path: Path) -> str:

@@ -7,11 +7,10 @@ This file provides guidance to Claude Code (`claude.ai/code`) when working in th
 ```bash
 uv sync                                           # Install runtime + dev dependencies
 uv run pytest                                     # Run full test suite
-uv run pytest tests/test_server.py                # Run one test module
+uv run pytest tests/test_cli.py                   # Run one test module
 uv run pytest -k "optimize"                       # Run tests by pattern
 uv run optimize-anything --help                   # CLI entry point
-uv run python -m optimize_anything.server         # Start MCP server (stdio)
-uv run python scripts/smoke_harness.py --budget 1 # CLI+MCP smoke check
+uv run python scripts/smoke_harness.py --budget 1 # CLI smoke check
 uv run python scripts/consecutive_smoke_gate.py --budget 1
 ```
 
@@ -35,12 +34,9 @@ Input/output contract for external evaluators:
 ## Delivery Surfaces
 
 - `src/optimize_anything/cli.py`
-  - Subcommands: `optimize`, `explain`, `budget`
+  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`
   - Supports evaluator source flags (`--evaluator-command` or `--evaluator-url`)
   - Supports intake flags (`--intake-json`, `--intake-file`) and `--evaluator-cwd`
-
-- `src/optimize_anything/server.py`
-  - FastMCP tools: `optimize`, `explain`, `recommend_budget`, `generate_evaluator`, `evaluator_intake`
 
 - `src/optimize_anything/evaluators.py`
   - `command_evaluator(...)`, `http_evaluator(...)`, strict score validation
@@ -68,7 +64,6 @@ Do not conflate these in docs or implementation.
 
 ```text
 .claude-plugin/plugin.json
-.mcp.json
 commands/optimize.md
 skills/generate-evaluator/
 skills/optimization-guide/
@@ -76,15 +71,13 @@ skills/optimization-guide/
 
 ## Testing Notes
 
-- Use `pytest` + `pytest-asyncio`.
+- Use `pytest`.
 - CLI tests call `main(argv)`.
-- Server tests call async tool functions directly.
 - Evaluator tests include command, HTTP, timeout, and malformed payload cases.
 - Doc drift checks live in `tests/test_doc_contract.py`.
 
 ## Dependencies
 
 - `gepa` (optimization engine)
-- `mcp[cli]` (FastMCP server/runtime)
 - `httpx` (HTTP evaluator client)
 - `litellm` (runtime dependency required for live optimization flows)
