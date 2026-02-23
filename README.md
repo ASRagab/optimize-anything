@@ -15,35 +15,30 @@ Key features:
 - **CLI** -- run optimizations from the terminal
 - **Evaluator generator** -- auto-generate starter evaluator scripts
 
-## Prerequisites
-
-- Python >= 3.10
-- [uv](https://docs.astral.sh/uv/) for environment management
-- An `ANTHROPIC_API_KEY` environment variable
-- An evaluator (shell script or HTTP server) that scores candidates
-
 ## Install
 
-**CLI one-liner** (installs `uv` if needed, then `optimize-anything` globally):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
-```
-
-**Claude Code plugin** (auto-discovers MCP tools, skills, and commands):
+**Claude Code plugin** — MCP tools + skills + `/optimize` command inside Claude Code:
 
 ```bash
 claude plugin add https://github.com/ASRagab/optimize-anything
 ```
+> Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10. The MCP server auto-installs its dependencies on first use.
+
+**Terminal CLI** — `optimize-anything` command in your shell:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
+```
+> Installs `uv` automatically if not present. Plugin and CLI are independent — install either or both.
 
 **From source** (for development):
 
 ```bash
-git clone <repo-url> && cd optimize-anything
+git clone https://github.com/ASRagab/optimize-anything.git && cd optimize-anything
 uv sync
 ```
 
-See [docs/install.md](docs/install.md) for platform-specific MCP config, plugin details, and troubleshooting.
+See [docs/install.md](docs/install.md) for manual MCP config, platform-specific setup, and troubleshooting.
 
 ## Quickstart
 
