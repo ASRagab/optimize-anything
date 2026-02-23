@@ -22,14 +22,30 @@ Key features:
 - An `ANTHROPIC_API_KEY` environment variable
 - An evaluator (shell script or HTTP server) that scores candidates
 
-## Quickstart
+## Install
 
-### Install
+**CLI one-liner** (installs `uv` if needed, then `optimize-anything` globally):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OWNER/optimize-anything/main/install.sh | bash
+```
+
+**Claude Code plugin** (auto-discovers MCP tools, skills, and commands):
+
+```bash
+claude plugin add https://github.com/OWNER/optimize-anything
+```
+
+**From source** (for development):
 
 ```bash
 git clone <repo-url> && cd optimize-anything
 uv sync
 ```
+
+See [docs/install.md](docs/install.md) for platform-specific MCP config, plugin details, and troubleshooting.
+
+## Quickstart
 
 ### CLI
 
@@ -223,6 +239,22 @@ This produces a bash script (or Python HTTP server) that you can customize.
 | `Evaluator command failed` | Verify evaluator outputs valid JSON to stdout and exits 0 |
 | MCP server not responding | Check MCP config paths match your clone location |
 | `Invalid JSON` from evaluator | Ensure evaluator writes only JSON to stdout (logs go to stderr) |
+
+## Uninstall
+
+**Global CLI** (installed via `install.sh` or `uv tool install`):
+
+```bash
+uv tool uninstall optimize-anything
+```
+
+Or via the installer script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OWNER/optimize-anything/main/install.sh | bash -s -- --uninstall
+```
+
+**Source install:** Delete the cloned directory and remove the MCP entry from your client config.
 
 ## Links
 
