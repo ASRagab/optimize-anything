@@ -21,10 +21,10 @@ import re
 import sys
 
 WEIGHTS = {
-    "structure": 0.30,
-    "actionability": 0.30,
-    "specificity": 0.25,
-    "conciseness": 0.15,
+    "structure": 0.25,
+    "actionability": 0.25,
+    "specificity": 0.20,
+    "conciseness": 0.30,
 }
 
 try:
@@ -242,22 +242,36 @@ specificity = sum(specificity_signals) / len(specificity_signals)
 # ---------------------------------------------------------------------------
 conciseness_signals = []
 
-# Length appropriateness (sweet spot: 800-3000 chars for a SKILL.md)
+# Length appropriateness (sweet spot: 800-6000 chars for a SKILL.md)
 length = len(candidate)
 if length < 200:
     len_score = length / 200.0
     feedback.append("Content is too short; expand with more actionable detail")
 elif length <= 800:
     len_score = 0.6 + 0.4 * ((length - 200) / 600.0)
-elif length <= 3000:
+elif length <= 6000:
     len_score = 1.0
-elif length <= 5000:
-    len_score = max(0.3, 1.0 - (length - 3000) / 3000.0)
-    feedback.append("Content is getting long; trim redundant sections")
+elif length <= 8000:
+    len_score = max(0.3, 1.0 - (length - 6000) / 3000.0)
+    feedback.append("Content is getting long; trim or restructure to stay under 6K chars")
+elif length <= 12000:
+    len_score = max(0.05, 0.3 - (length - 8000) / 8000.0)
+    feedback.append("Content is excessively long; aggressively cut or restructure")
 else:
-    len_score = 0.2
-    feedback.append("Content is excessively long; significantly cut or restructure")
+    len_score = 0.0
+    feedback.append("HARD LIMIT: content exceeds 12K chars; must be drastically shortened")
 conciseness_signals.append(len_score)
+
+# Redundancy signal: repeated heading patterns suggest bloat
+heading_texts = [h.strip().lstrip("#").strip().lower() for h in headings]
+unique_headings = len(set(heading_texts))
+if heading_count > 0:
+    heading_uniqueness = unique_headings / heading_count
+else:
+    heading_uniqueness = 1.0
+conciseness_signals.append(heading_uniqueness)
+if heading_uniqueness < 0.8:
+    feedback.append(f"Reduce heading redundancy ({heading_count} headings, {unique_headings} unique)")
 
 # Filler phrase density
 filler_phrases = [
@@ -303,7 +317,9 @@ else:
     para_score = 0.0
 conciseness_signals.append(para_score)
 
-conciseness = sum(conciseness_signals) / len(conciseness_signals)
+# Length acts as a gate: if length penalty is harsh, cap overall conciseness
+raw_conciseness = sum(conciseness_signals) / len(conciseness_signals)
+conciseness = min(raw_conciseness, len_score + 0.25) if len_score < 0.4 else raw_conciseness
 
 # ---------------------------------------------------------------------------
 # Weighted total

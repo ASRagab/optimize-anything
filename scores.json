@@ -1,17 +1,16 @@
 {
   "skills/generate-evaluator/SKILL.md": {
     "evaluator": "evaluators/skill_clarity.sh",
-    "baseline": 0.8049,
-    "current": 0.8049,
-    "target": 0.88,
+    "baseline": 0.856,
+    "current": 0.856,
+    "target": 0.90,
     "last_run": "2026-02-23"
   },
   "skills/optimization-guide/SKILL.md": {
     "evaluator": "evaluators/skill_clarity.sh",
-    "baseline": 0.7134,
-    "current": 0.7134,
-    "target": 0.82,
-    "last_run": "2026-02-23",
-    "notes": "First optimization cycle scored 0.8493 but expanded artifact from 4.5K to 17K chars. Evaluator needs stronger conciseness penalty before accepting optimized output."
+    "baseline": 0.8326,
+    "current": 0.8326,
+    "target": 0.88,
+    "last_run": "2026-02-23"
   }
 }

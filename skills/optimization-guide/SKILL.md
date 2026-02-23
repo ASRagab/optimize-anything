@@ -8,8 +8,8 @@ End-to-end guide for optimizing text artifacts with optimize-anything and gepa.
 
 ### 1. Prepare the Seed
 Start with your current best version of the artifact. gepa evolves from here.
-- If you have no seed, set `objective` and gepa bootstraps one from the description
-- For multi-component artifacts (e.g., system prompt + few-shot examples), use a dict: `{"system_prompt": "...", "examples": "..."}`
+1. Set `objective` if you have no seed, and let gepa bootstrap one from the description.
+2. Use a dict like `{"system_prompt": "...", "examples": "..."}` for multi-component artifacts (e.g., system prompt + few-shot examples).
 
 ### 2. Create an Evaluator
 Use the **generate-evaluator** skill to create one matched to your objective. The evaluator is the most critical piece — gepa's optimization quality is bounded by your evaluator's feedback quality.
@@ -51,7 +51,7 @@ Use `recommend_budget` for a starting point, then adjust:
 | 500-1999 | 200 | More search space to cover |
 | 2000+ | 300 | Extensive exploration recommended |
 
-Configuration options via `GEPAConfig`:
+Configure options via `GEPAConfig`:
 ```python
 from gepa.optimize_anything import GEPAConfig, EngineConfig
 
@@ -93,25 +93,25 @@ print(result.best_candidate)
 ### 6. Interpret Results
 
 The result contains:
-- `best_candidate` — the optimized artifact
-- `val_aggregate_scores` — score progression across iterations
-- `total_metric_calls` — how many evaluator invocations were used
+1. Inspect `best_candidate` — the optimized artifact.
+2. Review `val_aggregate_scores` — score progression across iterations.
+3. Check `total_metric_calls` — how many evaluator invocations were used.
 
 **Signs of a good run:**
-- Scores trend upward over iterations
-- Total metric calls < budget (converged early)
-- Best candidate clearly differs from seed in targeted ways
+1. Confirm scores trend upward over iterations.
+2. Verify total metric calls < budget (converged early).
+3. Compare best candidate against `seed.txt` or in-memory seed to see targeted differences.
 
 **Signs of problems:**
-- Scores flat from start — evaluator may not be discriminating enough
-- Scores oscillate — evaluator may be noisy or non-deterministic
-- Best score barely above seed — try richer feedback in evaluator, increase budget, or refine objective
+1. Detect flat scores from start — evaluator may not be discriminating enough.
+2. Notice oscillating scores — evaluator may be noisy or non-deterministic.
+3. Investigate runs where best score barely beats seed — add richer feedback, increase budget, or refine objective.
 
 ## Tips
 
-- **Start small:** Run with budget 20-50 first to validate your evaluator works and scores change meaningfully
-- **Rich feedback wins:** Include sub-scores, error messages, and specific improvement hints in evaluator output — this is what drives gepa's reflection
-- **Objective matters:** The `objective` string is injected into gepa's reflection prompt. Be specific: "maximize JSON extraction accuracy while keeping responses under 100 tokens" beats "make it better"
-- **Background provides context:** Use `background` for domain knowledge, constraints, or strategies: "Target audience is non-technical users. Never use jargon."
-- **Iterate on the evaluator:** If optimization results are poor, improve the evaluator before increasing budget
-- **Set evaluator working directory in plugin flows:** when evaluator commands use repo-relative files or scripts, pass `evaluator_cwd` as an absolute project path
+1. Start small: Run with budget 20-50 first to validate your evaluator on `seed.txt` and confirm that scores change meaningfully.
+2. Provide rich feedback: Include sub-scores, error messages, and specific improvement hints in evaluator output — this is what drives gepa's reflection.
+3. Clarify the objective: Set the `objective` string that is injected into gepa's reflection prompt and specify constraints like token limits or format requirements.
+4. Add background context: Use `background` for domain knowledge, constraints, or strategies such as "Target audience is non-technical users. Never use jargon."
+5. Iterate on the evaluator: Improve the evaluator before increasing budget if optimization results on `seed.txt` are poor.
+6. Set evaluator working directory: Pass `evaluator_cwd` as an absolute project path next to `seed.txt` and `eval.sh` when `eval.sh` or other evaluator commands use repo-relative files or scripts.
