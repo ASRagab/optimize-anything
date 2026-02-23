@@ -13,9 +13,13 @@ Run optimization on the given artifact using a question-driven workflow.
    - execution path for evaluator (for plugin use, ask for absolute project path and pass as `evaluator_cwd`)
 2. If no evaluator exists, invoke the `generate-evaluator` skill.
 3. Validate evaluator manually before optimization:
-   - command: `echo '{"candidate":"test"}' | bash eval.sh`
+   - command: `echo '{"candidate":"test"}' | bash ./eval.sh`
+   - if using an `artifacts/` directory:
+     - full relative path: `echo '{"candidate":"test"}' | bash artifacts/eval.sh`
+     - or set cwd and short script name: `echo '{"candidate":"test"}' | (cd artifacts && bash eval.sh)`
    - http: `curl -X POST <url> -H "Content-Type: application/json" -d '{"candidate":"test"}'`
 4. Run optimization with explicit objective and reasonable budget.
+   - `--output` must be a file path (for example `artifacts/result.txt`), not a directory (`artifacts/`).
 5. Return:
    - improved artifact
    - evaluator diagnostics that mattered most

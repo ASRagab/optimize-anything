@@ -3,10 +3,13 @@
 ## Project Structure & Module Organization
 Core code lives in `src/optimize_anything/`:
 - `cli.py` for `optimize-anything` subcommands (`optimize`, `explain`, `budget`)
-- `server.py` for FastMCP tools (`optimize`, `explain`, `recommend_budget`, `generate_evaluator`)
-- `evaluators.py` and `evaluator_generator.py` for evaluator adapters and scaffolding
+- `server.py` for FastMCP tools (`optimize`, `explain`, `recommend_budget`, `generate_evaluator`, `evaluator_intake`)
+- `evaluators.py` for command/HTTP evaluator adapters
+- `intake.py` for intake schema normalization (`evaluation_pattern`, `execution_mode`, `quality_dimensions`, constraints)
+- `evaluator_generator.py` for evaluator scaffolding from seed/objective/intake
+- `result_contract.py` for canonical optimize summary output used by CLI + MCP
 
-Tests are in `tests/` with shared fixtures in `tests/conftest.py`. Supporting material is organized in `docs/` (install/protocol/cookbook), `examples/` (seed and evaluator samples), `commands/` (slash command docs), and `skills/` (packaged skill definitions).
+Tests are in `tests/` with shared fixtures in `tests/conftest.py`. Supporting material is in `docs/` (protocol, smoke gates, remediation, release/handoff), `examples/` (seed/evaluator samples), `commands/` (slash command docs), `skills/` (packaged skills), plus root guides `install.md` and `evaluator-cookbook.md`.
 
 ## Build, Test, and Development Commands
 - `uv sync` — install runtime and dev dependencies.
@@ -15,6 +18,8 @@ Tests are in `tests/` with shared fixtures in `tests/conftest.py`. Supporting ma
 - `uv run pytest -k "explain"` — run tests by name pattern.
 - `uv run optimize-anything --help` — inspect CLI usage.
 - `uv run python -m optimize_anything.server` — start MCP server over stdio.
+- `uv run python scripts/smoke_harness.py --budget 1` — run CLI+MCP smoke harness.
+- `uv run python scripts/consecutive_smoke_gate.py --budget 1` — run consecutive smoke gate.
 
 ## Coding Style & Naming Conventions
 Target Python is `>=3.10`. Follow existing style:
@@ -22,6 +27,9 @@ Target Python is `>=3.10`. Follow existing style:
 - `snake_case` for modules, functions, and variables; `CapWords` for classes.
 - Keep interfaces separated by layer: CLI behavior in `cli.py`, MCP behavior in `server.py`, evaluator plumbing in `evaluators.py`.
 - Preserve evaluator JSON contract: input includes `candidate`; output must include numeric `score`.
+- Keep runtime mode and strategy distinct in docs/code:
+  - `execution_mode` (`command`/`http`) controls transport/runtime.
+  - `evaluation_pattern` (`verification`/`judge`/`simulation`/`composite`) describes scoring approach.
 
 ## Testing Guidelines
 Use `pytest` and `pytest-asyncio` for async tool tests.

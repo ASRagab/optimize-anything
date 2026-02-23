@@ -185,6 +185,14 @@ Any stdio-compatible MCP client works:
    ```
 
 `evaluator_cwd` is recommended when evaluator commands use repo-relative scripts or files.
+For example, with an evaluator at `artifacts/eval.sh`, either use:
+- `evaluator_command: ["bash", "artifacts/eval.sh"]`
+- or `evaluator_command: ["bash", "eval.sh"]` with `evaluator_cwd: "/absolute/path/to/project/artifacts"`
+
+Before running optimize loops, validate command evaluators manually:
+```bash
+echo '{"candidate":"test"}' | bash artifacts/eval.sh
+```
 
 ### Uninstall MCP
 
@@ -201,4 +209,6 @@ Remove the `optimize-anything` entry from your MCP client config and restart the
 | `ModuleNotFoundError` | Dependencies not installed | Run `uv sync` in the project directory (source install) |
 | Server starts but no tools | MCP config syntax error | Validate JSON: `jq . < config.json` |
 | Tool call hangs | Evaluator not executable | Run `chmod +x evaluator.sh` |
+| Evaluator command fails repeatedly | Script path/cwd mismatch | Use `artifacts/eval.sh` directly or set `evaluator_cwd` correctly, then validate with `echo '{"candidate":"test"}' | <command>` |
+| `Error: --output must be a file path` | Passed directory to CLI output | Use a file path like `artifacts/result.txt` instead of `artifacts/` |
 | Plugin MCP fails to start | uv not on PATH | Ensure `uv` is installed and available in your shell's PATH |

@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
 import sys
 
 
@@ -88,7 +94,19 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     if command_cwd is None and intake_spec is not None:
         command_cwd = intake_spec.get("evaluator_cwd")
 
+    output_error = _validate_output_path(args.output)
+    if output_error is not None:
+        print(output_error, file=sys.stderr)
+        return 1
+
     if args.evaluator_command:
+        preflight_error = _preflight_command_evaluator(
+            args.evaluator_command,
+            cwd=command_cwd,
+        )
+        if preflight_error is not None:
+            print(preflight_error, file=sys.stderr)
+            return 1
         eval_fn = command_evaluator(args.evaluator_command, cwd=command_cwd)
     elif args.evaluator_url:
         eval_fn = http_evaluator(args.evaluator_url)
@@ -124,8 +142,12 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     summary = build_optimize_summary(result)
     best = summary["best_artifact"]
     if args.output:
-        with open(args.output, "w") as f:
-            f.write(best if isinstance(best, str) else json.dumps(best))
+        try:
+            with open(args.output, "w") as f:
+                f.write(best if isinstance(best, str) else json.dumps(best))
+        except OSError as e:
+            print(f"Error writing output file '{args.output}': {e}", file=sys.stderr)
+            return 1
         summary["output_file"] = args.output
 
     print(json.dumps(summary, indent=2, default=str))
@@ -230,6 +252,165 @@ def _load_and_normalize_intake_spec(
     except ValueError as e:
         print(f"Error: invalid intake spec: {e}", file=sys.stderr)
         return None
+
+
+def _validate_output_path(output_path: str | None) -> str | None:
+    if output_path is None:
+        return None
+    output = Path(output_path)
+    if output.exists() and output.is_dir():
+        return f"Error: --output must be a file path, got directory: {output_path}"
+    return None
+
+
+def _preflight_command_evaluator(command: list[str], *, cwd: str | None) -> str | None:
+    cwd_path: Path | None = None
+    if cwd is not None:
+        cwd_path = _resolve_path(cwd, base=Path.cwd())
+        if not cwd_path.exists():
+            return _format_preflight_error(
+                command=command,
+                cwd=cwd,
+                detail=f"evaluator cwd does not exist: {cwd}",
+            )
+        if not cwd_path.is_dir():
+            return _format_preflight_error(
+                command=command,
+                cwd=cwd,
+                detail=f"evaluator cwd is not a directory: {cwd}",
+            )
+
+    executable_error = _validate_command_executable(command[0], cwd_path)
+    if executable_error is not None:
+        return _format_preflight_error(command=command, cwd=cwd, detail=executable_error)
+
+    script_arg = _maybe_script_path_arg(command)
+    if script_arg is not None:
+        script_path = _resolve_path(script_arg, base=cwd_path or Path.cwd())
+        if not script_path.exists():
+            return _format_preflight_error(
+                command=command,
+                cwd=cwd,
+                detail=(
+                    f"script path not found: {script_arg}. "
+                    "Use a correct relative path or set --evaluator-cwd."
+                ),
+            )
+        if script_path.is_dir():
+            return _format_preflight_error(
+                command=command,
+                cwd=cwd,
+                detail=f"script path is a directory: {script_arg}",
+            )
+
+    payload = json.dumps({"candidate": "__optimize_anything_preflight__"})
+    run_cwd = str(cwd_path) if cwd_path is not None else None
+    try:
+        proc = subprocess.run(
+            command,
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=10.0,
+            cwd=run_cwd,
+        )
+    except FileNotFoundError:
+        return _format_preflight_error(
+            command=command,
+            cwd=cwd,
+            detail=f"command executable not found: {command[0]}",
+        )
+    except subprocess.TimeoutExpired:
+        return _format_preflight_error(
+            command=command,
+            cwd=cwd,
+            detail="command timed out during preflight after 10.0s",
+        )
+
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip()
+        detail = f"command exited with code {proc.returncode}"
+        if stderr:
+            detail = f"{detail}; stderr: {stderr[:300]}"
+        return _format_preflight_error(command=command, cwd=cwd, detail=detail)
+
+    stdout = proc.stdout.strip()
+    try:
+        result = json.loads(stdout)
+    except json.JSONDecodeError as e:
+        snippet = stdout[:300] if stdout else "<empty stdout>"
+        return _format_preflight_error(
+            command=command,
+            cwd=cwd,
+            detail=f"stdout is not valid JSON: {e.msg}; stdout: {snippet}",
+        )
+
+    payload_error = _validate_evaluator_payload(result)
+    if payload_error is not None:
+        return _format_preflight_error(command=command, cwd=cwd, detail=payload_error)
+
+    return None
+
+
+def _validate_command_executable(command_part: str, cwd: Path | None) -> str | None:
+    if "/" in command_part:
+        executable = _resolve_path(command_part, base=cwd or Path.cwd())
+        if not executable.exists():
+            return f"command executable path not found: {command_part}"
+        if executable.is_dir():
+            return f"command executable is a directory: {command_part}"
+        return None
+
+    if shutil.which(command_part) is None:
+        return f"command executable not found in PATH: {command_part}"
+    return None
+
+
+def _maybe_script_path_arg(command: list[str]) -> str | None:
+    if len(command) < 2:
+        return None
+    executable = Path(command[0]).name.lower()
+    if executable in {"bash", "sh", "zsh", "python", "python3", "node", "ruby", "perl"}:
+        script_arg = command[1]
+        if script_arg in {"-c", "-m"} or script_arg.startswith("-"):
+            return None
+        return script_arg
+    return None
+
+
+def _validate_evaluator_payload(result: object) -> str | None:
+    if not isinstance(result, dict):
+        return "evaluator output must be a JSON object"
+
+    if "score" not in result:
+        return "evaluator output missing required 'score' field"
+
+    raw_score = result.get("score")
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return "evaluator output 'score' must be numeric"
+
+    if not math.isfinite(score):
+        return "evaluator output 'score' must be finite"
+
+    return None
+
+
+def _resolve_path(path: str, *, base: Path) -> Path:
+    resolved = Path(path).expanduser()
+    if not resolved.is_absolute():
+        resolved = base / resolved
+    return resolved
+
+
+def _format_preflight_error(*, command: list[str], cwd: str | None, detail: str) -> str:
+    command_text = " ".join(shlex.quote(part) for part in command)
+    cwd_text = cwd or os.getcwd()
+    return (
+        f"Error: evaluator preflight failed for command '{command_text}' "
+        f"(cwd: {cwd_text}): {detail}"
+    )
 
 
 if __name__ == "__main__":

@@ -79,10 +79,11 @@ def _prepare_temp_inputs(tmp_dir: Path) -> tuple[str, Path, Path]:
     evaluator_path.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        "python3 - <<'PY'\n"
+        "input_payload=$(cat)\n"
+        "python3 - \"$input_payload\" <<'PY'\n"
         "import json\n"
         "import sys\n"
-        "payload = json.load(sys.stdin)\n"
+        "payload = json.loads(sys.argv[1])\n"
         "candidate = str(payload.get('candidate', ''))\n"
         "score = min(1.0, 0.2 + len(candidate) / 200.0)\n"
         "json.dump({'score': score, 'length': len(candidate), 'quality_hint': 'length_proxy'}, sys.stdout)\n"

@@ -46,8 +46,12 @@ def command_evaluator(
                 timeout=timeout,
                 cwd=cwd,
             )
+        except FileNotFoundError:
+            return 0.0, {"error": f"Command executable not found: {command[0]}"}
         except subprocess.TimeoutExpired:
             return 0.0, {"error": f"Command timed out after {timeout}s"}
+        except OSError as e:
+            return 0.0, {"error": f"Command failed to start: {e}"}
 
         if proc.returncode != 0:
             return 0.0, {

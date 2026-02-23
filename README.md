@@ -42,7 +42,7 @@ git clone https://github.com/ASRagab/optimize-anything.git && cd optimize-anythi
 uv sync
 ```
 
-See [docs/install.md](docs/install.md) for manual MCP config, platform-specific setup, and troubleshooting.
+See [install.md](install.md) for manual MCP config, platform-specific setup, and troubleshooting.
 
 ## Quickstart
 
@@ -55,25 +55,82 @@ echo "Write a haiku about the ocean" > seed.txt
 # Create an evaluator (stdin JSON -> stdout JSON with score)
 cat > eval.sh << 'EVAL'
 #!/usr/bin/env bash
-input=$(cat)
-echo '{"score": 0.5}'
+python3 -c '
+import json
+import re
+import sys
+
+payload = json.load(sys.stdin)
+candidate = str(payload.get("candidate", ""))
+text = candidate.lower()
+
+checks = {
+    "mentions_haiku": bool(re.search(r"\bhaiku\b", text)),
+    "mentions_ocean": bool(re.search(r"\bocean\b", text)),
+    "requires_575": bool(re.search(r"5\s*-\s*7\s*-\s*5|5-7-5", text)),
+    "requires_three_lines": bool(
+        re.search(r"exactly\s*(3|three)\s*lines|three\s*lines", text)
+    ),
+    "forbids_extra_text": bool(
+        re.search(r"no title|no extra text|only.*poem|plain text", text)
+    ),
+}
+
+weights = {
+    "mentions_haiku": 0.15,
+    "mentions_ocean": 0.15,
+    "requires_575": 0.35,
+    "requires_three_lines": 0.2,
+    "forbids_extra_text": 0.15,
+}
+
+score = sum(weights[name] for name, ok in checks.items() if ok)
+score = round(min(score, 1.0), 4)
+
+print(
+    json.dumps(
+        {
+            "score": score,
+            "checks_passed": sum(1 for ok in checks.values() if ok),
+            **checks,
+        }
+    )
+)
+'
 EVAL
 chmod +x eval.sh
 
+# Validate evaluator manually before optimize
+echo '{"candidate":"test"}' | bash ./eval.sh
+
 # Run optimization
 ANTHROPIC_API_KEY=sk-... uv run optimize-anything optimize seed.txt \
-  --evaluator-command bash eval.sh \
+  --evaluator-command bash ./eval.sh \
   --budget 10 \
   --output result.txt
 ```
 
+This evaluator is intentionally non-constant: candidates that add concrete haiku constraints
+(5-7-5, exactly 3 lines, plain text only) score higher than vague prompts, so optimization
+can move away from the original seed.
+
 The optimized artifact is written to `result.txt`. CLI stdout returns a canonical
 JSON summary (`best_artifact`, `total_metric_calls`, `score_summary`,
-`top_diagnostics`, `plateau_guidance`).
+`top_diagnostics`, `plateau_guidance`, optional `evaluator_failure_signal`).
+
+If your evaluator script is under `artifacts/`, use one of these path-safe forms:
+
+```bash
+# Option A: full relative script path
+--evaluator-command bash artifacts/eval.sh
+
+# Option B: set evaluator working directory
+--evaluator-command bash eval.sh --evaluator-cwd artifacts
+```
 
 ### MCP (Model Context Protocol)
 
-Add to your MCP client config (see [docs/install.md](docs/install.md) for platform-specific paths):
+Add to your MCP client config (see [install.md](install.md) for platform-specific paths):
 
 ```json
 {
@@ -121,7 +178,32 @@ Your evaluator receives JSON on stdin and must return JSON on stdout:
 - `score` (required): float, higher is better
 - Any additional fields become side information fed back to gepa's reflection LM
 
-See [docs/evaluator-cookbook.md](docs/evaluator-cookbook.md) for full recipes.
+See [evaluator-cookbook.md](evaluator-cookbook.md) for full recipes.
+
+## Evaluator Runtime vs Pattern
+
+Two similarly named fields serve different purposes:
+
+| Field | What it answers | Allowed values | What it affects |
+|---|---|---|---|
+| `execution_mode` (runtime type) | How the evaluator is executed | `command`, `http` | CLI/MCP wiring, infra, and failure modes |
+| `evaluation_pattern` (scoring strategy) | How scoring logic is designed | `verification`, `judge`, `simulation`, `composite` | Evaluator design intent and intake metadata |
+
+Example (both fields together in intake):
+
+```json
+{
+  "execution_mode": "command",
+  "evaluation_pattern": "judge",
+  "quality_dimensions": [
+    {"name": "clarity", "weight": 0.5},
+    {"name": "constraint_adherence", "weight": 0.5}
+  ]
+}
+```
+
+`execution_mode` decides whether you run `--evaluator-command ...` or `--evaluator-url ...`.
+`evaluation_pattern` does not change transport; it describes the evaluator's scoring approach.
 
 ## CLI Commands
 
@@ -145,6 +227,7 @@ uv run optimize-anything optimize <seed_file> [options]
 | `--output, -o <file>` | Write best candidate to file | stdout |
 
 If intake is provided, `execution_mode` is used to decide which evaluator source flag is required when neither `--evaluator-command` nor `--evaluator-url` is set. Explicit evaluator flags always win if both explicit flags and intake are supplied.
+`--output` must be a file path (not an existing directory).
 
 ### explain
 
@@ -244,9 +327,11 @@ This produces a bash script (or Python HTTP server) that you can customize.
 | `ANTHROPIC_API_KEY missing` | Set `ANTHROPIC_API_KEY` in your environment |
 | `ModuleNotFoundError` | Run `uv sync` to install dependencies |
 | `Seed file not found` | Check the seed file path is correct |
-| `Evaluator command failed` | Verify evaluator outputs valid JSON to stdout and exits 0 |
+| `Evaluator command failed` | Manually run `echo '{"candidate":"test"}' | <your evaluator command>` and verify it exits 0 with valid JSON |
+| `Evaluator script not found` | Use a full relative script path (for example, `artifacts/eval.sh`) or set `--evaluator-cwd artifacts` |
 | MCP server not responding | Check MCP config paths match your clone location |
 | `Invalid JSON` from evaluator | Ensure evaluator writes only JSON to stdout (logs go to stderr) |
+| `Error: --output must be a file path` | Pass a filename like `artifacts/result.txt`, not a directory path like `artifacts/` |
 
 ## Uninstall
 
@@ -264,7 +349,7 @@ claude plugin remove optimize-anything
 
 ## Links
 
-- [Installation Guide](docs/install.md)
-- [Evaluator Cookbook](docs/evaluator-cookbook.md)
+- [Installation Guide](install.md)
+- [Evaluator Cookbook](evaluator-cookbook.md)
 - [MCP Protocol](docs/mcp-protocol.md)
 - [Examples](examples/)

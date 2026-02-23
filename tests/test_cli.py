@@ -122,6 +122,10 @@ class TestCLI:
             "gepa.optimize_anything.optimize_anything",
             fake_optimize_anything,
         )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
 
         intake_json = json.dumps(
             {"execution_mode": "http", "evaluator_cwd": " /tmp/from-intake "}
@@ -170,6 +174,10 @@ class TestCLI:
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
             lambda **kwargs: DummyResult(),
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
         )
 
         result = main(
@@ -237,3 +245,163 @@ class TestCLI:
         captured = capsys.readouterr()
         assert "invalid intake spec" in captured.err
         assert "execution_mode must be one of" in captured.err
+
+    def test_optimize_rejects_output_directory_path(self, tmp_path: Path, capsys):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        output_dir = tmp_path / "artifacts"
+        output_dir.mkdir()
+
+        result = main(
+            [
+                "optimize",
+                str(seed_file),
+                "--evaluator-url",
+                "http://localhost:8000/eval",
+                "--output",
+                str(output_dir),
+            ]
+        )
+        assert result == 1
+
+        captured = capsys.readouterr()
+        assert "--output must be a file path" in captured.err
+        assert str(output_dir) in captured.err
+
+    def test_optimize_preflight_rejects_missing_script_path(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        result = main(
+            [
+                "optimize",
+                str(seed_file),
+                "--evaluator-command",
+                "bash",
+                "eval.sh",
+                "--evaluator-cwd",
+                str(tmp_path),
+            ]
+        )
+        assert result == 1
+
+        captured = capsys.readouterr()
+        assert "evaluator preflight failed" in captured.err
+        assert "script path not found" in captured.err
+
+    def test_optimize_preflight_rejects_bad_cwd(self, tmp_path: Path, capsys):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        missing_cwd = tmp_path / "does-not-exist"
+
+        result = main(
+            [
+                "optimize",
+                str(seed_file),
+                "--evaluator-command",
+                "bash",
+                "eval.sh",
+                "--evaluator-cwd",
+                str(missing_cwd),
+            ]
+        )
+        assert result == 1
+
+        captured = capsys.readouterr()
+        assert "evaluator preflight failed" in captured.err
+        assert "cwd does not exist" in captured.err
+
+    def test_optimize_preflight_rejects_invalid_json_response(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        script = tmp_path / "eval.sh"
+        script.write_text("#!/usr/bin/env bash\necho 'not-json'\n")
+        script.chmod(0o755)
+
+        result = main(
+            [
+                "optimize",
+                str(seed_file),
+                "--evaluator-command",
+                str(script),
+            ]
+        )
+        assert result == 1
+
+        captured = capsys.readouterr()
+        assert "evaluator preflight failed" in captured.err
+        assert "stdout is not valid JSON" in captured.err
+
+    def test_optimize_preflight_success_path(self, tmp_path: Path, capsys, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        script = tmp_path / "eval.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'{"score": 0.25}\'\n')
+        script.chmod(0o755)
+
+        class DummyResult:
+            best_candidate = "candidate after preflight"
+            total_metric_calls = 1
+            val_aggregate_scores = [0.25]
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main(
+            [
+                "optimize",
+                str(seed_file),
+                "--evaluator-command",
+                "bash",
+                "eval.sh",
+                "--evaluator-cwd",
+                str(tmp_path),
+            ]
+        )
+        assert result == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["best_artifact"] == "candidate after preflight"
+
+    def test_optimize_summary_includes_failure_signal(self, tmp_path: Path, capsys, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        class DummyResult:
+            best_candidate = "candidate v1"
+            total_metric_calls = 5
+            val_aggregate_scores = [0.0, 0.0, 0.0]
+            best_idx = 0
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: "fake-evaluator",
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main(
+            [
+                "optimize",
+                str(seed_file),
+                "--evaluator-command",
+                "bash",
+                "eval.sh",
+            ]
+        )
+        assert result == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["evaluator_failure_signal"]["kind"] == "repeated_zero_scores"

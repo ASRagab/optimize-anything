@@ -39,6 +39,14 @@ class TestCommandEvaluator:
         assert "error" in info
         assert "exited with code 1" in info["error"]
 
+    def test_command_missing_executable(self, tmp_path: Path):
+        missing = tmp_path / "missing-eval.sh"
+        evaluate = command_evaluator([str(missing)])
+        score, info = evaluate("hello")
+        assert score == 0.0
+        assert "error" in info
+        assert "not found" in info["error"]
+
     def test_timeout(self, tmp_path: Path):
         script = tmp_path / "slow.sh"
         script.write_text("#!/usr/bin/env bash\nsleep 10\n")

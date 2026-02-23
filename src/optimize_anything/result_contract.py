@@ -15,8 +15,9 @@ def build_optimize_summary(result: Any) -> dict[str, Any]:
 
     top_diagnostics = _extract_top_diagnostics(result, best_idx, best_score)
     plateau_detected, plateau_guidance = _compute_plateau_guidance(scores)
+    evaluator_failure_signal = _extract_evaluator_failure_signal(result, scores)
 
-    return {
+    summary: dict[str, Any] = {
         "best_artifact": getattr(result, "best_candidate", None),
         "total_metric_calls": getattr(result, "total_metric_calls", None),
         "score_summary": {
@@ -30,7 +31,11 @@ def build_optimize_summary(result: Any) -> dict[str, Any]:
         "top_diagnostics": top_diagnostics,
         "plateau_detected": plateau_detected,
         "plateau_guidance": plateau_guidance,
+        "evaluator_failure_signal": evaluator_failure_signal,
     }
+    if evaluator_failure_signal is None:
+        summary.pop("evaluator_failure_signal")
+    return summary
 
 
 def _coerce_numeric_list(raw: Any) -> list[float]:
@@ -103,8 +108,82 @@ def _compute_plateau_guidance(scores: list[float]) -> tuple[bool, str]:
     )
 
 
+def _extract_evaluator_failure_signal(
+    result: Any,
+    scores: list[float],
+) -> dict[str, Any] | None:
+    metric_signal = _extract_failure_metric_signal(
+        getattr(result, "val_aggregate_subscores", None)
+    )
+    if metric_signal is not None:
+        return metric_signal
+
+    if len(scores) >= 3 and all(abs(score) < 1e-12 for score in scores):
+        return {
+            "kind": "repeated_zero_scores",
+            "message": (
+                "All candidate scores are 0.0 across optimization iterations. "
+                "This often indicates evaluator command/runtime or JSON contract failures."
+            ),
+            "num_candidates": len(scores),
+        }
+
+    return None
+
+
+def _extract_failure_metric_signal(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, list):
+        return None
+
+    failure_tokens = ("error", "fail", "timeout", "invalid", "exception")
+    max_by_metric: dict[str, float] = {}
+    latest_by_metric: dict[str, float] = {}
+
+    for idx, item in enumerate(raw):
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            metric_name = str(key)
+            lower_name = metric_name.lower()
+            if not any(token in lower_name for token in failure_tokens):
+                continue
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            previous_max = max_by_metric.get(metric_name)
+            if previous_max is None or numeric > previous_max:
+                max_by_metric[metric_name] = numeric
+            if idx == len(raw) - 1:
+                latest_by_metric[metric_name] = numeric
+
+    if not max_by_metric:
+        return None
+
+    active_metrics = [
+        {
+            "name": name,
+            "latest": round(latest_by_metric.get(name, 0.0), 6),
+            "max": round(max_value, 6),
+        }
+        for name, max_value in max_by_metric.items()
+        if max_value > 0.0
+    ]
+    if not active_metrics:
+        return None
+
+    active_metrics.sort(key=lambda item: item["max"], reverse=True)
+    return {
+        "kind": "failure_diagnostic_metrics",
+        "message": (
+            "Evaluator diagnostics include failure-oriented metrics. "
+            "Verify evaluator command/runtime wiring and output contract."
+        ),
+        "metrics": active_metrics[:3],
+    }
+
+
 def _delta(new: float | None, old: float | None) -> float | None:
     if new is None or old is None:
         return None
     return round(new - old, 6)
-

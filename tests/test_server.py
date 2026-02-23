@@ -217,3 +217,32 @@ class TestServerTools:
         assert data["score_summary"]["best"] == pytest.approx(0.47)
         assert data["top_diagnostics"][0]["name"] == "clarity"
         assert "plateau_guidance" in data
+
+    @pytest.mark.asyncio
+    async def test_optimize_includes_failure_signal(self, monkeypatch):
+        from optimize_anything.server import optimize
+
+        class DummyResult:
+            best_candidate = "candidate"
+            total_metric_calls = 6
+            val_aggregate_scores = [0.0, 0.0, 0.0]
+            val_aggregate_subscores = [
+                {"error_rate": 0.5, "clarity": 0.1},
+                {"error_rate": 0.7, "clarity": 0.12},
+                {"error_rate": 0.9, "clarity": 0.09},
+            ]
+            best_idx = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: "fake-evaluator",
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = await optimize(seed="seed", evaluator_command=["bash", "eval.sh"])
+        data = json.loads(result)
+        assert data["evaluator_failure_signal"]["kind"] == "failure_diagnostic_metrics"
+        assert data["evaluator_failure_signal"]["metrics"][0]["name"] == "error_rate"
