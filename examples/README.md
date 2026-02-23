@@ -1,62 +1,16 @@
 # Examples
 
-Runnable examples for optimize-anything.
+## Evaluators
 
-## Shell Evaluator (echo-score)
+- `evaluators/echo_score.sh` -- Simple bash evaluator (scores by length)
+- `evaluators/http_evaluator.py` -- HTTP evaluator server example
 
-Scores candidates by length. No external dependencies.
+## Seeds
 
-```bash
-# Test the evaluator directly
-echo '{"candidate":"hello world"}' | bash examples/evaluators/echo-score.sh
-# Output: {"score": 0.0521, "sideInfo": {"length": 11}}
+- `seeds/sample_seed.txt` -- Example prompt seed for optimization
 
-# Run optimization (requires ANTHROPIC_API_KEY)
-bun run src/cli/index.ts optimize \
-  --seed examples/seeds/sample-seed.txt \
-  --evaluator-command "bash examples/evaluators/echo-score.sh" \
-  --max-metric-calls 5 \
-  --output /tmp/optimized.txt
-
-cat /tmp/optimized.txt
-```
-
-## HTTP Evaluator (word-count target)
-
-Scores candidates by proximity to 50 words.
+## Quick Test
 
 ```bash
-# Terminal 1: start the evaluator server
-bun run examples/evaluators/http-evaluator.ts
-
-# Terminal 2: test it
-curl -X POST http://localhost:3456 \
-  -H "Content-Type: application/json" \
-  -d '{"candidate": "hello world"}'
-# Output: {"score": 0.17241379310344826, "sideInfo": {"wordCount": 2, "target": 50, "diff": 48}}
-
-# Terminal 2: run optimization
-bun run src/cli/index.ts optimize \
-  --seed examples/seeds/sample-seed.txt \
-  --evaluator-url http://localhost:3456 \
-  --objective "Write about TypeScript in exactly 50 words" \
-  --max-metric-calls 10 \
-  --output /tmp/optimized.txt
+echo '{"candidate":"test"}' | bash evaluators/echo_score.sh
 ```
-
-## Output Artifacts
-
-After a CLI run with `--run-dir`, the directory contains:
-
-- `state.json` — full run state (all candidates, scores, frontier)
-- `result.json` — final result with best candidate and events
-
-You can inspect results with:
-
-```bash
-cat runs/*/result.json | jq '.bestScore, .totalMetricCalls'
-```
-
-## Writing Your Own Evaluator
-
-See [docs/evaluator-cookbook.md](../docs/evaluator-cookbook.md) for the full contract and more recipes.

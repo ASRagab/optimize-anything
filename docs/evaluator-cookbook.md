@@ -11,7 +11,6 @@ Your evaluator receives a JSON object on stdin (command) or as a POST body (HTTP
 ```json
 {
   "candidate": "the text being optimized",
-  "example": null,
   "objective": "maximize clarity and conciseness",
   "background": "target audience is developers"
 }
@@ -19,10 +18,9 @@ Your evaluator receives a JSON object on stdin (command) or as a POST body (HTTP
 
 | Field | Type | Description |
 |---|---|---|
-| `candidate` | string \| object | The artifact being scored |
-| `example` | any | Current dataset example (if using minibatch) |
-| `objective` | string \| undefined | Natural language goal |
-| `background` | string \| undefined | Domain context |
+| `candidate` | string | The artifact being scored |
+| `objective` | string or null | Natural language goal |
+| `background` | string or null | Domain context |
 
 ### Output
 
@@ -46,36 +44,35 @@ Return JSON on stdout (command) or as the response body (HTTP):
 
 **Shorthand:** Returning just a number (`0.75`) is equivalent to `{"score": 0.75}`.
 
-`sideInfo` is powerful — the LLM proposer sees it and uses it to guide the next mutation. Include sub-scores, error messages, or improvement hints.
+`sideInfo` is powerful -- the LLM proposer sees it and uses it to guide the next mutation. Include sub-scores, error messages, or improvement hints.
 
 ## Recipe 1: Shell Evaluator (Word Count)
 
 Scores candidates by proximity to a target word count.
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # evaluators/word-count.sh
 # Target: 50 words
 
-read input
-candidate=$(echo "$input" | jq -r '.candidate')
+input=$(cat)
+candidate=$(echo "$input" | python3 -c "import sys,json; print(json.load(sys.stdin)['candidate'])")
 word_count=$(echo "$candidate" | wc -w | tr -d ' ')
 target=50
 diff=$((word_count - target))
 if [ $diff -lt 0 ]; then diff=$((-diff)); fi
 # Score: 1.0 when exactly 50 words, decreasing with distance
-score=$(echo "scale=4; 1.0 / (1.0 + $diff / 10.0)" | bc)
+score=$(python3 -c "print(round(1.0 / (1.0 + $diff / 10.0), 4))")
 echo "{\"score\": $score, \"sideInfo\": {\"wordCount\": $word_count, \"target\": $target}}"
 ```
 
 **Usage:**
 ```bash
 chmod +x evaluators/word-count.sh
-bun run src/cli/index.ts optimize \
-  --seed seed.txt \
-  --evaluator-command "./evaluators/word-count.sh" \
-  --objective "Write exactly 50 words about TypeScript" \
-  --max-metric-calls 15
+uv run optimize-anything optimize seed.txt \
+  --evaluator-command bash evaluators/word-count.sh \
+  --objective "Write exactly 50 words about Python" \
+  --budget 15
 ```
 
 **Test your evaluator:**
@@ -84,56 +81,64 @@ echo '{"candidate":"hello world"}' | bash evaluators/word-count.sh
 # Expected: {"score": 0.1724, "sideInfo": {"wordCount": 2, "target": 50}}
 ```
 
-## Recipe 2: HTTP Evaluator (Bun Server)
+## Recipe 2: HTTP Evaluator (Python Server)
 
 An HTTP evaluator that scores JSON validity and schema compliance.
 
-```typescript
-// evaluators/json-validator.ts
-const server = Bun.serve({
-  port: 3456,
-  async fetch(req) {
-    const { candidate } = await req.json();
+```python
+#!/usr/bin/env python3
+"""evaluators/json_validator.py"""
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(candidate);
-    } catch {
-      return Response.json({
-        score: 0,
-        sideInfo: { error: "Invalid JSON", log: "Candidate is not valid JSON" },
-      });
-    }
 
-    let score = 0.5; // Valid JSON baseline
-    const sideInfo: Record<string, unknown> = { validJson: true };
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        data = json.loads(body)
+        candidate = data.get("candidate", "")
 
-    // Bonus for having expected keys
-    if (typeof parsed === "object" && parsed !== null) {
-      const keys = Object.keys(parsed);
-      if (keys.includes("name")) { score += 0.15; sideInfo.hasName = true; }
-      if (keys.includes("version")) { score += 0.15; sideInfo.hasVersion = true; }
-      if (keys.includes("description")) { score += 0.2; sideInfo.hasDescription = true; }
-    }
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            result = {"score": 0, "sideInfo": {"error": "Invalid JSON"}}
+        else:
+            score = 0.5  # Valid JSON baseline
+            side_info = {"validJson": True}
+            if isinstance(parsed, dict):
+                if "name" in parsed:
+                    score += 0.15
+                    side_info["hasName"] = True
+                if "version" in parsed:
+                    score += 0.15
+                    side_info["hasVersion"] = True
+                if "description" in parsed:
+                    score += 0.2
+                    side_info["hasDescription"] = True
+            result = {"score": score, "sideInfo": side_info}
 
-    return Response.json({ score, sideInfo });
-  },
-});
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(result).encode())
 
-console.error(`JSON validator evaluator running on port ${server.port}`);
+
+if __name__ == "__main__":
+    server = HTTPServer(("localhost", 3456), Handler)
+    print("JSON validator evaluator running on port 3456", flush=True)
+    server.serve_forever()
 ```
 
 **Usage:**
 ```bash
 # Terminal 1: start evaluator
-bun run evaluators/json-validator.ts
+python3 evaluators/json_validator.py
 
 # Terminal 2: run optimization
-bun run src/cli/index.ts optimize \
-  --seed seed.json \
+uv run optimize-anything optimize seed.json \
   --evaluator-url "http://localhost:3456" \
   --objective "Generate a valid package.json" \
-  --max-metric-calls 10
+  --budget 10
 ```
 
 **Test your evaluator:**
@@ -144,30 +149,50 @@ curl -X POST http://localhost:3456 \
 # Expected: {"score": 0.65, "sideInfo": {"validJson": true, "hasName": true}}
 ```
 
+## Auto-generating Evaluators
+
+optimize-anything can generate a starter evaluator for you:
+
+```python
+from optimize_anything.evaluator_generator import generate_evaluator_script
+
+script = generate_evaluator_script(
+    seed="Your seed artifact text",
+    objective="maximize clarity",
+    evaluator_type="command",  # or "http"
+)
+
+with open("evaluator.sh", "w") as f:
+    f.write(script)
+```
+
+Or use the MCP tool:
+```json
+{
+  "tool": "generate_evaluator",
+  "arguments": {
+    "seed": "Your seed text",
+    "objective": "maximize clarity",
+    "evaluator_type": "command"
+  }
+}
+```
+
+The generated evaluator is a starting point. Customize the scoring logic to match your specific objective.
+
 ## Evaluator Factories
 
 optimize-anything provides two factory functions for programmatic use:
 
-```typescript
-import { createCommandEvaluator, createHttpEvaluator } from "optimize-anything";
+```python
+from optimize_anything.evaluators import command_evaluator, http_evaluator
 
-// Shell evaluator with 30s timeout
-const cmdEval = createCommandEvaluator("./eval.sh", { timeoutMs: 30000 });
+# Shell evaluator
+cmd_eval = command_evaluator(["bash", "eval.sh"])
 
-// HTTP evaluator with custom headers
-const httpEval = createHttpEvaluator("http://localhost:3456", {
-  timeoutMs: 10000,
-  headers: { "Authorization": "Bearer token" },
-});
+# HTTP evaluator
+http_eval = http_evaluator("http://localhost:3456")
 ```
-
-## Timeout Behavior
-
-- **Command evaluators:** The child process is killed when the timeout fires. The evaluation throws an error.
-- **HTTP evaluators:** The fetch request is aborted. The evaluation throws an error.
-- **Default:** No timeout. Set one to prevent runaway evaluators from blocking the loop.
-
-The optimizer catches evaluation errors and logs them via the event system. A failed evaluation does not crash the run — it skips that candidate.
 
 ## Error Handling
 
@@ -186,5 +211,5 @@ The optimizer catches evaluation errors and logs them via the event system. A fa
 1. **Start simple.** A 5-line bash evaluator that returns a constant score is a valid starting point.
 2. **Use `sideInfo` liberally.** The more feedback you give the proposer, the better mutations it generates.
 3. **Test evaluators independently** before plugging into optimize-anything.
-4. **Set `maxMetricCalls`** to prevent runaway costs. Each call invokes your evaluator once.
-5. **Make evaluators deterministic** when possible — same input should produce same score for reproducible runs.
+4. **Set `--budget`** to prevent runaway costs. Each call invokes your evaluator once.
+5. **Make evaluators deterministic** when possible -- same input should produce same score for reproducible runs.

@@ -1,0 +1,140 @@
+"""Tests for command_evaluator and http_evaluator."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+from optimize_anything.evaluators import command_evaluator, http_evaluator
+
+
+class TestCommandEvaluator:
+    def test_basic_evaluation(self, tmp_evaluator_script: Path):
+        evaluate = command_evaluator([str(tmp_evaluator_script)])
+        score, info = evaluate("hello")
+        assert isinstance(score, float)
+        assert score > 0
+        assert "length" in info
+
+    def test_returns_score_and_side_info(self, tmp_evaluator_script: Path):
+        evaluate = command_evaluator([str(tmp_evaluator_script)])
+        score, info = evaluate("test")
+        assert score == pytest.approx(0.4, abs=0.01)
+        assert info["length"] == 4
+
+    def test_invalid_json_output(self, tmp_bad_evaluator_script: Path):
+        evaluate = command_evaluator([str(tmp_bad_evaluator_script)])
+        score, info = evaluate("hello")
+        assert score == 0.0
+        assert "error" in info
+        assert "not valid JSON" in info["error"]
+
+    def test_command_failure(self, tmp_failing_evaluator_script: Path):
+        evaluate = command_evaluator([str(tmp_failing_evaluator_script)])
+        score, info = evaluate("hello")
+        assert score == 0.0
+        assert "error" in info
+        assert "exited with code 1" in info["error"]
+
+    def test_timeout(self, tmp_path: Path):
+        script = tmp_path / "slow.sh"
+        script.write_text("#!/usr/bin/env bash\nsleep 10\n")
+        script.chmod(0o755)
+        evaluate = command_evaluator([str(script)], timeout=0.1)
+        score, info = evaluate("hello")
+        assert score == 0.0
+        assert "timed out" in info["error"]
+
+    def test_candidate_passed_as_json(self, tmp_path: Path):
+        script = tmp_path / "echo.sh"
+        script.write_text('#!/usr/bin/env bash\ncat\n')
+        script.chmod(0o755)
+        evaluate = command_evaluator([str(script)])
+        # The script echoes stdin back, which should be valid JSON
+        score, info = evaluate("my candidate text")
+        # Output is {"candidate": "my candidate text"} which has no "score"
+        assert score == 0.0
+        assert info.get("candidate") == "my candidate text"
+
+
+class TestHttpEvaluator:
+    def test_basic_evaluation(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"score": 0.85, "detail": "good"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response) as mock_post:
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            score, info = evaluate("test candidate")
+
+            assert score == 0.85
+            assert info == {"detail": "good"}
+            mock_post.assert_called_once_with(
+                "http://localhost:8000/eval",
+                json={"candidate": "test candidate"},
+                timeout=30.0,
+                headers={},
+            )
+
+    def test_custom_headers(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"score": 0.5}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response) as mock_post:
+            evaluate = http_evaluator(
+                "http://localhost:8000/eval",
+                headers={"Authorization": "Bearer tok"},
+            )
+            evaluate("x")
+            mock_post.assert_called_once_with(
+                "http://localhost:8000/eval",
+                json={"candidate": "x"},
+                timeout=30.0,
+                headers={"Authorization": "Bearer tok"},
+            )
+
+    def test_timeout_error(self):
+        import httpx as httpx_mod
+
+        with patch(
+            "optimize_anything.evaluators.httpx.post",
+            side_effect=httpx_mod.TimeoutException("timed out"),
+        ):
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            score, info = evaluate("test")
+            assert score == 0.0
+            assert "timed out" in info["error"]
+
+    def test_http_error(self):
+        import httpx as httpx_mod
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+
+        with patch(
+            "optimize_anything.evaluators.httpx.post",
+            side_effect=httpx_mod.HTTPStatusError(
+                "500", request=MagicMock(), response=mock_response
+            ),
+        ):
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            score, info = evaluate("test")
+            assert score == 0.0
+            assert "500" in info["error"]
+
+    def test_invalid_json_response(self):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.side_effect = ValueError("not json")
+        mock_response.text = "not json"
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response):
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            score, info = evaluate("test")
+            assert score == 0.0
+            assert "not valid JSON" in info["error"]

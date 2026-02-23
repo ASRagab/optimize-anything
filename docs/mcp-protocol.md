@@ -1,115 +1,133 @@
-# MCP Protocol Hygiene
+# MCP Protocol
 
-> Non-negotiable rules for the optimize-anything MCP server.
+> Protocol documentation for the optimize-anything MCP server.
 
 ## Transport: stdio
 
-The server uses JSON-RPC 2.0 over stdin/stdout. Clients read stdout line-by-line, parsing each line as a JSON-RPC message.
+The server uses FastMCP with stdio transport. Clients communicate over stdin/stdout using the MCP protocol.
 
-## Rules
+## Starting the Server
 
-### 1. stdout: JSON-RPC only
-
-Every byte written to `process.stdout` **must** be a complete JSON-RPC 2.0 message followed by a newline. No exceptions.
-
-Violations include:
-- `console.log()` calls in any code path reachable from the server
-- Debug strings, stack traces, or progress text on stdout
-- Partial or malformed JSON
-
-**Enforcement:** Protocol regression tests assert every stdout line is valid JSON-RPC.
-
-### 2. stderr: diagnostics and logs
-
-All diagnostic output — debug logs, warnings, progress info — goes to `process.stderr`. Clients may display stderr but never parse it as protocol.
-
-```typescript
-// Correct
-process.stderr.write("Processing optimization...\n");
-
-// Wrong — breaks protocol
-console.log("Processing optimization...");
+```bash
+uv run python -m optimize_anything.server
 ```
 
-### 3. Notifications: silently consumed
+Or via the CLI entry point:
 
-JSON-RPC notifications (messages without `id`) produce **no response**. The server reads them and moves on.
-
-```json
-// Client sends (no id):
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-// Server: no output
+```bash
+uv run optimize-anything serve  # if serve subcommand is added
 ```
-
-### 4. Parse errors: valid JSON-RPC error envelope
-
-If a line is not valid JSON, respond with a standard parse error:
-
-```json
-{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}
-```
-
-### 5. Unknown methods: standard error
-
-If the method is not recognized, respond with method-not-found:
-
-```json
-{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}
-```
-
-## Implementation Reference
-
-See `src/mcp/server.ts`:
-
-| Behavior | Location |
-|---|---|
-| JSON-RPC write helper | `writeJson()` — single point of stdout output |
-| Notification handling | Line handler checks `request.id`; skips if absent or null |
-| Parse error | `catch` block in line handler |
-| Method routing | `handleRequest()` with explicit method matching |
-
-## Adding New Capabilities
-
-When adding features (progress notifications, new tools):
-
-1. Never import or call `console.log` in files reachable from `server.ts`
-2. Use `writeJson()` for all protocol output
-3. Add a protocol regression test for the new behavior
-4. Verify with `bun test --grep "mcp"` before merging
-
-## Progress Visibility
-
-The `optimize` tool includes progress snapshots in the result `content` array. Progress is serialized as additional `text` content items appended after the final result.
-
-Progress shape (`ProgressUpdate`):
-```json
-{
-  "phase": "evaluating",
-  "iterationIndex": 3,
-  "metricCallsUsed": 7,
-  "metricCallsBudget": 20,
-  "frontierSize": 2,
-  "bestScore": 0.82,
-  "timestamp": 1708646400000
-}
-```
-
-Progress is throttled to emit at most once per iteration to avoid output bloat. It does **not** alter the final result payload shape — the first content item remains the optimization result.
 
 ## Available Tools
 
-| Tool | Description |
-|---|---|
-| `optimize` | Run LLM-guided optimization with BYO evaluator |
-| `explain_optimization` | Explain why the best candidate won |
-| `recommend_budget` | Get advisory budget recommendation |
+### 1. optimize
+
+Run LLM-guided optimization on a text artifact.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `seed` | string | Yes | -- | The seed text artifact to optimize |
+| `evaluator_command` | list[str] | No | null | Shell command for evaluation |
+| `evaluator_url` | string | No | null | HTTP POST endpoint for evaluation |
+| `objective` | string | No | null | Natural language optimization goal |
+| `background` | string | No | null | Domain knowledge and constraints |
+| `max_metric_calls` | int | No | 100 | Maximum evaluator invocations |
+
+Requires either `evaluator_command` or `evaluator_url`.
+
+**Returns:** JSON string with `best_candidate`, `total_metric_calls`, and `val_scores`.
+
+**Example:**
+```json
+{
+  "seed": "You are a helpful assistant.",
+  "evaluator_command": ["bash", "eval.sh"],
+  "objective": "maximize helpfulness and clarity",
+  "max_metric_calls": 50
+}
+```
+
+### 2. explain
+
+Preview what optimization would do for a given artifact without running it.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `seed` | string | Yes | -- | The seed text artifact |
+| `objective` | string | No | null | Natural language optimization goal |
+
+**Returns:** Human-readable explanation of the optimization plan.
+
+### 3. recommend_budget
+
+Get a recommended evaluation budget based on artifact characteristics.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `seed` | string | Yes | -- | The seed text artifact |
+| `evaluator_type` | string | No | "command" | Type of evaluator ("command" or "http") |
+
+**Returns:** JSON with `recommended_budget`, `rationale`, `seed_length`, and `evaluator_type`.
+
+**Budget recommendations:**
+
+| Seed length | Budget | Rationale |
+|---|---|---|
+| < 100 chars | 50 | Short artifact -- fewer mutations needed |
+| 100-499 chars | 100 | Medium artifact -- moderate exploration |
+| 500-1999 chars | 200 | Long artifact -- more exploration needed |
+| >= 2000 chars | 300 | Very long artifact -- extensive exploration |
+
+### 4. generate_evaluator
+
+Generate an evaluator script for a given artifact and objective.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `seed` | string | Yes | -- | The seed text artifact |
+| `objective` | string | Yes | -- | What to optimize for |
+| `evaluator_type` | string | No | "command" | "command" for bash, "http" for Python server |
+
+**Returns:** The generated script content as a string.
+
+## Rules
+
+### 1. stdout: protocol only
+
+All protocol communication happens over stdout. No debug output, logging, or non-protocol data should be written to stdout.
+
+### 2. stderr: diagnostics and logs
+
+All diagnostic output -- debug logs, warnings, progress info -- goes to stderr.
+
+### 3. Error handling
+
+Tool errors are returned as JSON strings with an `error` field. The server does not crash on evaluation failures.
+
+## MCP Client Configuration
+
+```json
+{
+  "mcpServers": {
+    "optimize-anything": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/optimize-anything", "python", "-m", "optimize_anything.server"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
+    }
+  }
+}
+```
 
 ## Error Codes
 
-| Code | Meaning |
-|---|---|
-| -32700 | Parse error (invalid JSON) |
-| -32601 | Method not found |
-| -32602 | Invalid params |
-| -32001 | Application error (missing API key, etc.) |
-| -32000 | Internal server error |
+Tool-level errors are returned within the tool response as JSON. Protocol-level errors follow standard MCP/JSON-RPC conventions.

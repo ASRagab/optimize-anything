@@ -4,7 +4,8 @@
 
 | Requirement | Minimum | Check |
 |---|---|---|
-| Bun | >= 1.0 | `bun --version` |
+| Python | >= 3.10 | `python3 --version` |
+| uv | >= 0.4 | `uv --version` |
 | ANTHROPIC_API_KEY | Set in env | `echo $ANTHROPIC_API_KEY` |
 
 ## Install from Source
@@ -12,23 +13,20 @@
 ```bash
 git clone <repo-url>
 cd optimize-anything
-bun install
+uv sync
 ```
 
 ### Verify Installation
 
 ```bash
 # Run tests
-bun test
+uv run pytest
 
-# Type check
-bun run typecheck
-
-# Build CLI
-bun build src/cli/index.ts --outdir dist
+# Check CLI
+uv run optimize-anything --help
 ```
 
-All three commands should complete without errors.
+Both commands should complete without errors.
 
 ## MCP Client Configuration
 
@@ -40,8 +38,8 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "optimize-anything": {
-      "command": "bun",
-      "args": ["run", "/absolute/path/to/optimize-anything/src/mcp/server.ts"],
+      "command": "uv",
+      "args": ["run", "--directory", "/absolute/path/to/optimize-anything", "python", "-m", "optimize_anything.server"],
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
@@ -62,8 +60,8 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json` with the same structure, usin
 {
   "mcpServers": {
     "optimize-anything": {
-      "command": "bun",
-      "args": ["run", "C:\\Users\\you\\optimize-anything\\src\\mcp\\server.ts"],
+      "command": "uv",
+      "args": ["run", "--directory", "C:\\Users\\you\\optimize-anything", "python", "-m", "optimize_anything.server"],
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
@@ -74,12 +72,12 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json` with the same structure, usin
 
 ### Other MCP Clients
 
-Any MCP client that supports stdio transport can use optimize-anything. The server reads JSON-RPC 2.0 from stdin and writes responses to stdout.
+Any MCP client that supports stdio transport can use optimize-anything. The server uses FastMCP and communicates over stdin/stdout.
 
 ```json
 {
-  "command": "bun",
-  "args": ["run", "/path/to/optimize-anything/src/mcp/server.ts"]
+  "command": "uv",
+  "args": ["run", "--directory", "/path/to/optimize-anything", "python", "-m", "optimize_anything.server"]
 }
 ```
 
@@ -88,24 +86,24 @@ Any MCP client that supports stdio transport can use optimize-anything. The serv
 After configuring your MCP client:
 
 1. **Restart the MCP client** to pick up config changes
-2. **Check tool listing** — the `optimize` tool should appear
+2. **Check tool listing** -- the `optimize` tool should appear
 3. **Test with a simple call:**
    ```json
    {
-     "seedCandidate": "hello world",
-     "evaluatorCommand": "echo '{\"score\": 1}'",
-     "maxMetricCalls": 1
+     "seed": "hello world",
+     "evaluator_command": ["bash", "-c", "echo '{\"score\": 1}'"],
+     "max_metric_calls": 1
    }
    ```
-4. **Expected result:** a JSON response with `bestCandidate`, `bestScore`, and `totalMetricCalls`
+4. **Expected result:** a JSON response with `best_candidate`, `total_metric_calls`, and `val_scores`
 
 ## Common Setup Errors
 
 | Error | Cause | Fix |
 |---|---|---|
-| `spawn bun ENOENT` | Bun not in PATH for MCP client | Use absolute path: `/Users/you/.bun/bin/bun` |
+| `uv: command not found` | uv not installed | Install from https://docs.astral.sh/uv/ |
 | `ANTHROPIC_API_KEY missing` | Env var not passed through | Add `env` block to MCP config |
-| `Cannot find module` | Wrong path in `args` | Use absolute path to `src/mcp/server.ts` |
+| `ModuleNotFoundError` | Dependencies not installed | Run `uv sync` in the project directory |
 | Server starts but no tools | Config syntax error | Validate JSON with `jq . < config.json` |
 | Tool call hangs | Evaluator script not executable | Run `chmod +x evaluator.sh` |
 

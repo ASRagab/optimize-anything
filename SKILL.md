@@ -1,34 +1,21 @@
-# optimize-anything
+---
+name: optimize-anything
+description: Optimize any text artifact -- prompts, code, configs -- using evolutionary search with gepa
+---
+optimize-anything uses gepa to evolve text artifacts through LLM-guided mutations
+scored by your custom evaluator.
 
-## What optimize-anything does
+## Quick Start
+1. Prepare a seed artifact (the text you want to optimize)
+2. Create an evaluator (use the generate-evaluator skill)
+3. Run optimization with /optimize or the optimize tool
 
-LLM-guided optimization for text artifacts (prompts, code snippets, configs, and skills) using an iterative propose -> evaluate -> reflect loop.
+## Available Skills
+- **generate-evaluator** -- Create an evaluator script for your artifact
+- **optimization-guide** -- Step-by-step optimization workflow
 
-## Evaluator contract
-
-- Input on stdin: JSON payload with `candidate` and optional `example`, `objective`, `background`.
-- Output on stdout: JSON payload `{ "score": number, "sideInfo"?: object }`.
-- `score` is a floating-point value where higher is better.
-- `sideInfo` can include diagnostics (`stderr`, logs, or sub-scores) to guide next-step improvements.
-
-## Safety warnings
-
-- Evaluator commands run with full shell access under your local user permissions.
-- Always set `maxMetricCalls` to cap evaluator/LLM cost.
-- Review evaluator scripts before execution; treat them as trusted code only.
-
-## Usage examples
-
-Via MCP tool call:
-
-`optimize({ seedCandidate: "...", evaluatorCommand: "eval.sh", maxMetricCalls: 10 })`
-
-Via CLI:
-
-`bun run src/cli/index.ts optimize --seed seed.txt --evaluator-command eval.sh --max-metric-calls 10`
-
-## Optimization modes
-
-- Single-task mode: optimize against one evaluator objective.
-- Multi-task mode: optimize against a dataset/minibatch of examples.
-- Generalization mode: optimize toward behavior that transfers across examples and validation checks.
+## Available Tools (MCP)
+- **optimize** -- Run optimization on an artifact
+- **explain** -- Preview what optimization would do
+- **recommend_budget** -- Get budget recommendations
+- **generate_evaluator** -- Generate an evaluator script

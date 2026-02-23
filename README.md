@@ -9,47 +9,50 @@ optimize-anything takes a seed artifact (prompt, code snippet, config, etc.), ev
 **Core loop:** seed -> evaluate -> propose mutation -> evaluate -> reflect -> repeat
 
 Key features:
-- **BYO evaluator** — shell commands or HTTP endpoints
-- **Pareto frontier** — tracks non-dominated candidates across multiple metrics
-- **Deterministic** — seeded selection for reproducible runs
-- **Resumable** — persist and resume runs from disk
-- **MCP server** — integrate directly with Claude Desktop or any MCP client
+- **BYO evaluator** -- shell commands or HTTP endpoints
+- **Powered by gepa** -- evolutionary search with LLM-guided mutations
+- **MCP server** -- integrate directly with Claude Desktop or any MCP client
+- **CLI** -- run optimizations from the terminal
+- **Evaluator generator** -- auto-generate starter evaluator scripts
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) >= 1.0
+- Python >= 3.10
+- [uv](https://docs.astral.sh/uv/) for environment management
 - An `ANTHROPIC_API_KEY` environment variable
 - An evaluator (shell script or HTTP server) that scores candidates
 
 ## Quickstart
 
+### Install
+
+```bash
+git clone <repo-url> && cd optimize-anything
+uv sync
+```
+
 ### CLI
 
 ```bash
-# Clone and install
-git clone <repo-url> && cd optimize-anything
-bun install
-
 # Create a seed file
 echo "Write a haiku about the ocean" > seed.txt
 
 # Create an evaluator (stdin JSON -> stdout JSON with score)
 cat > eval.sh << 'EVAL'
-#!/bin/bash
-read input
+#!/usr/bin/env bash
+input=$(cat)
 echo '{"score": 0.5}'
 EVAL
 chmod +x eval.sh
 
 # Run optimization
-ANTHROPIC_API_KEY=sk-... bun run src/cli/index.ts optimize \
-  --seed seed.txt \
-  --evaluator-command "./eval.sh" \
-  --max-metric-calls 10 \
+ANTHROPIC_API_KEY=sk-... uv run optimize-anything optimize seed.txt \
+  --evaluator-command bash eval.sh \
+  --budget 10 \
   --output result.txt
 ```
 
-The optimized artifact is written to `result.txt`. A full run log is saved to `./runs/<timestamp>/result.json`.
+The optimized artifact is written to `result.txt`.
 
 ### MCP (Model Context Protocol)
 
@@ -59,8 +62,8 @@ Add to your MCP client config (see [docs/install.md](docs/install.md) for platfo
 {
   "mcpServers": {
     "optimize-anything": {
-      "command": "bun",
-      "args": ["run", "/path/to/optimize-anything/src/mcp/server.ts"],
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/optimize-anything", "python", "-m", "optimize_anything.server"],
       "env": { "ANTHROPIC_API_KEY": "sk-..." }
     }
   }
@@ -71,9 +74,9 @@ Then call the `optimize` tool:
 
 ```json
 {
-  "seedCandidate": "Write a haiku about the ocean",
-  "evaluatorCommand": "./eval.sh",
-  "maxMetricCalls": 10
+  "seed": "Write a haiku about the ocean",
+  "evaluator_command": ["bash", "eval.sh"],
+  "max_metric_calls": 10
 }
 ```
 
@@ -109,84 +112,121 @@ Returning just a number also works: `0.75`
 
 See [docs/evaluator-cookbook.md](docs/evaluator-cookbook.md) for full recipes.
 
-## CLI Flags
+## CLI Commands
+
+### optimize
+
+```bash
+uv run optimize-anything optimize <seed_file> [options]
+```
 
 | Flag | Description | Default |
 |---|---|---|
-| `--seed <file>` | Path to seed artifact file | (required unless `--objective`) |
-| `--evaluator-command <cmd>` | Shell command evaluator | — |
-| `--evaluator-url <url>` | HTTP POST evaluator URL | — |
-| `--objective <text>` | Natural language objective | — |
-| `--background <text>` | Domain knowledge/constraints | — |
-| `--max-metric-calls <n>` | Max evaluator invocations | 20 |
-| `--output <file>` | Write best candidate to file | stdout |
-| `--run-dir <dir>` | Directory for run artifacts | `./runs/<timestamp>` |
+| `seed_file` | Path to seed artifact file | (required) |
+| `--evaluator-command <cmd...>` | Shell command evaluator | -- |
+| `--evaluator-url <url>` | HTTP POST evaluator URL | -- |
+| `--objective <text>` | Natural language objective | -- |
+| `--background <text>` | Domain knowledge/constraints | -- |
+| `--budget <n>` | Max evaluator invocations | 100 |
+| `--output, -o <file>` | Write best candidate to file | stdout |
 
-## MCP Tool Arguments
+### explain
 
-| Argument | Type | Description |
-|---|---|---|
-| `seedCandidate` | string | Initial text to optimize |
-| `evaluatorCommand` | string | Shell command evaluator |
-| `evaluatorUrl` | string | HTTP POST evaluator URL |
-| `objective` | string | Natural language objective |
-| `background` | string | Domain knowledge/constraints |
-| `maxMetricCalls` | number | Max evaluator calls (default: 20) |
+```bash
+uv run optimize-anything explain <seed_file> [--objective <text>]
+```
 
-Requires either `evaluatorCommand` or `evaluatorUrl`, plus either `seedCandidate` or `objective`.
+Preview what optimization would do for a given seed artifact.
+
+### budget
+
+```bash
+uv run optimize-anything budget <seed_file>
+```
+
+Get a recommended evaluation budget based on the seed artifact length.
+
+## MCP Tools
+
+| Tool | Description |
+|---|---|
+| `optimize` | Run LLM-guided optimization with BYO evaluator |
+| `explain` | Preview what optimization would do |
+| `recommend_budget` | Get budget recommendations based on artifact size |
+| `generate_evaluator` | Generate a starter evaluator script |
+
+See [docs/mcp-protocol.md](docs/mcp-protocol.md) for full tool schemas.
 
 ## Architecture
 
 ```
-src/
-  core/
-    optimizer.ts    # Main optimization loop
-    proposer.ts     # LLM prompt builder for mutations
-    reflector.ts    # Post-evaluation reflection
-    evaluate.ts     # Candidate evaluation with caching
-    evaluator.ts    # Command and HTTP evaluator factories
-    candidate-selector.ts  # Frontier-based selection
-    pareto.ts       # Pareto dominance computation
-    state.ts        # Run state management
-    persistence.ts  # Save/load run state
-    events.ts       # Event emitter for lifecycle hooks
-    stop-conditions.ts  # Configurable stopping criteria
-    llm.ts          # Anthropic API adapter
-    asi.ts          # Eval result normalization + hashing
-  mcp/
-    server.ts       # JSON-RPC stdio MCP server
-    schema.ts       # MCP tool schema definition
-  cli/
-    index.ts        # CLI entry point
-  types.ts          # Shared type definitions
-  index.ts          # Public API exports
+src/optimize_anything/
+  __init__.py              # Public API re-exports
+  evaluators.py            # Command and HTTP evaluator factories
+  evaluator_generator.py   # Generate evaluator scripts from seed + objective
+  server.py                # FastMCP server with 4 tools
+  cli.py                   # CLI entry point (argparse)
+  __main__.py              # python -m support
+
+commands/
+  optimize.md              # /optimize command definition
+
+skills/
+  generate-evaluator/      # Evaluator generation skill
+  optimization-guide/      # Optimization workflow guide
+
+examples/
+  evaluators/              # Sample evaluator scripts
+  seeds/                   # Sample seed artifacts
+
+docs/
+  install.md               # Installation and MCP client setup
+  evaluator-cookbook.md     # Guide to writing evaluators
+  mcp-protocol.md          # MCP tool schemas and protocol docs
 ```
 
 ## Programmatic API
 
-```typescript
-import { optimizeAnything, createCommandEvaluator, AnthropicModel } from "optimize-anything";
+```python
+from optimize_anything import optimize_anything, command_evaluator
+from gepa.optimize_anything import GEPAConfig, EngineConfig
 
-const result = await optimizeAnything({
-  seedCandidate: "initial text",
-  evaluator: createCommandEvaluator("./eval.sh"),
-  model: new AnthropicModel({ apiKey: "sk-...", model: "claude-sonnet-4-20250514", maxTokens: 1024 }),
-  objective: "maximize clarity",
-  config: {
-    engine: { maxMetricCalls: 20 },
-    tracking: { runDir: "./my-run" },
-  },
-});
+eval_fn = command_evaluator(["bash", "eval.sh"])
+config = GEPAConfig(engine=EngineConfig(max_metric_calls=20))
 
-console.log(result.bestCandidate, result.bestScore);
+result = optimize_anything(
+    seed_candidate="initial text",
+    evaluator=eval_fn,
+    objective="maximize clarity",
+    config=config,
+)
+
+print(result.best_candidate)
 ```
+
+## Generating Evaluators
+
+If you do not have an evaluator, optimize-anything can generate one:
+
+```python
+from optimize_anything.evaluator_generator import generate_evaluator_script
+
+script = generate_evaluator_script(
+    seed="Your seed artifact",
+    objective="maximize clarity",
+    evaluator_type="command",  # or "http"
+)
+```
+
+This produces a bash script (or Python HTTP server) that you can customize.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | `ANTHROPIC_API_KEY missing` | Set `ANTHROPIC_API_KEY` in your environment |
-| `Seed file not found` | Check `--seed` path is correct |
+| `ModuleNotFoundError` | Run `uv sync` to install dependencies |
+| `Seed file not found` | Check the seed file path is correct |
 | `Evaluator command failed` | Verify evaluator outputs valid JSON to stdout and exits 0 |
 | MCP server not responding | Check MCP config paths match your clone location |
 | `Invalid JSON` from evaluator | Ensure evaluator writes only JSON to stdout (logs go to stderr) |
@@ -195,5 +235,5 @@ console.log(result.bestCandidate, result.bestScore);
 
 - [Installation Guide](docs/install.md)
 - [Evaluator Cookbook](docs/evaluator-cookbook.md)
-- [MCP Protocol Policy](docs/mcp-protocol.md)
+- [MCP Protocol](docs/mcp-protocol.md)
 - [Examples](examples/)
