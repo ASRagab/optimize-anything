@@ -1,0 +1,16 @@
+{
+  "skills/generate-evaluator/SKILL.md": {
+    "evaluator": "evaluators/skill_clarity.sh",
+    "baseline": 0.8049,
+    "current": 0.8049,
+    "target": 0.88,
+    "last_run": "2026-02-23"
+  },
+  "skills/optimization-guide/SKILL.md": {
+    "evaluator": "evaluators/skill_clarity.sh",
+    "baseline": 0.7134,
+    "current": 0.7134,
+    "target": 0.82,
+    "last_run": "2026-02-23"
+  }
+}
