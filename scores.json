@@ -11,6 +11,7 @@
     "baseline": 0.7134,
     "current": 0.7134,
     "target": 0.82,
-    "last_run": "2026-02-23"
+    "last_run": "2026-02-23",
+    "notes": "First optimization cycle scored 0.8493 but expanded artifact from 4.5K to 17K chars. Evaluator needs stronger conciseness penalty before accepting optimized output."
   }
 }
