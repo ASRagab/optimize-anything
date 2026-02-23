@@ -212,3 +212,112 @@ describe("MCP protocol hygiene", () => {
     }
   });
 });
+
+describe("MCP P1 tools", () => {
+  it("lists all three tools (optimize, explain_optimization, recommend_budget)", async () => {
+    const proc = spawnMcp();
+    try {
+      proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n`);
+
+      const lines = await collectStdoutLines(proc);
+
+      expect(lines.length).toBe(1);
+      const parsed = JSON.parse(lines[0]);
+      const names = parsed.result.tools.map((t: { name: string }) => t.name);
+      expect(names).toContain("optimize");
+      expect(names).toContain("explain_optimization");
+      expect(names).toContain("recommend_budget");
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
+  });
+
+  it("recommend_budget returns valid recommendation", async () => {
+    const proc = spawnMcp();
+    try {
+      proc.stdin.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "recommend_budget",
+          arguments: { seedCandidate: "hello world", objective: "improve clarity" },
+        },
+      })}\n`);
+
+      const lines = await collectStdoutLines(proc);
+
+      expect(lines.length).toBe(1);
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.result).toBeDefined();
+      const content = JSON.parse(parsed.result.content[0].text);
+      expect(content.recommended).toBeGreaterThan(0);
+      expect(content.confidence).toBeDefined();
+      expect(content.rationale).toBeDefined();
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
+  });
+
+  it("explain_optimization returns valid explanation", async () => {
+    const proc = spawnMcp();
+    try {
+      proc.stdin.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "explain_optimization",
+          arguments: {
+            runResult: {
+              candidates: [
+                { candidate: "a", parentIndex: null, scores: {}, aggregateScore: 0.5, sideInfo: [], metricCallIndex: 0 },
+                { candidate: "b", parentIndex: 0, scores: {}, aggregateScore: 0.8, sideInfo: [], metricCallIndex: 1 },
+              ],
+              frontier: [1],
+              events: [],
+              bestScore: 0.8,
+            },
+          },
+        },
+      })}\n`);
+
+      const lines = await collectStdoutLines(proc);
+
+      expect(lines.length).toBe(1);
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.result).toBeDefined();
+      const content = JSON.parse(parsed.result.content[0].text);
+      expect(content.summary).toBeDefined();
+      expect(content.wins).toBeDefined();
+      expect(Array.isArray(content.wins)).toBe(true);
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
+  });
+
+  it("explain_optimization returns error for missing runResult", async () => {
+    const proc = spawnMcp();
+    try {
+      proc.stdin.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "explain_optimization", arguments: {} },
+      })}\n`);
+
+      const lines = await collectStdoutLines(proc);
+
+      expect(lines.length).toBe(1);
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.error).toBeDefined();
+      expect(parsed.error.code).toBe(-32602);
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
+  });
+});

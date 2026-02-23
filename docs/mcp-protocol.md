@@ -77,6 +77,33 @@ When adding features (progress notifications, new tools):
 3. Add a protocol regression test for the new behavior
 4. Verify with `bun test --grep "mcp"` before merging
 
+## Progress Visibility
+
+The `optimize` tool includes progress snapshots in the result `content` array. Progress is serialized as additional `text` content items appended after the final result.
+
+Progress shape (`ProgressUpdate`):
+```json
+{
+  "phase": "evaluating",
+  "iterationIndex": 3,
+  "metricCallsUsed": 7,
+  "metricCallsBudget": 20,
+  "frontierSize": 2,
+  "bestScore": 0.82,
+  "timestamp": 1708646400000
+}
+```
+
+Progress is throttled to emit at most once per iteration to avoid output bloat. It does **not** alter the final result payload shape — the first content item remains the optimization result.
+
+## Available Tools
+
+| Tool | Description |
+|---|---|
+| `optimize` | Run LLM-guided optimization with BYO evaluator |
+| `explain_optimization` | Explain why the best candidate won |
+| `recommend_budget` | Get advisory budget recommendation |
+
 ## Error Codes
 
 | Code | Meaning |

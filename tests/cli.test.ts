@@ -35,4 +35,9 @@ describe("CLI arg parsing", () => {
     const args = parseArgs(["optimize", "--max-metric-calls", "abc", "--evaluator-command", "eval.sh"]);
     expect(Number.isNaN(args.maxMetricCalls)).toBe(true);
   });
+
+  it("parses --recommend-budget flag", () => {
+    const args = parseArgs(["optimize", "--seed", "seed.txt", "--recommend-budget"]);
+    expect(args.recommendBudget).toBe(true);
+  });
 });

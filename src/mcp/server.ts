@@ -2,7 +2,49 @@ import { createInterface } from "node:readline";
 import { createCommandEvaluator, createHttpEvaluator } from "../core/evaluator.js";
 import { AnthropicModel } from "../core/llm.js";
 import { optimizeAnything } from "../core/optimizer.js";
-import { optimizeToolSchema } from "./schema.js";
+import { explainOptimization } from "../core/explain.js";
+import { recommendBudget } from "../core/budget.js";
+import { selectCurrentBest } from "../core/candidate-selector.js";
+import { optimizeToolSchema, explainToolSchema, recommendBudgetToolSchema } from "./schema.js";
+import type { ProgressUpdate, OptimizationEvent, CandidateRecord } from "../types.js";
+
+function buildProgressFromEvents(
+  events: OptimizationEvent[],
+  candidates: CandidateRecord[],
+  frontier: number[],
+  metricCallsBudget: number,
+): ProgressUpdate[] {
+  const updates: ProgressUpdate[] = [];
+  let metricCalls = 0;
+  let currentFrontierSize = 0;
+  let bestScore = 0;
+
+  for (const event of events) {
+    if (event.type === "evaluation_end") metricCalls++;
+    if (event.type === "frontier_updated") {
+      currentFrontierSize++;
+      const bestIdx = selectCurrentBest(candidates.slice(0, metricCalls));
+      if (bestIdx >= 0) bestScore = candidates[bestIdx].aggregateScore;
+    }
+    if (event.type === "iteration_end" && event.iterationIndex !== undefined) {
+      updates.push({
+        phase: "evaluating",
+        iterationIndex: event.iterationIndex,
+        metricCallsUsed: metricCalls,
+        metricCallsBudget,
+        frontierSize: currentFrontierSize || frontier.length,
+        bestScore,
+        timestamp: event.timestamp,
+      });
+    }
+  }
+
+  if (updates.length > 0) {
+    updates[updates.length - 1].phase = "complete";
+  }
+
+  return updates;
+}
 
 type JsonRpcRequest = {
   jsonrpc: "2.0";
@@ -22,13 +64,39 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
   }
 
   if (request.method === "tools/list") {
-    writeJson({ jsonrpc: "2.0", id: request.id, result: { tools: [optimizeToolSchema] } });
+    writeJson({ jsonrpc: "2.0", id: request.id, result: { tools: [optimizeToolSchema, explainToolSchema, recommendBudgetToolSchema] } });
     return;
   }
 
   if (request.method === "tools/call") {
     const name = String(request.params?.name ?? "");
     const args = (request.params?.arguments ?? {}) as Record<string, unknown>;
+
+    if (name === "recommend_budget") {
+      const seedCandidate = typeof args.seedCandidate === "string" ? args.seedCandidate : "";
+      const objective = typeof args.objective === "string" ? args.objective : undefined;
+      const datasetSize = typeof args.datasetSize === "number" ? args.datasetSize : 0;
+      const rec = recommendBudget({ seedCandidate, objective, datasetSize });
+      writeJson({ jsonrpc: "2.0", id: request.id, result: { content: [{ type: "text", text: JSON.stringify(rec, null, 2) }] } });
+      return;
+    }
+
+    if (name === "explain_optimization") {
+      const runResult = args.runResult as { candidates?: CandidateRecord[]; frontier?: number[]; events?: OptimizationEvent[]; bestScore?: number } | undefined;
+      if (!runResult?.candidates) {
+        writeJson({ jsonrpc: "2.0", id: request.id, error: { code: -32602, message: "runResult with candidates is required" } });
+        return;
+      }
+      const explanation = explainOptimization({
+        candidates: runResult.candidates,
+        frontier: runResult.frontier ?? [],
+        events: runResult.events ?? [],
+        bestScore: runResult.bestScore ?? 0,
+      });
+      writeJson({ jsonrpc: "2.0", id: request.id, result: { content: [{ type: "text", text: JSON.stringify(explanation, null, 2) }] } });
+      return;
+    }
+
     if (name !== "optimize") {
       writeJson({ jsonrpc: "2.0", id: request.id, error: { code: -32602, message: "Unknown tool" } });
       return;
@@ -72,25 +140,36 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
       config: { engine: { maxMetricCalls } },
     });
 
+    // Build progress timeline retrospectively from events
+    const progressUpdates = buildProgressFromEvents(result.events, result.candidates, result.frontier, maxMetricCalls);
+
+    // Build content array: result first, then progress log
+    const content: Array<{ type: string; text: string }> = [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            bestCandidate: result.bestCandidate,
+            bestScore: result.bestScore,
+            totalMetricCalls: result.totalMetricCalls,
+          },
+          null,
+          2,
+        ),
+      },
+    ];
+
+    if (progressUpdates.length > 0) {
+      content.push({
+        type: "text",
+        text: JSON.stringify({ progress: progressUpdates }),
+      });
+    }
+
     writeJson({
       jsonrpc: "2.0",
       id: request.id,
-      result: {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                bestCandidate: result.bestCandidate,
-                bestScore: result.bestScore,
-                totalMetricCalls: result.totalMetricCalls,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      },
+      result: { content },
     });
     return;
   }

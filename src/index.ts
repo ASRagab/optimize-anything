@@ -12,3 +12,5 @@ export {
 export { EventEmitter, serializeEvents, deserializeEvents } from "./core/events.js";
 export { saveState, loadState } from "./core/persistence.js";
 export { captureLog, normalizeEvalResult, hashEvalKey } from "./core/asi.js";
+export { explainOptimization } from "./core/explain.js";
+export { recommendBudget } from "./core/budget.js";

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createCommandEvaluator, createHttpEvaluator } from "../core/evaluator.js";
 import { AnthropicModel } from "../core/llm.js";
 import { optimizeAnything } from "../core/optimizer.js";
+import { recommendBudget } from "../core/budget.js";
 
 export type CliArgs = {
   command: string;
@@ -14,6 +15,7 @@ export type CliArgs = {
   objective?: string;
   background?: string;
   maxMetricCalls?: number;
+  recommendBudget?: boolean;
 };
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -47,6 +49,8 @@ export function parseArgs(argv: string[]): CliArgs {
     } else if (key === "--max-metric-calls") {
       args.maxMetricCalls = Number(value);
       i++;
+    } else if (key === "--recommend-budget") {
+      args.recommendBudget = true;
     }
   }
 
@@ -79,6 +83,15 @@ async function runCli(rawArgv: string[]): Promise<void> {
   }
   if (!seedCandidate) {
     throw new Error("No seed candidate available");
+  }
+
+  if (args.recommendBudget) {
+    const rec = recommendBudget({
+      seedCandidate,
+      objective: args.objective,
+    });
+    process.stdout.write(JSON.stringify(rec, null, 2) + "\n");
+    return;
   }
 
   const evaluator = args.evaluatorCommand

@@ -23,3 +23,32 @@ export const optimizeToolSchema = {
     ],
   },
 } as const;
+
+export const explainToolSchema = {
+  name: "explain_optimization",
+  description: "Explain why the best candidate won in a completed optimization run",
+  inputSchema: {
+    type: "object",
+    properties: {
+      runResult: {
+        type: "object",
+        description: "The result object from a completed optimize call (with candidates, events, frontier)",
+      },
+    },
+    required: ["runResult"],
+  },
+} as const;
+
+export const recommendBudgetToolSchema = {
+  name: "recommend_budget",
+  description: "Get an advisory budget recommendation for an optimization run",
+  inputSchema: {
+    type: "object",
+    properties: {
+      seedCandidate: { type: "string", description: "The initial text artifact" },
+      objective: { type: "string", description: "Natural language objective" },
+      datasetSize: { type: "number", description: "Number of examples in the dataset", default: 0 },
+    },
+    required: ["seedCandidate"],
+  },
+} as const;

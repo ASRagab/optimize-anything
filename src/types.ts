@@ -112,3 +112,32 @@ export type OptimizeResult = {
 export interface LanguageModel {
   generate(prompt: string, options?: { signal?: AbortSignal }): Promise<string>;
 }
+
+export type ProgressUpdate = {
+  phase: "initializing" | "evaluating" | "proposing" | "reflecting" | "complete";
+  iterationIndex: number;
+  metricCallsUsed: number;
+  metricCallsBudget: number;
+  frontierSize: number;
+  bestScore: number;
+  timestamp: number;
+};
+
+export type BudgetRecommendation = {
+  recommended: number;
+  confidence: "low" | "medium" | "high";
+  rationale: string;
+  factors: {
+    datasetSize: number;
+    candidateComplexity: "simple" | "moderate" | "complex";
+    objectiveComplexity: "simple" | "moderate" | "complex";
+  };
+};
+
+export type ExplanationSection = {
+  wins: string[];
+  regressions: string[];
+  dominantFactors: string[];
+  nextActions: string[];
+  summary: string;
+};
