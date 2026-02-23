@@ -24,12 +24,16 @@ claude plugin add https://github.com/ASRagab/optimize-anything
 ```
 > Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10. The MCP server auto-installs its dependencies on first use.
 
-**Terminal CLI** — `optimize-anything` command in your shell:
+**Terminal CLI** — installs the `optimize-anything` command in your shell:
 
 ```bash
+# One-liner (installs uv if needed):
 curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
+
+# Or directly with uv:
+uv tool install git+https://github.com/ASRagab/optimize-anything
 ```
-> Installs `uv` automatically if not present. Plugin and CLI are independent — install either or both.
+> Plugin and CLI are independent — install either or both.
 
 **From source** (for development):
 
@@ -237,19 +241,17 @@ This produces a bash script (or Python HTTP server) that you can customize.
 
 ## Uninstall
 
-**Global CLI** (installed via `install.sh` or `uv tool install`):
+**CLI** (`optimize-anything` command):
 
 ```bash
 uv tool uninstall optimize-anything
 ```
 
-Or via the installer script:
+**Plugin:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash -s -- --uninstall
+claude plugin remove optimize-anything
 ```
-
-**Source install:** Delete the cloned directory and remove the MCP entry from your client config.
 
 ## Links
 
