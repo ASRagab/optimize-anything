@@ -27,13 +27,13 @@ Key features:
 **CLI one-liner** (installs `uv` if needed, then `optimize-anything` globally):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/optimize-anything/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
 ```
 
 **Claude Code plugin** (auto-discovers MCP tools, skills, and commands):
 
 ```bash
-claude plugin add https://github.com/OWNER/optimize-anything
+claude plugin add https://github.com/ASRagab/optimize-anything
 ```
 
 **From source** (for development):
@@ -251,7 +251,7 @@ uv tool uninstall optimize-anything
 Or via the installer script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/optimize-anything/main/install.sh | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash -s -- --uninstall
 ```
 
 **Source install:** Delete the cloned directory and remove the MCP entry from your client config.

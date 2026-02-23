@@ -14,7 +14,7 @@
 One command — installs `uv` if needed, then `optimize-anything` as a global CLI:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/optimize-anything/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
 ```
 
 After installation, `optimize-anything` is available globally:
@@ -28,7 +28,7 @@ optimize-anything --help
 If you already have [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install git+https://github.com/OWNER/optimize-anything
+uv tool install git+https://github.com/ASRagab/optimize-anything
 ```
 
 ## Install from Source (for development)
@@ -70,7 +70,7 @@ claude plugin add /path/to/optimize-anything
 Or from a git URL:
 
 ```bash
-claude plugin add https://github.com/OWNER/optimize-anything
+claude plugin add https://github.com/ASRagab/optimize-anything
 ```
 
 This gives you:

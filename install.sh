@@ -2,10 +2,10 @@
 # optimize-anything installer / uninstaller
 #
 # Install:
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/optimize-anything/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
 #
 # Uninstall:
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/optimize-anything/main/install.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash -s -- --uninstall
 #
 # What install does:
 #   1. Installs uv (if not already installed)
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 # --- Configuration ---
-REPO="${OPTIMIZE_ANYTHING_REPO:-git+https://github.com/OWNER/optimize-anything}"
+REPO="${OPTIMIZE_ANYTHING_REPO:-git+https://github.com/ASRagab/optimize-anything}"
 REF="${OPTIMIZE_ANYTHING_REF:-main}"
 
 # Local paths don't use @ref syntax
