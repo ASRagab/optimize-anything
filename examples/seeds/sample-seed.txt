@@ -1,0 +1,1 @@
+TypeScript is a programming language that builds on JavaScript by adding static type definitions. Types provide a way to describe the shape of an object, providing better documentation and allowing TypeScript to validate that your code is working correctly.
