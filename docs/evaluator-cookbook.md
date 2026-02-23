@@ -10,17 +10,15 @@ Your evaluator receives a JSON object on stdin (command) or as a POST body (HTTP
 
 ```json
 {
-  "candidate": "the text being optimized",
-  "objective": "maximize clarity and conciseness",
-  "background": "target audience is developers"
+  "candidate": "the text being optimized"
 }
 ```
 
 | Field | Type | Description |
 |---|---|---|
 | `candidate` | string | The artifact being scored |
-| `objective` | string or null | Natural language goal |
-| `background` | string or null | Domain context |
+
+> **Note:** The `objective` and `background` strings are passed to gepa's reflection LM, not to your evaluator. Your evaluator only sees the candidate text.
 
 ### Output
 
@@ -29,22 +27,18 @@ Return JSON on stdout (command) or as the response body (HTTP):
 ```json
 {
   "score": 0.75,
-  "sideInfo": {
-    "readability": 0.8,
-    "accuracy": 0.7,
-    "log": "Good structure but could be more concise"
-  }
+  "readability": 0.8,
+  "accuracy": 0.7,
+  "notes": "Good structure but could be more concise"
 }
 ```
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `score` | number | Yes | Overall score, higher is better |
-| `sideInfo` | object | No | Diagnostics fed back to the LLM proposer |
+| *(any other keys)* | any | No | Side information fed to gepa's reflection LM |
 
-**Shorthand:** Returning just a number (`0.75`) is equivalent to `{"score": 0.75}`.
-
-`sideInfo` is powerful -- the LLM proposer sees it and uses it to guide the next mutation. Include sub-scores, error messages, or improvement hints.
+All fields beyond `score` become side information that gepa's reflection LM uses to guide the next mutation. Include sub-scores, error messages, or improvement hints.
 
 ## Recipe 1: Shell Evaluator (Word Count)
 
@@ -63,7 +57,7 @@ diff=$((word_count - target))
 if [ $diff -lt 0 ]; then diff=$((-diff)); fi
 # Score: 1.0 when exactly 50 words, decreasing with distance
 score=$(python3 -c "print(round(1.0 / (1.0 + $diff / 10.0), 4))")
-echo "{\"score\": $score, \"sideInfo\": {\"wordCount\": $word_count, \"target\": $target}}"
+echo "{\"score\": $score, \"wordCount\": $word_count, \"target\": $target}"
 ```
 
 **Usage:**
@@ -78,7 +72,7 @@ uv run optimize-anything optimize seed.txt \
 **Test your evaluator:**
 ```bash
 echo '{"candidate":"hello world"}' | bash evaluators/word-count.sh
-# Expected: {"score": 0.1724, "sideInfo": {"wordCount": 2, "target": 50}}
+# Expected: {"score": 0.1724, "wordCount": 2, "target": 50}
 ```
 
 ## Recipe 2: HTTP Evaluator (Python Server)
@@ -101,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             parsed = json.loads(candidate)
         except (json.JSONDecodeError, TypeError):
-            result = {"score": 0, "sideInfo": {"error": "Invalid JSON"}}
+            result = {"score": 0, "error": "Invalid JSON"}
         else:
             score = 0.5  # Valid JSON baseline
             side_info = {"validJson": True}
@@ -115,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "description" in parsed:
                     score += 0.2
                     side_info["hasDescription"] = True
-            result = {"score": score, "sideInfo": side_info}
+            result = {"score": score, **side_info}
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -146,7 +140,7 @@ uv run optimize-anything optimize seed.json \
 curl -X POST http://localhost:3456 \
   -H "Content-Type: application/json" \
   -d '{"candidate": "{\"name\": \"test\"}"}'
-# Expected: {"score": 0.65, "sideInfo": {"validJson": true, "hasName": true}}
+# Expected: {"score": 0.65, "validJson": true, "hasName": true}
 ```
 
 ## Auto-generating Evaluators
@@ -204,12 +198,12 @@ http_eval = http_evaluator("http://localhost:3456")
 | Score is not a finite number | Error thrown, candidate skipped |
 | Timeout exceeded | Error thrown, candidate skipped |
 
-**Best practice:** Write diagnostics to stderr (command) or log them in `sideInfo` (both). Never write non-JSON to stdout in a command evaluator.
+**Best practice:** Write diagnostics to stderr (command) or include them as extra keys in the JSON output (both). Never write non-JSON to stdout in a command evaluator.
 
 ## Tips
 
 1. **Start simple.** A 5-line bash evaluator that returns a constant score is a valid starting point.
-2. **Use `sideInfo` liberally.** The more feedback you give the proposer, the better mutations it generates.
+2. **Include diagnostic fields liberally.** The more feedback you give gepa's reflection LM (as extra JSON keys), the better mutations it generates.
 3. **Test evaluators independently** before plugging into optimize-anything.
 4. **Set `--budget`** to prevent runaway costs. Each call invokes your evaluator once.
 5. **Make evaluators deterministic** when possible -- same input should produce same score for reproducible runs.

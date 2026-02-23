@@ -87,9 +87,7 @@ Your evaluator receives JSON on stdin and must return JSON on stdout:
 **Input (stdin):**
 ```json
 {
-  "candidate": "the text artifact being scored",
-  "objective": "optional objective string",
-  "background": "optional domain context"
+  "candidate": "the text artifact being scored"
 }
 ```
 
@@ -97,18 +95,13 @@ Your evaluator receives JSON on stdin and must return JSON on stdout:
 ```json
 {
   "score": 0.75,
-  "sideInfo": {
-    "readability": 0.8,
-    "accuracy": 0.7,
-    "log": "optional diagnostic text"
-  }
+  "length": 42,
+  "notes": "optional diagnostic text"
 }
 ```
 
 - `score` (required): float, higher is better
-- `sideInfo` (optional): diagnostics fed back to the LLM proposer
-
-Returning just a number also works: `0.75`
+- Any additional fields become side information fed back to gepa's reflection LM
 
 See [docs/evaluator-cookbook.md](docs/evaluator-cookbook.md) for full recipes.
 

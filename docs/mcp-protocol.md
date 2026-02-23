@@ -12,12 +12,6 @@ The server uses FastMCP with stdio transport. Clients communicate over stdin/std
 uv run python -m optimize_anything.server
 ```
 
-Or via the CLI entry point:
-
-```bash
-uv run optimize-anything serve  # if serve subcommand is added
-```
-
 ## Available Tools
 
 ### 1. optimize
