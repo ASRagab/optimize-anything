@@ -58,6 +58,46 @@ class TestCommandEvaluator:
         # Output is {"candidate": "my candidate text"} which has no "score"
         assert score == 0.0
         assert info.get("candidate") == "my candidate text"
+        assert "missing required 'score'" in info["error"]
+
+    def test_invalid_score_type(self, tmp_path: Path):
+        script = tmp_path / "bad_score.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'{"score": "high"}\'\n')
+        script.chmod(0o755)
+        evaluate = command_evaluator([str(script)])
+        score, info = evaluate("candidate")
+        assert score == 0.0
+        assert "must be numeric" in info["error"]
+
+    def test_non_object_json_output(self, tmp_path: Path):
+        script = tmp_path / "list_output.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'[1, 2, 3]\'\n')
+        script.chmod(0o755)
+        evaluate = command_evaluator([str(script)])
+        score, info = evaluate("candidate")
+        assert score == 0.0
+        assert "must be a JSON object" in info["error"]
+
+    def test_command_uses_cwd(self, tmp_path: Path):
+        script = tmp_path / "eval.sh"
+        script.write_text(
+            '#!/usr/bin/env bash\n'
+            'input=$(cat)\n'
+            'candidate=$(echo "$input" | python3 -c "import sys,json; print(json.load(sys.stdin)[\'candidate\'])")\n'
+            'if [ -f marker.txt ]; then\n'
+            '  echo "{\\"score\\": 1.0, \\"candidate\\": \\"$candidate\\"}"\n'
+            'else\n'
+            '  echo "{\\"score\\": 0.0, \\"missing\\": \\"marker\\"}"\n'
+            "fi\n"
+        )
+        script.chmod(0o755)
+        (tmp_path / "marker.txt").write_text("ok")
+
+        evaluate = command_evaluator(["./eval.sh"], cwd=str(tmp_path))
+        score, info = evaluate("hello")
+
+        assert score == 1.0
+        assert info["candidate"] == "hello"
 
 
 class TestHttpEvaluator:
@@ -138,3 +178,25 @@ class TestHttpEvaluator:
             score, info = evaluate("test")
             assert score == 0.0
             assert "not valid JSON" in info["error"]
+
+    def test_invalid_score_value(self):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"score": "great", "detail": "oops"}
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response):
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            score, info = evaluate("test")
+            assert score == 0.0
+            assert "must be numeric" in info["error"]
+
+    def test_non_object_json_body(self):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = [1, 2, 3]
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response):
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            score, info = evaluate("test")
+            assert score == 0.0
+            assert "must be a JSON object" in info["error"]

@@ -179,9 +179,12 @@ Any stdio-compatible MCP client works:
    {
      "seed": "hello world",
      "evaluator_command": ["bash", "-c", "echo '{\"score\": 1}'"],
+     "evaluator_cwd": "/absolute/path/to/your/project",
      "max_metric_calls": 1
    }
    ```
+
+`evaluator_cwd` is recommended when evaluator commands use repo-relative scripts or files.
 
 ### Uninstall MCP
 

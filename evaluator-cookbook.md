@@ -192,11 +192,11 @@ http_eval = http_evaluator("http://localhost:3456")
 
 | Evaluator behavior | Result |
 |---|---|
-| Exit code != 0 (command) | Error thrown, candidate skipped |
-| Non-200 response (HTTP) | Error thrown, candidate skipped |
-| Invalid JSON output | Error thrown, candidate skipped |
-| Score is not a finite number | Error thrown, candidate skipped |
-| Timeout exceeded | Error thrown, candidate skipped |
+| Exit code != 0 (command) | Returns `score: 0.0` with error side info |
+| Non-200 response (HTTP) | Returns `score: 0.0` with error side info |
+| Invalid JSON output | Returns `score: 0.0` with error side info |
+| Score is missing/non-numeric/non-finite | Returns `score: 0.0` with error side info |
+| Timeout exceeded | Returns `score: 0.0` with error side info |
 
 **Best practice:** Write diagnostics to stderr (command) or include them as extra keys in the JSON output (both). Never write non-JSON to stdout in a command evaluator.
 

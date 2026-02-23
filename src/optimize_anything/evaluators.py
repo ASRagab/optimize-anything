@@ -7,6 +7,7 @@ These bridge external scoring systems to gepa's evaluator protocol:
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from typing import Any, Callable
 
@@ -17,6 +18,7 @@ def command_evaluator(
     command: list[str],
     *,
     timeout: float = 30.0,
+    cwd: str | None = None,
 ) -> Callable[[str], tuple[float, dict[str, Any]]]:
     """Create an evaluator that runs a shell command.
 
@@ -27,6 +29,7 @@ def command_evaluator(
     Args:
         command: Command and arguments to execute.
         timeout: Max seconds to wait for the command.
+        cwd: Working directory used to run the command.
 
     Returns:
         An evaluator function compatible with gepa.
@@ -41,6 +44,7 @@ def command_evaluator(
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                cwd=cwd,
             )
         except subprocess.TimeoutExpired:
             return 0.0, {"error": f"Command timed out after {timeout}s"}
@@ -59,9 +63,7 @@ def command_evaluator(
                 "stdout": proc.stdout.strip(),
             }
 
-        score = float(result.get("score", 0.0))
-        side_info = {k: v for k, v in result.items() if k != "score"}
-        return score, side_info
+        return _parse_evaluator_result(result)
 
     return evaluate
 
@@ -111,8 +113,35 @@ def http_evaluator(
                 "body": resp.text[:500],
             }
 
-        score = float(result.get("score", 0.0))
-        side_info = {k: v for k, v in result.items() if k != "score"}
-        return score, side_info
+        return _parse_evaluator_result(result)
 
     return evaluate
+
+
+def _parse_evaluator_result(result: Any) -> tuple[float, dict[str, Any]]:
+    """Validate evaluator JSON payload and extract score + side information."""
+    if not isinstance(result, dict):
+        return 0.0, {
+            "error": "Evaluator output must be a JSON object",
+            "received_type": type(result).__name__,
+        }
+
+    side_info = {k: v for k, v in result.items() if k != "score"}
+    if "score" not in result:
+        side_info["error"] = "Evaluator output missing required 'score' field"
+        return 0.0, side_info
+
+    raw_score = result["score"]
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        side_info["error"] = "Evaluator 'score' must be numeric"
+        side_info["score"] = raw_score
+        return 0.0, side_info
+
+    if not math.isfinite(score):
+        side_info["error"] = "Evaluator 'score' must be finite"
+        side_info["score"] = raw_score
+        return 0.0, side_info
+
+    return score, side_info

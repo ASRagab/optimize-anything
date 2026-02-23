@@ -67,7 +67,9 @@ ANTHROPIC_API_KEY=sk-... uv run optimize-anything optimize seed.txt \
   --output result.txt
 ```
 
-The optimized artifact is written to `result.txt`.
+The optimized artifact is written to `result.txt`. CLI stdout returns a canonical
+JSON summary (`best_artifact`, `total_metric_calls`, `score_summary`,
+`top_diagnostics`, `plateau_guidance`).
 
 ### MCP (Model Context Protocol)
 
@@ -91,6 +93,7 @@ Then call the `optimize` tool:
 {
   "seed": "Write a haiku about the ocean",
   "evaluator_command": ["bash", "eval.sh"],
+  "evaluator_cwd": "/absolute/path/to/your/project",
   "max_metric_calls": 10
 }
 ```
@@ -132,11 +135,16 @@ uv run optimize-anything optimize <seed_file> [options]
 |---|---|---|
 | `seed_file` | Path to seed artifact file | (required) |
 | `--evaluator-command <cmd...>` | Shell command evaluator | -- |
+| `--evaluator-cwd <path>` | Working directory for evaluator command | current process cwd |
 | `--evaluator-url <url>` | HTTP POST evaluator URL | -- |
+| `--intake-json <json-string>` | Inline evaluator intake JSON (validated) | -- |
+| `--intake-file <path>` | Path to evaluator intake JSON file (validated) | -- |
 | `--objective <text>` | Natural language objective | -- |
 | `--background <text>` | Domain knowledge/constraints | -- |
 | `--budget <n>` | Max evaluator invocations | 100 |
 | `--output, -o <file>` | Write best candidate to file | stdout |
+
+If intake is provided, `execution_mode` is used to decide which evaluator source flag is required when neither `--evaluator-command` nor `--evaluator-url` is set. Explicit evaluator flags always win if both explicit flags and intake are supplied.
 
 ### explain
 
@@ -162,6 +170,7 @@ Get a recommended evaluation budget based on the seed artifact length.
 | `explain` | Preview what optimization would do |
 | `recommend_budget` | Get budget recommendations based on artifact size |
 | `generate_evaluator` | Generate a starter evaluator script |
+| `evaluator_intake` | Normalize/validate evaluator intake schema |
 
 See [docs/mcp-protocol.md](docs/mcp-protocol.md) for full tool schemas.
 
@@ -172,7 +181,7 @@ src/optimize_anything/
   __init__.py              # Public API re-exports
   evaluators.py            # Command and HTTP evaluator factories
   evaluator_generator.py   # Generate evaluator scripts from seed + objective
-  server.py                # FastMCP server with 4 tools
+  server.py                # FastMCP server with 5 tools
   cli.py                   # CLI entry point (argparse)
   __main__.py              # python -m support
 

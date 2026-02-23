@@ -14,3 +14,9 @@ build/
 node_modules/
 .worktrees/
 .letta/
+
+# miscellaneous files
+seed.txt
+docs/
+smoke_outputs/
+artifacts/

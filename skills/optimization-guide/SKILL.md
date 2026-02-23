@@ -68,7 +68,7 @@ config = GEPAConfig(
 
 **Via MCP tool:**
 ```json
-{"seed": "...", "evaluator_command": ["bash", "eval.sh"], "objective": "maximize clarity", "max_metric_calls": 100}
+{"seed": "...", "evaluator_command": ["bash", "eval.sh"], "evaluator_cwd": "/absolute/path/to/project", "objective": "maximize clarity", "max_metric_calls": 100}
 ```
 
 **Via CLI:**
@@ -114,3 +114,4 @@ The result contains:
 - **Objective matters:** The `objective` string is injected into gepa's reflection prompt. Be specific: "maximize JSON extraction accuracy while keeping responses under 100 tokens" beats "make it better"
 - **Background provides context:** Use `background` for domain knowledge, constraints, or strategies: "Target audience is non-technical users. Never use jargon."
 - **Iterate on the evaluator:** If optimization results are poor, improve the evaluator before increasing budget
+- **Set evaluator working directory in plugin flows:** when evaluator commands use repo-relative files or scripts, pass `evaluator_cwd` as an absolute project path

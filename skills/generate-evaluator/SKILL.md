@@ -6,6 +6,16 @@ Generate an evaluator that scores candidate artifacts for optimization with gepa
 The evaluator is the most important piece — gepa's reflection LM uses your scores
 AND diagnostic feedback to propose targeted improvements.
 
+## Intake Questions (Ask First)
+
+Before generating any evaluator, ask these:
+
+1. What exact artifact are we optimizing (prompt text, skill markdown, docs, etc.)?
+2. What does success look like (top 3 quality criteria)?
+3. What hard constraints must never be violated?
+4. Should scoring be deterministic checks, LLM-as-judge, or a composite?
+5. Where should evaluator commands run from (project path for relative files/tools)?
+
 ## Evaluator Contract
 
 - **Input:** JSON on stdin (command) or POST body (HTTP): `{"candidate": "<text>"}`
@@ -90,13 +100,51 @@ Return sub-scores as extra fields — gepa sees them all:
 
 ## Steps
 
-1. **Identify the artifact type** — prompt, code, config, skill, agent instruction?
-2. **Choose the evaluator pattern** from above based on whether you have ground truth, need subjective judgment, or measure runtime behavior
-3. **Define scoring dimensions** — what sub-scores matter? (accuracy, clarity, speed, etc.)
-4. **Generate the evaluator** using the `generate_evaluator` tool as a starting point
-5. **Add rich feedback** — include sub-scores, error messages, and improvement hints in the output
-6. **Test the evaluator** with the seed artifact: `echo '{"candidate": "..."}' | bash evaluator.sh`
-7. **Validate score range** — ensure the seed gets a middling score (0.3-0.7), not 0 or 1, so gepa has room to improve
+1. **Identify artifact type** — prompt, code, config, skill, agent instruction.
+2. **Ask intake questions** and lock scoring criteria before coding.
+3. **Choose evaluator pattern** from above.
+4. **Define scoring dimensions** (include sub-scores and a weighted total score).
+5. **Generate evaluator** using the `generate_evaluator` tool as a starter.
+6. **Add rich feedback** — include errors, strengths, and specific suggestions.
+7. **Test evaluator**: `echo '{"candidate": "..."}' | bash evaluator.sh`
+8. **Validate score range** — seed should usually score in the middle (0.3-0.7).
+
+## Reusable Rubric Blueprints
+
+Choose a blueprint based on artifact type, then adapt names/weights:
+
+### A) Instructional Content
+
+Recommended dimensions:
+- `clarity` — wording is unambiguous
+- `coverage` — key steps/edge cases are included
+- `actionability` — outputs are directly usable
+- `safety` — avoids risky or misleading guidance
+
+Example weighted score:
+`score = 0.35*clarity + 0.30*coverage + 0.25*actionability + 0.10*safety`
+
+### B) Prompts / Skills / Agent Instructions
+
+Recommended dimensions:
+- `goal_alignment` — instructions drive intended behavior
+- `constraint_adherence` — respects hard rules and boundaries
+- `robustness` — handles ambiguity and edge cases
+- `specificity` — avoids vague directives
+
+Example weighted score:
+`score = 0.35*goal_alignment + 0.30*constraint_adherence + 0.20*robustness + 0.15*specificity`
+
+### C) Executable/Analytical Artifacts
+
+Recommended dimensions:
+- `correctness` — output is valid and logically sound
+- `efficiency` — avoids unnecessary cost/runtime overhead
+- `validation` — includes checks and failure handling
+- `maintainability` — understandable, structured output
+
+Example weighted score:
+`score = 0.40*correctness + 0.25*efficiency + 0.20*validation + 0.15*maintainability`
 
 ## Common Mistakes
 

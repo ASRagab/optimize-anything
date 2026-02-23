@@ -3,7 +3,7 @@ name = "optimize-anything"
 version = "0.1.0"
 description = "Optimize any text artifact using gepa — prompts, code, configs, skills"
 requires-python = ">=3.10"
-dependencies = ["gepa", "mcp[cli]", "httpx"]
+dependencies = ["gepa", "mcp[cli]", "httpx", "litellm"]
 
 [project.scripts]
 optimize-anything = "optimize_anything.cli:main"

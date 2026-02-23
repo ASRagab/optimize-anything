@@ -21,6 +21,16 @@ def main(argv: list[str] | None = None) -> int:
         "--evaluator-command", nargs="+", help="Shell command for evaluation"
     )
     opt_parser.add_argument("--evaluator-url", help="HTTP endpoint for evaluation")
+    opt_parser.add_argument(
+        "--intake-json", help="Evaluator intake spec as an inline JSON string"
+    )
+    opt_parser.add_argument(
+        "--intake-file", help="Path to evaluator intake specification JSON file"
+    )
+    opt_parser.add_argument(
+        "--evaluator-cwd",
+        help="Working directory for evaluator command execution",
+    )
     opt_parser.add_argument("--objective", help="Natural language objective")
     opt_parser.add_argument("--background", help="Domain context")
     opt_parser.add_argument(
@@ -51,19 +61,55 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_optimize(args: argparse.Namespace) -> int:
-    from optimize_anything.evaluators import command_evaluator, http_evaluator
-    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
-
     seed = _read_seed(args.seed_file)
     if seed is None:
         return 1
 
+    intake_spec = _load_and_normalize_intake_spec(
+        intake_json=args.intake_json,
+        intake_file=args.intake_file,
+    )
+    intake_requested = args.intake_json is not None or args.intake_file is not None
+    if intake_requested and intake_spec is None:
+        return 1
+
+    if args.evaluator_command and args.evaluator_url:
+        print(
+            "Error: provide either --evaluator-command or --evaluator-url, not both",
+            file=sys.stderr,
+        )
+        return 1
+
+    from optimize_anything.evaluators import command_evaluator, http_evaluator
+    from optimize_anything.result_contract import build_optimize_summary
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+
+    command_cwd = args.evaluator_cwd
+    if command_cwd is None and intake_spec is not None:
+        command_cwd = intake_spec.get("evaluator_cwd")
+
     if args.evaluator_command:
-        eval_fn = command_evaluator(args.evaluator_command)
+        eval_fn = command_evaluator(args.evaluator_command, cwd=command_cwd)
     elif args.evaluator_url:
         eval_fn = http_evaluator(args.evaluator_url)
     else:
-        print("Error: provide --evaluator-command or --evaluator-url", file=sys.stderr)
+        if intake_spec is not None:
+            execution_mode = intake_spec["execution_mode"]
+            if execution_mode == "command":
+                print(
+                    "Error: intake execution_mode='command' requires --evaluator-command",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "Error: intake execution_mode='http' requires --evaluator-url",
+                    file=sys.stderr,
+                )
+        else:
+            print(
+                "Error: provide --evaluator-command or --evaluator-url",
+                file=sys.stderr,
+            )
         return 1
 
     config = GEPAConfig(engine=EngineConfig(max_metric_calls=args.budget))
@@ -75,15 +121,14 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         config=config,
     )
 
-    best = result.best_candidate
+    summary = build_optimize_summary(result)
+    best = summary["best_artifact"]
     if args.output:
         with open(args.output, "w") as f:
             f.write(best if isinstance(best, str) else json.dumps(best))
-        print(f"Best candidate written to {args.output}")
-    else:
-        print(best)
+        summary["output_file"] = args.output
 
-    print(f"\nMetric calls: {result.total_metric_calls}", file=sys.stderr)
+    print(json.dumps(summary, indent=2, default=str))
     return 0
 
 
@@ -133,6 +178,57 @@ def _read_seed(path: str) -> str | None:
         return None
     except OSError as e:
         print(f"Error reading {path}: {e}", file=sys.stderr)
+        return None
+
+
+def _load_and_normalize_intake_spec(
+    *,
+    intake_json: str | None,
+    intake_file: str | None,
+) -> dict[str, object] | None:
+    from optimize_anything.intake import normalize_intake_spec
+
+    if intake_json is not None and intake_file is not None:
+        print(
+            "Error: provide either --intake-json or --intake-file, not both",
+            file=sys.stderr,
+        )
+        return None
+
+    if intake_json is None and intake_file is None:
+        return None
+
+    raw_data: object
+    if intake_json is not None:
+        try:
+            raw_data = json.loads(intake_json)
+        except json.JSONDecodeError as e:
+            print(
+                f"Error: invalid JSON for --intake-json: {e.msg} (line {e.lineno}, column {e.colno})",
+                file=sys.stderr,
+            )
+            return None
+    else:
+        try:
+            with open(intake_file) as f:
+                raw_data = json.load(f)
+        except FileNotFoundError:
+            print(f"Error: intake file not found: {intake_file}", file=sys.stderr)
+            return None
+        except json.JSONDecodeError as e:
+            print(
+                f"Error: invalid JSON in --intake-file '{intake_file}': {e.msg} (line {e.lineno}, column {e.colno})",
+                file=sys.stderr,
+            )
+            return None
+        except OSError as e:
+            print(f"Error reading intake file '{intake_file}': {e}", file=sys.stderr)
+            return None
+
+    try:
+        return normalize_intake_spec(raw_data)
+    except ValueError as e:
+        print(f"Error: invalid intake spec: {e}", file=sys.stderr)
         return None
 
 
