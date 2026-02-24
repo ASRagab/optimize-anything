@@ -1,6 +1,9 @@
 ---
 name: generate-evaluator
-description: Generate an evaluator script for a text artifact, choosing the right scoring pattern for the objective
+description: >-
+  Create or write an evaluator script for scoring text artifacts, prompts, or configs
+  during gepa optimization. Use when asked to build, scaffold, or generate an evaluator,
+  scoring function, or judge for optimize-anything.
 ---
 Generate an evaluator that scores candidate artifacts for optimization with gepa.
 The evaluator is the most important piece — gepa's reflection LM uses your scores

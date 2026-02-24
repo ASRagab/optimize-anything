@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -89,3 +90,51 @@ def test_cli_intake_flags_are_documented_and_in_runtime():
         terms=required_flags,
         label="src/optimize_anything/cli.py",
     )
+
+
+# --- Plugin manifest tests ---
+
+
+def _plugin_json() -> dict:
+    path = REPO_ROOT / ".claude-plugin" / "plugin.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+class TestPluginManifest:
+    def test_manifest_has_required_fields(self):
+        data = _plugin_json()
+        for field in ("name", "version", "description"):
+            assert field in data, f"plugin.json missing '{field}'"
+
+    def test_manifest_has_commands_array(self):
+        data = _plugin_json()
+        assert "commands" in data
+        assert isinstance(data["commands"], list)
+        assert len(data["commands"]) > 0
+
+    def test_manifest_has_skills_array(self):
+        data = _plugin_json()
+        assert "skills" in data
+        assert isinstance(data["skills"], list)
+        assert len(data["skills"]) > 0
+
+    def test_each_command_has_name_and_description(self):
+        for cmd in _plugin_json()["commands"]:
+            assert "name" in cmd, f"Command missing 'name': {cmd}"
+            assert "description" in cmd, f"Command missing 'description': {cmd}"
+
+    def test_each_skill_has_name_path_and_description(self):
+        data = _plugin_json()
+        for skill in data["skills"]:
+            assert "name" in skill, f"Skill missing 'name': {skill}"
+            assert "path" in skill, f"Skill missing 'path': {skill}"
+            assert "description" in skill, f"Skill missing 'description': {skill}"
+            skill_path = REPO_ROOT / skill["path"]
+            assert skill_path.exists(), f"Skill file not found: {skill_path}"
+
+    def test_known_commands_present(self):
+        command_names = {cmd["name"] for cmd in _plugin_json()["commands"]}
+        expected = {"optimize", "generate-evaluator", "intake", "explain", "budget", "score"}
+        assert expected.issubset(command_names), (
+            f"Missing commands in manifest: {expected - command_names}"
+        )

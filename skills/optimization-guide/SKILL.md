@@ -1,6 +1,9 @@
 ---
 name: optimization-guide
-description: Guide for running optimizations with optimize-anything, covering modes, configuration, and interpretation
+description: >-
+  Guide for running, configuring, and interpreting optimize-anything and gepa
+  optimization workflows. Use when asked how to optimize a prompt, artifact, config,
+  or skill, or when troubleshooting evaluator feedback, budget, or score interpretation.
 ---
 End-to-end guide for optimizing text artifacts with optimize-anything and gepa.
 
