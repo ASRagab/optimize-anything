@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "86821d85d69b",
+  "session_id": "0c25aab6-b74a-487f-a6cb-4c8db5b4480b",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-24T06:56:52.868755Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "src/optimize_anything/llm_judge.py",
+    "tests/test_llm_judge.py"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "ae843a78bc9c",
+  "token_usage": {
+    "input_tokens": 51,
+    "cache_creation_tokens": 119373,
+    "cache_read_tokens": 4397363,
+    "output_tokens": 6904,
+    "api_call_count": 43
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-24T06:56:52.375243Z",
+    "agent_lines": 484,
+    "human_added": 2605,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 3090,
+    "agent_percentage": 15.663430420711974
+  },
+  "transcript_path": ".claude/projects/-Users-aragab-projects-optimize-anything/0c25aab6-b74a-487f-a6cb-4c8db5b4480b.jsonl"
+}

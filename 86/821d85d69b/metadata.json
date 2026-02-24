@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "86821d85d69b",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "src/optimize_anything/llm_judge.py",
+    "tests/test_llm_judge.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/821d85d69b/0/metadata.json",
+      "transcript": "/86/821d85d69b/0/full.jsonl",
+      "context": "/86/821d85d69b/0/context.md",
+      "content_hash": "/86/821d85d69b/0/content_hash.txt",
+      "prompt": "/86/821d85d69b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 51,
+    "cache_creation_tokens": 119373,
+    "cache_read_tokens": 4397363,
+    "output_tokens": 6904,
+    "api_call_count": 43
+  }
+}
