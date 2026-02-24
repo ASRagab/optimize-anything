@@ -517,10 +517,22 @@ def _cmd_score(args: argparse.Namespace) -> int:
     if artifact is None:
         return 1
 
+    intake_spec = _load_and_normalize_intake_spec(
+        intake_json=args.intake_json,
+        intake_file=args.intake_file,
+    )
+    intake_requested = args.intake_json is not None or args.intake_file is not None
+    if intake_requested and intake_spec is None:
+        return 1
+
+    command_cwd = args.evaluator_cwd
+    if command_cwd is None and intake_spec is not None:
+        command_cwd = intake_spec.get("evaluator_cwd")
+
     evaluator_sources = sum([
         bool(args.evaluator_command),
         bool(args.evaluator_url),
-        bool(getattr(args, "judge_model", None)),
+        bool(args.judge_model),
     ])
     if evaluator_sources > 1:
         print(
@@ -541,12 +553,12 @@ def _cmd_score(args: argparse.Namespace) -> int:
     if args.evaluator_command:
         preflight_error = _preflight_command_evaluator(
             args.evaluator_command,
-            cwd=args.evaluator_cwd,
+            cwd=command_cwd,
         )
         if preflight_error is not None:
             print(preflight_error, file=sys.stderr)
             return 1
-        eval_fn = command_evaluator(args.evaluator_command, cwd=args.evaluator_cwd)
+        eval_fn = command_evaluator(args.evaluator_command, cwd=command_cwd)
     elif args.evaluator_url:
         preflight_error = _preflight_http_evaluator(args.evaluator_url)
         if preflight_error is not None:
@@ -556,20 +568,12 @@ def _cmd_score(args: argparse.Namespace) -> int:
     else:
         from optimize_anything.llm_judge import llm_judge_evaluator
 
-        judge_objective = getattr(args, "judge_objective", None) or getattr(args, "objective", None)
+        judge_objective = args.judge_objective or args.objective
         if not judge_objective:
             print(
                 "Error: --judge-model requires --objective or --judge-objective",
                 file=sys.stderr,
             )
-            return 1
-
-        intake_spec = _load_and_normalize_intake_spec(
-            intake_json=getattr(args, "intake_json", None),
-            intake_file=getattr(args, "intake_file", None),
-        )
-        intake_requested = getattr(args, "intake_json", None) is not None or getattr(args, "intake_file", None) is not None
-        if intake_requested and intake_spec is None:
             return 1
 
         quality_dimensions = None
@@ -583,7 +587,14 @@ def _cmd_score(args: argparse.Namespace) -> int:
             model=args.judge_model,
             quality_dimensions=quality_dimensions,
             hard_constraints=hard_constraints,
-            api_base=getattr(args, "api_base", None),
+            api_base=args.api_base,
+        )
+
+    if args.evaluator_url and args.evaluator_cwd:
+        print(
+            "Warning: --evaluator-cwd has no effect when using --evaluator-url. "
+            "The HTTP evaluator runs in the server's own working directory.",
+            file=sys.stderr,
         )
 
     try:

@@ -1758,3 +1758,86 @@ class TestScoreJudgeModel:
         assert rc == 1
         err = stderr.getvalue().lower()
         assert "judge-model" in err or "judge" in err
+
+    def test_score_judge_with_intake_json_forwards_dimensions(self, tmp_path, monkeypatch):
+        """score --judge-model --intake-json forwards quality dimensions to the judge."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test artifact for dimension forwarding.")
+
+        intake = {
+            "quality_dimensions": [
+                {"name": "clarity", "weight": 0.6},
+                {"name": "brevity", "weight": 0.4},
+            ],
+        }
+
+        captured_kwargs = {}
+        mock_response = type("R", (), {
+            "choices": [type("C", (), {
+                "message": type("M", (), {
+                    "content": json.dumps({
+                        "score": 0.8,
+                        "dimension_scores": {"clarity": 0.85, "brevity": 0.7},
+                        "hard_constraints_satisfied": True,
+                        "reasoning": "Good",
+                    })
+                })()
+            })()]
+        })()
+
+        def mock_completion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_response
+
+        monkeypatch.setattr("litellm.completion", mock_completion)
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "score", str(artifact),
+                "--judge-model", "openai/gpt-5.1-mini",
+                "--objective", "Score quality",
+                "--intake-json", json.dumps(intake),
+            ])
+
+        assert rc == 0, f"stderr: {stderr.getvalue()}"
+        # Verify dimensions appeared in the prompt
+        user_msg = captured_kwargs["messages"][1]["content"]
+        assert "clarity" in user_msg
+        assert "brevity" in user_msg
+
+    def test_score_judge_with_api_base_forwarding(self, tmp_path, monkeypatch):
+        """score --judge-model --api-base forwards api_base to litellm."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test artifact for api-base forwarding.")
+
+        captured_kwargs = {}
+        mock_response = type("R", (), {
+            "choices": [type("C", (), {
+                "message": type("M", (), {"content": '{"score": 0.7, "reasoning": "OK"}'})()
+            })()]
+        })()
+
+        def mock_completion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_response
+
+        monkeypatch.setattr("litellm.completion", mock_completion)
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "score", str(artifact),
+                "--judge-model", "openai/gpt-5.1-mini",
+                "--objective", "Score quality",
+                "--api-base", "http://localhost:11434/v1",
+            ])
+
+        assert rc == 0, f"stderr: {stderr.getvalue()}"
+        # litellm renames api_base to base_url internally
+        assert captured_kwargs.get("api_base") == "http://localhost:11434/v1" or \
+            captured_kwargs.get("base_url") == "http://localhost:11434/v1"

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.live_integration import _extract_json_from_output
+
 
 SCRIPT = "scripts/live_integration.py"
 
@@ -13,6 +15,11 @@ SCRIPT = "scripts/live_integration.py"
 class TestGreenPhase:
     """GREEN phase tests using mock evaluators (no real LLM calls)."""
 
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("OPENAI_API_KEY"),
+        reason="OPENAI_API_KEY required for gepa optimization",
+    )
     def test_green_phase_produces_structured_output(self, tmp_path):
         """GREEN phase returns JSON with expected keys."""
         seed = tmp_path / "seed.txt"
@@ -151,3 +158,76 @@ class TestRedPhase:
         result = json.loads(proc.stdout)
         assert result["red"]["cross_provider_delta"] == 0.0
         assert len(result["red"]["scores"]) == 1
+
+
+class TestExtractJsonFromOutput:
+    """Unit tests for _extract_json_from_output."""
+
+    def test_pure_json(self):
+        output = '{"score": 0.85, "best_artifact": "hello"}'
+        result = _extract_json_from_output(output)
+        assert result == {"score": 0.85, "best_artifact": "hello"}
+
+    def test_mixed_output_with_progress_lines(self):
+        """gepa prints iteration progress before JSON summary."""
+        output = (
+            "Iteration 1/5: score=0.72\n"
+            "Iteration 2/5: score=0.78\n"
+            "Iteration 3/5: score=0.81\n"
+            '{"score_summary": {"best": 0.81}, "total_metric_calls": 3}'
+        )
+        result = _extract_json_from_output(output)
+        assert result is not None
+        assert result["score_summary"]["best"] == 0.81
+
+    def test_empty_output(self):
+        assert _extract_json_from_output("") is None
+
+    def test_whitespace_only_output(self):
+        assert _extract_json_from_output("   \n\n  ") is None
+
+    def test_invalid_json(self):
+        assert _extract_json_from_output("{not valid json}") is None
+
+    def test_plain_text_no_json(self):
+        assert _extract_json_from_output("just some text output\nno json here") is None
+
+    def test_json_with_leading_whitespace(self):
+        output = '  \n  {"key": "value"}'
+        result = _extract_json_from_output(output)
+        assert result == {"key": "value"}
+
+    def test_multiple_json_objects_returns_last(self):
+        """When multiple JSON objects appear, return the last one."""
+        output = (
+            '{"partial": true}\n'
+            '{"score_summary": {"best": 0.9}, "total_metric_calls": 5}'
+        )
+        result = _extract_json_from_output(output)
+        assert result is not None
+        assert result["total_metric_calls"] == 5
+
+
+class TestProvidersValidation:
+    """Tests for --providers requires --objective validation."""
+
+    def test_providers_without_objective_fails(self, tmp_path):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test content.")
+
+        proc = subprocess.run(
+            [
+                sys.executable, SCRIPT,
+                "--phase", "red",
+                "--artifact", str(artifact),
+                "--providers", "openai/gpt-5.1-mini",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert proc.returncode == 1
+        result = json.loads(proc.stdout)
+        assert "error" in result
+        assert "objective" in result["error"].lower()

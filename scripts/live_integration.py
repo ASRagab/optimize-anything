@@ -53,10 +53,24 @@ def main(argv: list[str] | None = None) -> int:
         nargs="+",
         help="RED: LLM provider model strings for multi-provider scoring",
     )
+    parser.add_argument(
+        "--judge-model",
+        help="GREEN: LLM judge model for meta-evaluator optimization",
+    )
+    parser.add_argument(
+        "--judge-objective",
+        help="GREEN: override objective for the LLM judge",
+    )
     parser.add_argument("--round", type=int, default=1, help="Current round number")
     parser.add_argument("--baseline", type=float, help="Baseline score for comparison")
 
     args = parser.parse_args(argv)
+
+    if args.providers and not args.objective:
+        print(json.dumps({
+            "error": "--providers requires --objective for LLM judge scoring",
+        }))
+        return 1
 
     if args.phase == "green":
         return _run_green(args)
@@ -84,17 +98,26 @@ def _run_green(args: argparse.Namespace) -> int:
     ]
     if args.evaluator_command:
         cmd.extend(["--evaluator-command"] + args.evaluator_command)
+    if args.judge_model:
+        cmd.extend(["--judge-model", args.judge_model])
+    if args.judge_objective:
+        cmd.extend(["--judge-objective", args.judge_objective])
     if args.objective:
         cmd.extend(["--objective", args.objective])
     if args.run_dir:
         cmd.extend(["--run-dir", args.run_dir])
 
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    timeout = max(300, args.budget * 30)
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print(json.dumps({"phase": "green", "error": f"optimize timed out after {timeout}s"}))
+        return 1
 
     if proc.returncode != 0:
         print(json.dumps({
@@ -123,6 +146,8 @@ def _run_green(args: argparse.Namespace) -> int:
     diff_del = sum(1 for l in proc.stderr.split("\n") if l.startswith("-") and not l.startswith("---"))
     diff_summary = f"+{diff_add} -{diff_del}"
 
+    baseline = args.baseline if args.baseline is not None else (initial_score if initial_score is not None else None)
+
     result = {
         "phase": "green",
         "round": args.round,
@@ -133,9 +158,10 @@ def _run_green(args: argparse.Namespace) -> int:
             "metric_calls": metric_calls,
             "diff_summary": diff_summary,
             "best_artifact_preview": str(optimize_result.get("best_artifact", ""))[:500],
+            "run_dir": optimize_result.get("run_dir"),
         },
         "baseline": args.baseline,
-        "improved": optimized_score is not None and optimized_score > (args.baseline or initial_score or 0),
+        "improved": optimized_score is not None and baseline is not None and optimized_score > baseline,
     }
 
     print(json.dumps(result, indent=2, default=str))
@@ -171,7 +197,16 @@ def _run_red(args: argparse.Namespace) -> int:
     )
 
     all_scores = [v for v in scores.values() if v is not None]
-    avg_score = round(sum(all_scores) / len(all_scores), 4) if all_scores else 0.0
+    if not all_scores:
+        print(json.dumps({
+            "phase": "red",
+            "error": "all evaluators returned None — check provider credentials and connectivity",
+            "scores": scores,
+        }))
+        return 1
+    avg_score = round(sum(all_scores) / len(all_scores), 4)
+
+    baseline = args.baseline if args.baseline is not None else 0.0
 
     result = {
         "phase": "red",
@@ -183,7 +218,7 @@ def _run_red(args: argparse.Namespace) -> int:
             "average_score": avg_score,
         },
         "baseline": args.baseline,
-        "improved": avg_score > (args.baseline or 0.0),
+        "improved": avg_score > baseline,
     }
 
     print(json.dumps(result, indent=2, default=str))
@@ -239,10 +274,18 @@ def _score_with_command(
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if proc.returncode != 0:
+            print(f"Warning: command evaluator exited with code {proc.returncode}", file=sys.stderr)
             return None
         result = json.loads(proc.stdout)
         return result.get("score")
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+    except subprocess.TimeoutExpired:
+        print("Warning: command evaluator timed out after 30s", file=sys.stderr)
+        return None
+    except json.JSONDecodeError as exc:
+        print(f"Warning: command evaluator returned invalid JSON: {exc}", file=sys.stderr)
+        return None
+    except Exception as exc:
+        print(f"Warning: command evaluator failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
 
 
@@ -265,10 +308,18 @@ def _score_with_judge(
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
+            print(f"Warning: judge {model} exited with code {proc.returncode}", file=sys.stderr)
             return None
         result = json.loads(proc.stdout)
         return result.get("score")
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+    except subprocess.TimeoutExpired:
+        print(f"Warning: judge {model} timed out after 120s", file=sys.stderr)
+        return None
+    except json.JSONDecodeError as exc:
+        print(f"Warning: judge {model} returned invalid JSON: {exc}", file=sys.stderr)
+        return None
+    except Exception as exc:
+        print(f"Warning: judge {model} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
 
 
