@@ -17,3 +17,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/optimize_anything"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: live integration tests that call real APIs (deselect with '-m \"not integration\"')",
+]

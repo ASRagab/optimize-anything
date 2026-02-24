@@ -157,6 +157,32 @@ def main(argv: list[str] | None = None) -> int:
         "--evaluator-cwd",
         help="Working directory for evaluator command execution",
     )
+    score_parser.add_argument(
+        "--judge-model",
+        help=(
+            "LiteLLM model string for LLM-as-judge scoring "
+            "(e.g. 'openai/gpt-5.1-mini'). "
+            "Mutually exclusive with --evaluator-command and --evaluator-url."
+        ),
+    )
+    score_parser.add_argument(
+        "--objective",
+        help="Objective for the LLM judge (required with --judge-model).",
+    )
+    score_parser.add_argument(
+        "--judge-objective",
+        help="Override objective for the LLM judge. Falls back to --objective.",
+    )
+    score_parser.add_argument(
+        "--api-base",
+        help="Override API base URL for litellm calls.",
+    )
+    score_parser.add_argument(
+        "--intake-json", help="Evaluator intake spec as an inline JSON string"
+    )
+    score_parser.add_argument(
+        "--intake-file", help="Path to evaluator intake specification JSON file"
+    )
 
     args = parser.parse_args(argv)
 
@@ -491,16 +517,21 @@ def _cmd_score(args: argparse.Namespace) -> int:
     if artifact is None:
         return 1
 
-    if args.evaluator_command and args.evaluator_url:
+    evaluator_sources = sum([
+        bool(args.evaluator_command),
+        bool(args.evaluator_url),
+        bool(getattr(args, "judge_model", None)),
+    ])
+    if evaluator_sources > 1:
         print(
-            "Error: provide either --evaluator-command or --evaluator-url, not both",
+            "Error: provide only one of --evaluator-command, --evaluator-url, or --judge-model",
             file=sys.stderr,
         )
         return 1
 
-    if not args.evaluator_command and not args.evaluator_url:
+    if evaluator_sources == 0:
         print(
-            "Error: provide --evaluator-command or --evaluator-url",
+            "Error: provide --evaluator-command, --evaluator-url, or --judge-model",
             file=sys.stderr,
         )
         return 1
@@ -516,12 +547,44 @@ def _cmd_score(args: argparse.Namespace) -> int:
             print(preflight_error, file=sys.stderr)
             return 1
         eval_fn = command_evaluator(args.evaluator_command, cwd=args.evaluator_cwd)
-    else:
+    elif args.evaluator_url:
         preflight_error = _preflight_http_evaluator(args.evaluator_url)
         if preflight_error is not None:
             print(preflight_error, file=sys.stderr)
             return 1
         eval_fn = http_evaluator(args.evaluator_url)
+    else:
+        from optimize_anything.llm_judge import llm_judge_evaluator
+
+        judge_objective = getattr(args, "judge_objective", None) or getattr(args, "objective", None)
+        if not judge_objective:
+            print(
+                "Error: --judge-model requires --objective or --judge-objective",
+                file=sys.stderr,
+            )
+            return 1
+
+        intake_spec = _load_and_normalize_intake_spec(
+            intake_json=getattr(args, "intake_json", None),
+            intake_file=getattr(args, "intake_file", None),
+        )
+        intake_requested = getattr(args, "intake_json", None) is not None or getattr(args, "intake_file", None) is not None
+        if intake_requested and intake_spec is None:
+            return 1
+
+        quality_dimensions = None
+        hard_constraints = None
+        if intake_spec is not None:
+            quality_dimensions = intake_spec.get("quality_dimensions")
+            hard_constraints = intake_spec.get("hard_constraints") or None
+
+        eval_fn = llm_judge_evaluator(
+            judge_objective,
+            model=args.judge_model,
+            quality_dimensions=quality_dimensions,
+            hard_constraints=hard_constraints,
+            api_base=getattr(args, "api_base", None),
+        )
 
     try:
         score, side_info = eval_fn(artifact)

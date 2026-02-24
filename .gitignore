@@ -21,5 +21,6 @@ seed.txt
 docs/
 smoke_outputs/
 artifacts/
+integration_runs/
 
 

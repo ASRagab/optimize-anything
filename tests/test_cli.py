@@ -1538,7 +1538,7 @@ class TestScoreCommand:
         ])
         assert result == 1
         captured = capsys.readouterr()
-        assert "not both" in captured.err
+        assert "only one" in captured.err
 
     def test_score_missing_artifact(self, capsys):
         result = main([
@@ -1623,3 +1623,138 @@ class TestScoreCommand:
         assert result == 1
         captured = capsys.readouterr()
         assert "evaluator call failed" in captured.err
+
+
+class TestScoreJudgeModel:
+    """Tests for score subcommand with --judge-model."""
+
+    def test_score_with_judge_model(self, tmp_path, monkeypatch):
+        """score subcommand works with --judge-model."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test artifact content for scoring.")
+
+        mock_response = type("R", (), {
+            "choices": [type("C", (), {
+                "message": type("M", (), {"content": '{"score": 0.75, "reasoning": "Good"}'})()
+            })()]
+        })()
+
+        monkeypatch.setattr(
+            "litellm.completion",
+            lambda **kw: mock_response,
+        )
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "score", str(artifact),
+                "--judge-model", "openai/gpt-5.1-mini",
+                "--objective", "Maximize clarity",
+            ])
+
+        assert rc == 0, f"stderr: {stderr.getvalue()}"
+        result = json.loads(stdout.getvalue())
+        assert "score" in result
+        assert result["score"] == 0.75
+
+    def test_score_judge_model_requires_objective(self, tmp_path):
+        """score with --judge-model fails without --objective."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test content.")
+
+        import io, contextlib
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            rc = main(["score", str(artifact), "--judge-model", "openai/gpt-5.1-mini"])
+
+        assert rc == 1
+        assert "objective" in stderr.getvalue().lower()
+
+    def test_score_rejects_judge_and_command(self, tmp_path):
+        """score subcommand rejects --judge-model with --evaluator-command."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test content.")
+
+        import io, contextlib
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            rc = main([
+                "score", str(artifact),
+                "--evaluator-command", "echo", "{}",
+                "--judge-model", "openai/gpt-5.1-mini",
+                "--objective", "test",
+            ])
+
+        assert rc == 1
+        assert "only one" in stderr.getvalue().lower()
+
+    def test_score_rejects_judge_and_url(self, tmp_path):
+        """score subcommand rejects --judge-model with --evaluator-url."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test content.")
+
+        import io, contextlib
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            rc = main([
+                "score", str(artifact),
+                "--evaluator-url", "http://localhost:9999",
+                "--judge-model", "openai/gpt-5.1-mini",
+                "--objective", "test",
+            ])
+
+        assert rc == 1
+        assert "only one" in stderr.getvalue().lower()
+
+    def test_score_judge_with_judge_objective(self, tmp_path, monkeypatch):
+        """--judge-objective overrides --objective for LLM judge scoring."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test content.")
+
+        captured_prompt = {}
+        mock_response = type("R", (), {
+            "choices": [type("C", (), {
+                "message": type("M", (), {"content": '{"score": 0.8, "reasoning": "Nice"}'})()
+            })()]
+        })()
+
+        def mock_completion(**kwargs):
+            captured_prompt["messages"] = kwargs.get("messages", [])
+            return mock_response
+
+        monkeypatch.setattr(
+            "litellm.completion",
+            mock_completion,
+        )
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "score", str(artifact),
+                "--judge-model", "openai/gpt-5.1-mini",
+                "--objective", "general objective",
+                "--judge-objective", "specific judge objective",
+            ])
+
+        assert rc == 0
+        # Verify the judge objective was used (appears in the prompt)
+        user_msg = captured_prompt["messages"][1]["content"]
+        assert "specific judge objective" in user_msg
+
+    def test_score_no_evaluator_shows_three_options(self, tmp_path):
+        """score with no evaluator mentions all three options in error."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("Test content.")
+
+        import io, contextlib
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            rc = main(["score", str(artifact)])
+
+        assert rc == 1
+        err = stderr.getvalue().lower()
+        assert "judge-model" in err or "judge" in err
