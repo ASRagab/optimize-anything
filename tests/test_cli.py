@@ -761,6 +761,10 @@ class TestCLI:
             total_metric_calls = 5
 
         monkeypatch.setattr(
+            "optimize_anything.cli._preflight_http_evaluator",
+            lambda url, **kwargs: None,
+        )
+        monkeypatch.setattr(
             "optimize_anything.evaluators.http_evaluator",
             lambda url: lambda c: (0.5, {}),
         )
@@ -1076,6 +1080,288 @@ class TestCLI:
         assert result == 0
         assert captured_args["api_base"] == "https://openrouter.ai/api/v1"
 
+    def test_optimize_warns_evaluator_cwd_with_url(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """--evaluator-cwd with --evaluator-url should print a warning to stderr."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 5
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_http_evaluator",
+            lambda url, **kwargs: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.http_evaluator",
+            lambda url: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-url", "http://localhost:8000/eval",
+            "--evaluator-cwd", "/some/path",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "--evaluator-cwd has no effect" in captured.err
+
+    def test_optimize_no_cwd_warning_without_cwd(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """No --evaluator-cwd warning when --evaluator-cwd is not set."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 5
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_http_evaluator",
+            lambda url, **kwargs: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.http_evaluator",
+            lambda url: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-url", "http://localhost:8000/eval",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "--evaluator-cwd" not in captured.err
+
+    def test_optimize_diff_flag_prints_diff_to_stderr(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """--diff prints a unified diff to stderr when seed and best differ."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("original content\n")
+
+        class DummyResult:
+            best_candidate = "improved content\n"
+            total_metric_calls = 5
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.7, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--diff",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "--- seed" in captured.err
+        assert "+++ optimized" in captured.err
+        assert "-original content" in captured.err
+        assert "+improved content" in captured.err
+        json.loads(captured.out)
+
+    def test_optimize_diff_flag_identical_artifacts(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """--diff reports no diff when seed and best artifact are identical."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("same content\n")
+
+        class DummyResult:
+            best_candidate = "same content\n"
+            total_metric_calls = 3
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--diff",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "no diff" in captured.err
+
+    def test_optimize_no_diff_output_without_flag(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """Without --diff, no diff markers appear in stderr."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("original\n")
+
+        class DummyResult:
+            best_candidate = "improved\n"
+            total_metric_calls = 5
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.7, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "--- seed" not in captured.err
+        assert "+++ optimized" not in captured.err
+
+
+class TestHttpEvaluatorPreflight:
+    def test_preflight_passes_on_valid_response(self, monkeypatch):
+        from optimize_anything.cli import _preflight_http_evaluator
+
+        class FakeResponse:
+            status_code = 200
+            text = '{"score": 0.5}'
+            def raise_for_status(self): pass
+            def json(self): return {"score": 0.5}
+
+        monkeypatch.setattr("httpx.post", lambda *args, **kwargs: FakeResponse())
+        result = _preflight_http_evaluator("http://localhost:8000/eval")
+        assert result is None
+
+    def test_preflight_fails_on_connection_refused(self, monkeypatch):
+        import httpx
+        from optimize_anything.cli import _preflight_http_evaluator
+
+        monkeypatch.setattr("httpx.post", lambda *a, **kw: (_ for _ in ()).throw(httpx.ConnectError("refused")))
+        result = _preflight_http_evaluator("http://localhost:9999/eval")
+        assert result is not None
+        assert "connection refused" in result.lower()
+
+    def test_preflight_fails_on_timeout(self, monkeypatch):
+        import httpx
+        from optimize_anything.cli import _preflight_http_evaluator
+
+        monkeypatch.setattr("httpx.post", lambda *a, **kw: (_ for _ in ()).throw(httpx.TimeoutException("timed out")))
+        result = _preflight_http_evaluator("http://localhost:8000/eval")
+        assert result is not None
+        assert "timed out" in result.lower()
+
+    def test_preflight_fails_on_non_json_response(self, monkeypatch):
+        from optimize_anything.cli import _preflight_http_evaluator
+
+        class FakeResponse:
+            status_code = 200
+            text = "not json at all"
+            def raise_for_status(self): pass
+            def json(self): raise ValueError("not json")
+
+        monkeypatch.setattr("httpx.post", lambda *args, **kwargs: FakeResponse())
+        result = _preflight_http_evaluator("http://localhost:8000/eval")
+        assert result is not None
+        assert "non-JSON" in result
+
+    def test_preflight_fails_on_missing_score_field(self, monkeypatch):
+        from optimize_anything.cli import _preflight_http_evaluator
+
+        class FakeResponse:
+            status_code = 200
+            text = '{"feedback": "no score here"}'
+            def raise_for_status(self): pass
+            def json(self): return {"feedback": "no score here"}
+
+        monkeypatch.setattr("httpx.post", lambda *args, **kwargs: FakeResponse())
+        result = _preflight_http_evaluator("http://localhost:8000/eval")
+        assert result is not None
+        assert "score" in result.lower()
+
+    def test_optimize_calls_http_preflight(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """When --evaluator-url is used, _preflight_http_evaluator is called."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        preflight_calls = []
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_http_evaluator",
+            lambda url, **kwargs: (preflight_calls.append(url), None)[1],
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.http_evaluator",
+            lambda url: lambda c: (0.5, {}),
+        )
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 3
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-url", "http://localhost:8000/eval",
+        ])
+        assert result == 0
+        assert "http://localhost:8000/eval" in preflight_calls
+
+    def test_optimize_returns_1_on_http_preflight_failure(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_http_evaluator",
+            lambda url, **kwargs: "Error: connection refused",
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-url", "http://localhost:9999/eval",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "connection refused" in captured.err
+
 
 class TestEchoScoreEvaluator:
     """Tests for examples/evaluators/echo_score.sh."""
@@ -1180,6 +1466,10 @@ class TestScoreCommand:
         artifact = tmp_path / "artifact.txt"
         artifact.write_text("hello world")
 
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_http_evaluator",
+            lambda url, **kwargs: None,
+        )
         monkeypatch.setattr(
             "optimize_anything.evaluators.http_evaluator",
             lambda url: lambda c: (0.9, {"confidence": 0.85}),

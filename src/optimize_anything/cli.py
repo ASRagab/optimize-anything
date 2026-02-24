@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import math
 import os
@@ -69,6 +70,12 @@ def main(argv: list[str] | None = None) -> int:
             "Override API base URL for litellm calls "
             "(e.g. https://openrouter.ai/api/v1 or http://localhost:11434/v1)."
         ),
+    )
+    opt_parser.add_argument(
+        "--diff",
+        action="store_true",
+        default=False,
+        help="After optimization, print a unified diff of seed vs best artifact to stderr",
     )
 
     # generate-evaluator subcommand
@@ -210,6 +217,10 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             return 1
         eval_fn = command_evaluator(args.evaluator_command, cwd=command_cwd)
     elif args.evaluator_url:
+        preflight_error = _preflight_http_evaluator(args.evaluator_url)
+        if preflight_error is not None:
+            print(preflight_error, file=sys.stderr)
+            return 1
         eval_fn = http_evaluator(args.evaluator_url)
     elif args.judge_model:
         judge_objective = args.judge_objective or args.objective
@@ -250,6 +261,13 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
         return 1
+
+    if args.evaluator_url and args.evaluator_cwd:
+        print(
+            "Warning: --evaluator-cwd has no effect when using --evaluator-url. "
+            "The HTTP evaluator runs in the server's own working directory.",
+            file=sys.stderr,
+        )
 
     if args.evaluator_command:
         evaluator_label = shlex.join(args.evaluator_command)
@@ -302,6 +320,21 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             print(f"Error writing output file '{args.output}': {e}", file=sys.stderr)
             return 1
         summary["output_file"] = args.output
+
+    if args.diff:
+        seed_lines = seed.splitlines(keepends=True)
+        best_str = best if isinstance(best, str) else json.dumps(best)
+        best_lines = best_str.splitlines(keepends=True)
+        diff_output = difflib.unified_diff(
+            seed_lines, best_lines, fromfile="seed", tofile="optimized",
+        )
+        diff_text = "".join(diff_output)
+        if diff_text:
+            print("\n--- diff: seed vs optimized ---", file=sys.stderr)
+            print(diff_text, end="", file=sys.stderr)
+            print("--- end diff ---", file=sys.stderr)
+        else:
+            print("(no diff: seed and optimized artifact are identical)", file=sys.stderr)
 
     print(json.dumps(summary, indent=2, default=str))
     return 0
@@ -455,6 +488,10 @@ def _cmd_score(args: argparse.Namespace) -> int:
             return 1
         eval_fn = command_evaluator(args.evaluator_command, cwd=args.evaluator_cwd)
     else:
+        preflight_error = _preflight_http_evaluator(args.evaluator_url)
+        if preflight_error is not None:
+            print(preflight_error, file=sys.stderr)
+            return 1
         eval_fn = http_evaluator(args.evaluator_url)
 
     try:
@@ -625,6 +662,51 @@ def _preflight_command_evaluator(command: list[str], *, cwd: str | None) -> str 
     payload_error = _validate_evaluator_payload(result)
     if payload_error is not None:
         return _format_preflight_error(command=command, cwd=cwd, detail=payload_error)
+
+    return None
+
+
+def _preflight_http_evaluator(url: str, *, timeout: float = 10.0) -> str | None:
+    """Send a preflight request to an HTTP evaluator and validate the response.
+
+    Returns None if the evaluator is healthy, or an error string.
+    """
+    import httpx
+
+    payload = {"candidate": "__optimize_anything_preflight__"}
+    try:
+        resp = httpx.post(url, json=payload, timeout=timeout)
+        resp.raise_for_status()
+    except httpx.TimeoutException:
+        return (
+            f"Error: HTTP evaluator preflight timed out after {timeout}s "
+            f"(url: {url})"
+        )
+    except httpx.HTTPStatusError as e:
+        return (
+            f"Error: HTTP evaluator preflight returned HTTP {e.response.status_code} "
+            f"(url: {url})"
+        )
+    except httpx.ConnectError:
+        return (
+            f"Error: HTTP evaluator preflight failed — connection refused "
+            f"(url: {url}). Is the evaluator server running?"
+        )
+    except httpx.RequestError as e:
+        return f"Error: HTTP evaluator preflight request failed (url: {url}): {e}"
+
+    try:
+        result = resp.json()
+    except (ValueError, Exception):
+        snippet = resp.text[:300] if resp.text else "<empty body>"
+        return (
+            f"Error: HTTP evaluator preflight returned non-JSON response "
+            f"(url: {url}): {snippet}"
+        )
+
+    payload_error = _validate_evaluator_payload(result)
+    if payload_error is not None:
+        return f"Error: HTTP evaluator preflight response invalid (url: {url}): {payload_error}"
 
     return None
 
