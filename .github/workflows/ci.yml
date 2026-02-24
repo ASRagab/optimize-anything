@@ -54,7 +54,7 @@ jobs:
             secret_env: ANTHROPIC_API_KEY
             pytest_k: integration_anthropic
           - provider: google
-            secret_env: GOOGLE_API_KEY
+            secret_env: GEMINI_API_KEY
             pytest_k: integration_google
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +81,6 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         # pytest skips tests internally when env vars are absent (via @pytest.mark.skipif)
         run: uv run pytest tests/test_llm_judge.py -k "${{ matrix.pytest_k }}" -v

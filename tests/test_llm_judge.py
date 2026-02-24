@@ -234,6 +234,57 @@ class TestLlmJudgeEvaluatorUnit:
             llm_judge_evaluator("maximize quality", model="")
 
 
+class TestLlmJudgeIntegration:
+    """Live integration tests — call real provider APIs.
+
+    Each test is named to match the CI matrix's -k filter
+    (e.g., -k "integration_openai") and skipped when the
+    corresponding API key is absent.
+    """
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("OPENAI_API_KEY"),
+        reason="OPENAI_API_KEY required",
+    )
+    def test_integration_openai_judge(self):
+        evaluator = llm_judge_evaluator(
+            "Score this text on clarity and conciseness. Be strict.",
+            model="openai/gpt-4o-mini",
+        )
+        score, side_info = evaluator("The quick brown fox jumps over the lazy dog.")
+        assert 0.0 <= score <= 1.0
+        assert "reasoning" in side_info or "error" not in side_info
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("ANTHROPIC_API_KEY"),
+        reason="ANTHROPIC_API_KEY required",
+    )
+    def test_integration_anthropic_judge(self):
+        evaluator = llm_judge_evaluator(
+            "Score this text on clarity and conciseness. Be strict.",
+            model="anthropic/claude-haiku-4-5-20251001",
+        )
+        score, side_info = evaluator("The quick brown fox jumps over the lazy dog.")
+        assert 0.0 <= score <= 1.0
+        assert "reasoning" in side_info or "error" not in side_info
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("GEMINI_API_KEY"),
+        reason="GEMINI_API_KEY required",
+    )
+    def test_integration_google_judge(self):
+        evaluator = llm_judge_evaluator(
+            "Score this text on clarity and conciseness. Be strict.",
+            model="gemini/gemini-2.0-flash",
+        )
+        score, side_info = evaluator("The quick brown fox jumps over the lazy dog.")
+        assert 0.0 <= score <= 1.0
+        assert "reasoning" in side_info or "error" not in side_info
+
+
 class TestComputeWeightedScore:
     def test_basic_weighted_average(self):
         dims = [{"name": "a", "weight": 0.7}, {"name": "b", "weight": 0.3}]
