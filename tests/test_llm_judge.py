@@ -69,6 +69,26 @@ class TestLlmJudgeEvaluatorUnit:
         assert score == 0.88
         assert side_info["reasoning"] == "Good"
 
+    def test_code_fence_without_language_tag(self):
+        """Code fences with no language tag (```) are also stripped."""
+        fenced = '```\n{"score": 0.76, "reasoning": "OK"}\n```'
+        evaluator = llm_judge_evaluator("maximize quality", model="openai/gpt-4o-mini")
+        with patch("litellm.completion", return_value=self._make_mock_completion(fenced)):
+            score, side_info = evaluator("some artifact")
+
+        assert score == 0.76
+        assert side_info["reasoning"] == "OK"
+
+    def test_code_fence_with_trailing_whitespace(self):
+        """Code fences with trailing whitespace after closing ``` are stripped."""
+        fenced = '```json\n{"score": 0.91, "reasoning": "Great"}\n```  \n'
+        evaluator = llm_judge_evaluator("maximize quality", model="openai/gpt-4o-mini")
+        with patch("litellm.completion", return_value=self._make_mock_completion(fenced)):
+            score, side_info = evaluator("some artifact")
+
+        assert score == 0.91
+        assert side_info["reasoning"] == "Great"
+
     def test_api_error_returns_zero_with_error_details(self):
         evaluator = llm_judge_evaluator("maximize quality", model="openai/gpt-4o-mini")
         with patch("litellm.completion", side_effect=RuntimeError("API unavailable")):

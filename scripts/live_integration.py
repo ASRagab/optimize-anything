@@ -42,11 +42,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifact", required=True, help="Path to artifact file")
     parser.add_argument("--objective", help="Natural language objective")
     parser.add_argument("--budget", type=int, default=15, help="GREEN: max evaluator calls")
-    parser.add_argument(
-        "--evaluator-command",
-        nargs="+",
-        help="Command evaluator for GREEN phase or RED command scoring",
-    )
     parser.add_argument("--run-dir", help="GREEN: directory to save run artifacts")
     parser.add_argument(
         "--model",
@@ -67,8 +62,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--round", type=int, default=1, help="Current round number")
     parser.add_argument("--baseline", type=float, help="Baseline score for comparison")
+    # MUST be last nargs="+" argument to avoid greedy consumption of subsequent flags
+    parser.add_argument(
+        "--evaluator-command",
+        nargs="+",
+        help="Command evaluator for GREEN phase or RED command scoring",
+    )
 
     args = parser.parse_args(argv)
+
+    # Detect flags accidentally swallowed by --evaluator-command nargs="+"
+    if args.evaluator_command:
+        swallowed = [t for t in args.evaluator_command if t.startswith("--")]
+        if swallowed:
+            print(json.dumps({
+                "error": (
+                    f"--evaluator-command consumed flag-like tokens: {swallowed}. "
+                    "Place --evaluator-command as the LAST argument."
+                ),
+            }))
+            return 1
 
     if args.providers and not args.objective:
         print(json.dumps({
@@ -142,8 +155,20 @@ def _run_green(args: argparse.Namespace) -> int:
         }))
         return 1
 
-    # Extract optimized score from summary
+    # Detect zero proposals — usually means --model is wrong or API key missing
     score_summary = optimize_result.get("score_summary", {})
+    num_candidates = score_summary.get("num_candidates", 0)
+    if num_candidates == 0:
+        print(json.dumps({
+            "phase": "green",
+            "error": "optimizer generated no proposals — check --model flag and API keys",
+            "run_dir": optimize_result.get("run_dir"),
+        }))
+        return 1
+    if num_candidates == 1:
+        print("Warning: only 1 candidate evaluated (seed only) — consider increasing --budget or checking --model", file=sys.stderr)
+
+    # Extract optimized score from summary
     optimized_score = score_summary.get("best", initial_score)
     metric_calls = optimize_result.get("total_metric_calls", 0)
 

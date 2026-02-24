@@ -199,10 +199,18 @@ uv run optimize-anything optimize <seed_file> [options]
 | `--objective <text>` | Natural language objective | -- |
 | `--background <text>` | Domain knowledge/constraints | -- |
 | `--budget <n>` | Max evaluator invocations | 100 |
+| `--model <model>` | Proposer LLM (e.g., `openai/gpt-4o-mini`) | env `OPTIMIZE_ANYTHING_MODEL` |
+| `--judge-model <model>` | LLM judge evaluator (mutually exclusive with `--evaluator-command`/`--evaluator-url`) | -- |
+| `--judge-objective <text>` | Override objective for the judge (falls back to `--objective`) | -- |
+| `--spec-file <path>` | TOML spec file with bundled optimization parameters | -- |
+| `--run-dir <path>` | Directory to save run artifacts (auto-timestamped subdirectory) | -- |
+| `--diff` | Show diff between seed and best candidate on stderr | -- |
 | `--output, -o <file>` | Write best candidate to file | stdout |
 
 If intake is provided, `execution_mode` is used to decide which evaluator source flag is required when neither `--evaluator-command` nor `--evaluator-url` is set. Explicit evaluator flags always win if both explicit flags and intake are supplied.
 `--output` must be a file path (not an existing directory).
+
+> **Note:** Always pass `--model` explicitly when using gepa — the default proposer model may be unavailable in your environment.
 
 ### explain
 
@@ -254,6 +262,34 @@ Normalize and validate an evaluator intake specification. Outputs canonical JSON
 | `--intake-json <json>` | Inline intake spec JSON (mutually exclusive with flags) | -- |
 | `--intake-file <path>` | Path to intake spec JSON file (mutually exclusive with flags) | -- |
 
+### score
+
+Score a single artifact without running optimization:
+
+```bash
+# With command evaluator
+uv run optimize-anything score artifact.txt \
+    --evaluator-command bash evaluators/eval.sh
+
+# With LLM judge
+uv run optimize-anything score artifact.txt \
+    --judge-model openai/gpt-4o-mini \
+    --objective "Score clarity, actionability, and specificity"
+```
+
+| Flag | Description | Default |
+|---|---|---|
+| `artifact_file` | Path to artifact to score | (required) |
+| `--evaluator-command <cmd...>` | Shell command evaluator | -- |
+| `--evaluator-url <url>` | HTTP POST evaluator URL | -- |
+| `--judge-model <model>` | LLM judge model | -- |
+| `--objective <text>` | Objective for LLM judge scoring | -- |
+| `--judge-objective <text>` | Override objective for the judge | -- |
+| `--intake-json <json>` | Inline intake spec JSON | -- |
+| `--intake-file <path>` | Path to intake spec JSON file | -- |
+
+Exactly one of `--evaluator-command`, `--evaluator-url`, or `--judge-model` is required.
+
 ## Architecture
 
 ```
@@ -263,6 +299,8 @@ src/optimize_anything/
   evaluator_generator.py   # Generate evaluator scripts from seed + objective
   cli.py                   # CLI entry point (argparse)
   intake.py                # Intake schema normalization
+  llm_judge.py             # LLM-as-judge evaluator (litellm)
+  spec_loader.py           # TOML spec file loading
   result_contract.py       # Canonical optimize summary output
   __main__.py              # python -m support
 
@@ -339,8 +377,10 @@ uv tool uninstall optimize-anything
 claude plugin remove optimize-anything
 ```
 
-## Links
+## Learn More
 
+- [Concepts](CONCEPTS.md) — glossary of core terms and architecture
+- [Walkthrough](WALKTHROUGH.md) — step-by-step tutorial for a full optimization cycle
 - [Installation Guide](install.md)
 - [Evaluator Cookbook](evaluator-cookbook.md)
 - [Examples](examples/)

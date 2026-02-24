@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 Core code lives in `src/optimize_anything/`:
-- `cli.py` for `optimize-anything` subcommands (`optimize`, `generate-evaluator`, `intake`, `explain`, `budget`)
+- `cli.py` for `optimize-anything` subcommands (`optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`)
 - `evaluators.py` for command/HTTP evaluator adapters
 - `intake.py` for intake schema normalization (`evaluation_pattern`, `execution_mode`, `quality_dimensions`, constraints)
 - `evaluator_generator.py` for evaluator scaffolding from seed/objective/intake
@@ -43,3 +43,24 @@ For PRs, include:
 - linked issue (if any),
 - test evidence (command + result),
 - sample CLI output when behavior changes.
+
+## Optimization Workflow
+
+When running RED-GREEN-OBSERVER cycles:
+1. Always pass `--model` explicitly to `live_integration.py`
+2. Place `--evaluator-command` as the LAST flag
+3. Run RED validation after every GREEN improvement
+4. Accept artifacts only when cross_provider_delta < 0.2
+5. Update baselines with `score_check.py --update` after accepting
+6. Commit with descriptive message including score deltas
+
+## File Organization
+
+- `src/optimize_anything/` — package source (all Python modules)
+- `scripts/` — operational scripts (gates, smoke, live integration)
+- `skills/` — optimizable skill artifacts (SKILL.md files)
+- `evaluators/` — production evaluator scripts
+- `examples/` — sample evaluators and seeds
+- `tests/` — pytest test suite
+- `docs/` — planning and handoff documents (gitignored from commits)
+- `integration_runs/` — optimization run artifacts (gitignored)

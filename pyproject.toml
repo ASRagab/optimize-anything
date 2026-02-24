@@ -2,8 +2,20 @@
 name = "optimize-anything"
 version = "0.1.0"
 description = "Optimize any text artifact using gepa — prompts, code, configs, skills"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
+keywords = ["optimization", "gepa", "evaluator", "llm", "prompt-engineering"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = ["gepa", "httpx", "litellm"]
+
+[project.urls]
+Homepage = "https://github.com/ASRagab/optimize-anything"
+Repository = "https://github.com/ASRagab/optimize-anything"
 
 [project.scripts]
 optimize-anything = "optimize_anything.cli:main"
@@ -19,6 +31,11 @@ build-backend = "hatchling.build"
 packages = ["src/optimize_anything"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
     "integration: live integration tests that call real APIs (deselect with '-m \"not integration\"')",
+]
+addopts = "-x --tb=short -q"
+filterwarnings = [
+    "ignore::DeprecationWarning:litellm.*",
 ]
