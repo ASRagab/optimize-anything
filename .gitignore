@@ -14,9 +14,12 @@ build/
 node_modules/
 .worktrees/
 .letta/
+.claude/
 
 # miscellaneous files
 seed.txt
 docs/
 smoke_outputs/
 artifacts/
+
+
