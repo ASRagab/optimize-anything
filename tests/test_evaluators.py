@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from optimize_anything.evaluators import command_evaluator, http_evaluator
+from optimize_anything.evaluators import command_evaluator, http_evaluator, validate_evaluator_payload
 
 
 class TestCommandEvaluator:
@@ -208,3 +208,41 @@ class TestHttpEvaluator:
             score, info = evaluate("test")
             assert score == 0.0
             assert "must be a JSON object" in info["error"]
+
+
+class TestValidateEvaluatorPayload:
+    def test_valid_payload_returns_none(self):
+        assert validate_evaluator_payload({"score": 0.5}) is None
+
+    def test_valid_payload_with_extra_fields(self):
+        assert validate_evaluator_payload({"score": 1.0, "feedback": "ok"}) is None
+
+    def test_non_dict_returns_error(self):
+        err = validate_evaluator_payload("not a dict")
+        assert err == "evaluator output must be a JSON object"
+
+    def test_non_dict_list_returns_error(self):
+        err = validate_evaluator_payload([0.5])
+        assert err == "evaluator output must be a JSON object"
+
+    def test_missing_score_returns_error(self):
+        err = validate_evaluator_payload({"feedback": "ok"})
+        assert err == "evaluator output missing required 'score' field"
+
+    def test_non_numeric_score_returns_error(self):
+        err = validate_evaluator_payload({"score": "not-a-number"})
+        assert err == "evaluator output 'score' must be numeric"
+
+    def test_none_score_returns_error(self):
+        err = validate_evaluator_payload({"score": None})
+        assert err == "evaluator output 'score' must be numeric"
+
+    def test_infinite_score_returns_error(self):
+        import math
+        err = validate_evaluator_payload({"score": math.inf})
+        assert err == "evaluator output 'score' must be finite"
+
+    def test_nan_score_returns_error(self):
+        import math
+        err = validate_evaluator_payload({"score": math.nan})
+        assert err == "evaluator output 'score' must be finite"

@@ -122,6 +122,26 @@ def http_evaluator(
     return evaluate
 
 
+def validate_evaluator_payload(result: Any) -> str | None:
+    """Validate an evaluator JSON payload.
+
+    Returns None if valid, or a human-readable error string.
+    This is the shared validation used by both CLI preflight and runtime checking.
+    """
+    if not isinstance(result, dict):
+        return "evaluator output must be a JSON object"
+    if "score" not in result:
+        return "evaluator output missing required 'score' field"
+    raw_score = result.get("score")
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return "evaluator output 'score' must be numeric"
+    if not math.isfinite(score):
+        return "evaluator output 'score' must be finite"
+    return None
+
+
 def _parse_evaluator_result(result: Any) -> tuple[float, dict[str, Any]]:
     """Validate evaluator JSON payload and extract score + side information."""
     if not isinstance(result, dict):

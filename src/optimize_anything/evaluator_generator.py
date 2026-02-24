@@ -2,7 +2,8 @@
 from __future__ import annotations
 import json
 import textwrap
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def generate_evaluator_script(
@@ -131,15 +132,21 @@ def _extract_rubric_summary(intake: Mapping[str, Any] | None) -> str:
     return "No rubric summary provided."
 
 
+def _default_quality_dimensions() -> list[tuple[str, float]]:
+    """Return default quality dimensions, sourced from intake module constants."""
+    from optimize_anything.intake import DEFAULT_QUALITY_DIMENSIONS
+    return list(DEFAULT_QUALITY_DIMENSIONS)
+
+
 def _extract_quality_dimensions(
     intake: Mapping[str, Any] | None,
 ) -> list[tuple[str, float]]:
     if not intake:
-        return [("correctness", 0.4), ("clarity", 0.35), ("conciseness", 0.25)]
+        return _default_quality_dimensions()
 
     raw_dimensions = intake.get("quality_dimensions")
     if not isinstance(raw_dimensions, list) or not raw_dimensions:
-        return [("correctness", 0.4), ("clarity", 0.35), ("conciseness", 0.25)]
+        return _default_quality_dimensions()
 
     dimensions: list[tuple[str, float]] = []
     for item in raw_dimensions:
@@ -155,7 +162,7 @@ def _extract_quality_dimensions(
         dimensions.append((name, weight))
     if dimensions:
         return dimensions
-    return [("correctness", 0.4), ("clarity", 0.35), ("conciseness", 0.25)]
+    return _default_quality_dimensions()
 
 
 def _compact_text(value: Any, *, max_length: int) -> str:

@@ -656,22 +656,8 @@ def _maybe_script_path_arg(command: list[str]) -> str | None:
 
 
 def _validate_evaluator_payload(result: object) -> str | None:
-    if not isinstance(result, dict):
-        return "evaluator output must be a JSON object"
-
-    if "score" not in result:
-        return "evaluator output missing required 'score' field"
-
-    raw_score = result.get("score")
-    try:
-        score = float(raw_score)
-    except (TypeError, ValueError):
-        return "evaluator output 'score' must be numeric"
-
-    if not math.isfinite(score):
-        return "evaluator output 'score' must be finite"
-
-    return None
+    from optimize_anything.evaluators import validate_evaluator_payload
+    return validate_evaluator_payload(result)
 
 
 def _resolve_path(path: str, *, base: Path) -> Path:
