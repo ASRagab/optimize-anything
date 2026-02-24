@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "83174226da47",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "tests/test_llm_judge.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/83/174226da47/0/metadata.json",
+      "transcript": "/83/174226da47/0/full.jsonl",
+      "context": "/83/174226da47/0/context.md",
+      "content_hash": "/83/174226da47/0/content_hash.txt",
+      "prompt": "/83/174226da47/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 208,
+    "cache_creation_tokens": 112807,
+    "cache_read_tokens": 12255356,
+    "output_tokens": 8062,
+    "api_call_count": 120
+  }
+}

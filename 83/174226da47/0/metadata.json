@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "83174226da47",
+  "session_id": "86dfa07c-e9c1-48d1-a2c3-e641b7e9c4e6",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-24T07:48:00.57561Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "tests/test_llm_judge.py"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "4a52c1d0f317",
+  "token_usage": {
+    "input_tokens": 208,
+    "cache_creation_tokens": 112807,
+    "cache_read_tokens": 12255356,
+    "output_tokens": 8062,
+    "api_call_count": 120
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-24T07:48:00.181528Z",
+    "agent_lines": 20,
+    "human_added": 595,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 617,
+    "agent_percentage": 3.2414910858995136
+  },
+  "transcript_path": ".claude/projects/-Users-aragab-projects-optimize-anything/86dfa07c-e9c1-48d1-a2c3-e641b7e9c4e6.jsonl"
+}
