@@ -49,6 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--run-dir", help="GREEN: directory to save run artifacts")
     parser.add_argument(
+        "--model",
+        help="GREEN: LLM model string for the proposer (e.g. 'openai/gpt-4o-mini')",
+    )
+    parser.add_argument(
         "--providers",
         nargs="+",
         help="RED: LLM provider model strings for multi-provider scoring",
@@ -98,6 +102,8 @@ def _run_green(args: argparse.Namespace) -> int:
     ]
     if args.evaluator_command:
         cmd.extend(["--evaluator-command"] + args.evaluator_command)
+    if args.model:
+        cmd.extend(["--model", args.model])
     if args.judge_model:
         cmd.extend(["--judge-model", args.judge_model])
     if args.judge_objective:

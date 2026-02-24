@@ -1,16 +1,30 @@
 {
   "skills/generate-evaluator/SKILL.md": {
     "evaluator": "evaluators/skill_clarity.sh",
-    "baseline": 0.856,
-    "current": 0.856,
-    "target": 0.90,
-    "last_run": "2026-02-23"
+    "baseline": 0.8728,
+    "current": 0.8728,
+    "target": 0.9,
+    "last_run": "2026-02-24",
+    "history": [
+      {
+        "score": 0.8728,
+        "date": "2026-02-24",
+        "run_id": null
+      }
+    ]
   },
   "skills/optimization-guide/SKILL.md": {
     "evaluator": "evaluators/skill_clarity.sh",
-    "baseline": 0.8326,
-    "current": 0.8326,
+    "baseline": 0.8984,
+    "current": 0.8984,
     "target": 0.88,
-    "last_run": "2026-02-23"
+    "last_run": "2026-02-24",
+    "history": [
+      {
+        "score": 0.8984,
+        "date": "2026-02-24",
+        "run_id": null
+      }
+    ]
   }
 }

@@ -171,8 +171,18 @@ def _parse_judge_response(
     if not raw_content:
         return 0.0, {"error": "LLM returned empty response"}
 
+    # Strip markdown code fences (e.g. ```json ... ```) that some providers add
+    cleaned = raw_content.strip()
+    if cleaned.startswith("```"):
+        # Remove opening fence (```json or ```)
+        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+        cleaned = cleaned[first_newline + 1 :]
+        # Remove closing fence
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rstrip()[: -len("```")].rstrip()
+
     try:
-        parsed = json.loads(raw_content)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as exc:
         return 0.0, {
             "error": f"LLM returned malformed JSON: {exc.msg}",

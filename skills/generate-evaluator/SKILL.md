@@ -5,30 +5,38 @@ description: >-
   during gepa optimization. Use when asked to build, scaffold, or generate an evaluator,
   scoring function, or judge for optimize-anything.
 ---
-Generate an evaluator that scores candidate artifacts for optimization with gepa.
-The evaluator is the most important piece — gepa's reflection LM uses your scores
-AND diagnostic feedback to propose targeted improvements.
+
+## Objective
+Generate an evaluator that scores candidate artifacts for optimization with gepa. The evaluator is crucial — gepa's reflection LM uses your scores AND diagnostic feedback to propose targeted improvements.
 
 ## Intake Questions (Ask First)
 
 Before generating any evaluator, ask these:
 
-1. What exact artifact are we optimizing (prompt text, skill markdown, docs, etc.)?
-2. What does success look like (top 3 quality criteria)?
+1. What exact artifact are we optimizing (e.g., prompt text, skill markdown, docs)?
+2. What does success look like? Identify the top 3 quality criteria.
 3. What hard constraints must never be violated?
-4. Should scoring be deterministic checks, LLM-as-judge, or a composite?
-5. Where should evaluator commands run from (project path for relative files/tools)?
+4. Should scoring be conducted with deterministic checks, LLM-as-judge, or a composite approach?
+5. Specify the directory from which evaluator commands will run (`project-path` for relative files/tools).
 
 ## Evaluator Contract
 
-- **Input:** JSON on stdin (command) or POST body (HTTP): `{"candidate": "<text>"}`
-- **Output:** JSON on stdout or response body: `{"score": <float>, ...}`
-- Score must be a float, higher is better
-- All fields beyond `score` become **Actionable Side Information (ASI)** — gepa's reflection LM reads them to guide mutations
+- **Input:** JSON on stdin (command) or POST body (HTTP): 
+  ```json
+  {"candidate": "<text>"}``` 
+- **Output:** JSON on stdout or response body: 
+  ```json
+  {"score": <float>, ...}``` 
+- Ensure the score is a float; the higher, the better.
+- Any fields beyond `score` contribute to **Actionable Side Information (ASI)** — gepa's reflection LM reads them to guide subsequent mutations.
 
 ## The Key Principle
 
-**Rich feedback drives better optimization.** An evaluator returning just `{"score": 0.3}` gives gepa almost nothing to reflect on. An evaluator returning `{"score": 0.3, "errors": ["missing output format"], "strengths": ["good structure"], "suggestion": "add explicit JSON output instructions"}` gives gepa precise guidance for the next mutation.
+**Rich feedback drives better optimization.** An evaluator that delivers only 
+```json
+{"score": 0.3}``` provides minimal guidance. Instead, aim for a response like 
+```json
+{"score": 0.3, "errors": ["missing output format"], "strengths": ["good structure"], "suggestion": "add explicit JSON output instructions"}```, offering specific guidance for the next mutation.
 
 ## Choose an Evaluator Pattern
 
@@ -40,9 +48,9 @@ Best for: structured extraction, QA, code correctness, config validation.
 # Compare candidate output against expected result
 input=$(cat)
 candidate=$(echo "$input" | python3 -c "import sys,json; print(json.load(sys.stdin)['candidate'])")
-# Run the candidate through your system, compare to ground truth
+# Run the candidate through your system and compare to ground truth
 result=$(echo "$candidate" | my-test-harness --expected expected.json)
-echo "$result"  # {"score": 0.85, "passed": 17, "failed": 3, "failures": ["test_edge_case"]}
+echo "$result"  # Expected output: {"score": 0.85, "passed": 17, "failed": 3, "failures": ["test_edge_case"]}
 ```
 
 ### 2. LLM-as-Judge (subjective quality)
@@ -50,7 +58,7 @@ Best for: prompt quality, writing style, persona authenticity, instruction clari
 
 ```python
 #!/usr/bin/env python3
-import json, sys, os
+import json, sys
 from litellm import completion
 
 data = json.load(sys.stdin)
@@ -68,7 +76,7 @@ response = completion(
 Prompt to evaluate:
 {candidate}
 
-Return JSON: {{"score": <float>, "clarity": <float>, "completeness": <float>, "conciseness": <float>, "feedback": "<specific improvement suggestions>"}}"""
+Return JSON: {{{{"score": <float>, "clarity": <float>, "completeness": <float>, "conciseness": <float>, "feedback": "<specific improvement suggestions>"}}}"""
     }],
 )
 print(response.choices[0].message.content)
@@ -86,7 +94,7 @@ echo "$candidate" > /tmp/candidate.py
 result=$(python3 /tmp/candidate.py 2>&1)
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-    echo "{\"score\": 0.0, \"error\": \"$result\"}"
+    echo '{"score": 0.0, "error": "'"$result"'"}'
 else
     runtime=$(echo "$result" | grep -oP 'runtime: \K[\d.]+')
     echo "{\"score\": $(python3 -c "print(round(1.0 / (1.0 + $runtime), 4))"), \"runtime_ms\": $runtime}"
@@ -96,62 +104,71 @@ fi
 ### 4. Composite (multiple criteria)
 Best for: any artifact where quality has multiple dimensions.
 
-Return sub-scores as extra fields — gepa sees them all:
+Return sub-scores as extra fields for insight:
 ```json
-{"score": 0.72, "accuracy": 0.9, "speed": 0.6, "readability": 0.65, "feedback": "Fast but hard to read"}
+{"score": 0.72, "accuracy": 0.9, "speed": 0.6, "readability": 0.65, "feedback": "Fast but hard to read."}
 ```
 
 ## Steps
 
 1. **Identify artifact type** — prompt, code, config, skill, agent instruction.
-2. **Ask intake questions** and lock scoring criteria before coding.
-3. **Choose evaluator pattern** from above.
-4. **Define scoring dimensions** (include sub-scores and a weighted total score).
-5. **Generate evaluator** using the `generate-evaluator` CLI subcommand as a starter.
-6. **Add rich feedback** — include errors, strengths, and specific suggestions.
-7. **Test evaluator**: `echo '{"candidate": "..."}' | bash evaluator.sh`
-8. **Validate score range** — seed should usually score in the middle (0.3-0.7).
+2. **Ask intake questions** and finalize scoring criteria before coding.
+3. **Choose evaluator pattern** from options above.
+4. **Define scoring dimensions** — include sub-scores and a weighted total score.
+5. **Generate evaluator** using the `generate-evaluator` CLI subcommand as a starter template.
+6. **Add rich feedback** — include errors, strengths, and specific suggestions for improvement.
+7. **Test evaluator**: run 
+   ```bash
+   echo '{"candidate": "..."}' | bash evaluator.sh
+   ``` 
+8. **Validate score range** — typical seed scores should be in the range of (0.3 to 0.7).
 
 ## Reusable Rubric Blueprints
 
-Choose a blueprint based on artifact type, then adapt names/weights:
+Select a blueprint based on the artifact type, then customize names and weights accordingly:
 
 ### A) Instructional Content
 
 Recommended dimensions:
-- `clarity` — wording is unambiguous
-- `coverage` — key steps/edge cases are included
-- `actionability` — outputs are directly usable
-- `safety` — avoids risky or misleading guidance
+- `clarity` — Is the wording unambiguous?
+- `coverage` — Are key steps and edge cases included?
+- `actionability` — Are outputs directly usable?
+- `safety` — Does it avoid risky or misleading guidance?
 
 Example weighted score:
-`score = 0.35*clarity + 0.30*coverage + 0.25*actionability + 0.10*safety`
+```python
+score = 0.35 * clarity + 0.30 * coverage + 0.25 * actionability + 0.10 * safety
+```
 
 ### B) Prompts / Skills / Agent Instructions
 
 Recommended dimensions:
-- `goal_alignment` — instructions drive intended behavior
-- `constraint_adherence` — respects hard rules and boundaries
-- `robustness` — handles ambiguity and edge cases
-- `specificity` — avoids vague directives
+- `goal_alignment` — Do the instructions drive the intended behavior?
+- `constraint_adherence` — Do they respect hard rules and boundaries?
+- `robustness` — Do they manage ambiguity and edge cases?
+- `specificity` — Are the directives clear and not vague?
 
 Example weighted score:
-`score = 0.35*goal_alignment + 0.30*constraint_adherence + 0.20*robustness + 0.15*specificity`
+```python
+score = 0.35 * goal_alignment + 0.30 * constraint_adherence + 0.20 * robustness + 0.15 * specificity
+```
 
 ### C) Executable/Analytical Artifacts
 
 Recommended dimensions:
-- `correctness` — output is valid and logically sound
-- `efficiency` — avoids unnecessary cost/runtime overhead
-- `validation` — includes checks and failure handling
-- `maintainability` — understandable, structured output
+- `correctness` — Is the output valid and logically sound?
+- `efficiency` — Does it avoid unnecessary costs/run-time overhead?
+- `validation` — Are checks and failure handling included?
+- `maintainability` — Is the output understandable and structured?
 
 Example weighted score:
-`score = 0.40*correctness + 0.25*efficiency + 0.20*validation + 0.15*maintainability`
+```python
+score = 0.40 * correctness + 0.25 * efficiency + 0.20 * validation + 0.15 * maintainability
+```
 
 ## Common Mistakes
 
-- Returning only a score with no diagnostic fields (gepa can't reflect effectively)
-- Binary scoring (0 or 1) — use continuous scores so gepa can detect incremental improvement
-- Writing logs to stdout instead of stderr (breaks JSON parsing)
-- Evaluator that always returns high scores — leaves no room for optimization
+- Returning only a score without diagnostic fields (gepa cannot reflect effectively).
+- Using binary scoring (0 or 1) — opt for continuous scores to enable incremental improvement detection.
+- Writing logs to stdout instead of stderr (this disrupts JSON parsing).
+- Creating evaluators that always return high scores — leaving no scope for optimization.

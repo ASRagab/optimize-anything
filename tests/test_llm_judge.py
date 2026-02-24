@@ -60,6 +60,15 @@ class TestLlmJudgeEvaluatorUnit:
         assert "malformed JSON" in side_info["error"]
         assert "raw_response" in side_info
 
+    def test_markdown_code_fences_stripped_before_parsing(self):
+        fenced = '```json\n{"score": 0.88, "reasoning": "Good"}\n```'
+        evaluator = llm_judge_evaluator("maximize quality", model="openai/gpt-4o-mini")
+        with patch("litellm.completion", return_value=self._make_mock_completion(fenced)):
+            score, side_info = evaluator("some artifact")
+
+        assert score == 0.88
+        assert side_info["reasoning"] == "Good"
+
     def test_api_error_returns_zero_with_error_details(self):
         evaluator = llm_judge_evaluator("maximize quality", model="openai/gpt-4o-mini")
         with patch("litellm.completion", side_effect=RuntimeError("API unavailable")):
