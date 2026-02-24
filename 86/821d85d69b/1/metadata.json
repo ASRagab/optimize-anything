@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "86821d85d69b",
+  "session_id": "988f32c9-e0e8-4f2c-9dd7-f8e0f5c6817e",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-24T06:56:53.450509Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "scripts/live_integration.py"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "42e6128736c9",
+  "token_usage": {
+    "input_tokens": 4347,
+    "cache_creation_tokens": 101571,
+    "cache_read_tokens": 7946503,
+    "output_tokens": 7704,
+    "api_call_count": 89
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-24T06:56:53.026744Z",
+    "agent_lines": 68,
+    "human_added": 311,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 379,
+    "agent_percentage": 17.941952506596305
+  },
+  "transcript_path": ".claude/projects/-Users-aragab-projects-optimize-anything/988f32c9-e0e8-4f2c-9dd7-f8e0f5c6817e.jsonl"
+}
