@@ -77,6 +77,17 @@ def main(argv: list[str] | None = None) -> int:
         default=False,
         help="After optimization, print a unified diff of seed vs best artifact to stderr",
     )
+    opt_parser.add_argument(
+        "--run-dir",
+        help=(
+            "Directory to save run artifacts. Creates <path>/run-<timestamp>/ "
+            "containing seed.txt, best_artifact.txt, and summary.json."
+        ),
+    )
+    opt_parser.add_argument(
+        "--spec-file",
+        help="Path to a TOML spec file for repeatable optimization runs.",
+    )
 
     # generate-evaluator subcommand
     gen_parser = subparsers.add_parser(
@@ -165,6 +176,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_optimize(args: argparse.Namespace) -> int:
+    # Apply spec file defaults (lower precedence than CLI flags)
+    if getattr(args, "spec_file", None):
+        spec = _load_spec_if_provided(args.spec_file)
+        if spec is False:
+            return 1  # error already printed
+        if spec is not None:
+            args = _apply_spec_to_args(args, spec)
+
     seed = _read_seed(args.seed_file)
     if seed is None:
         return 1
@@ -320,6 +339,16 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             print(f"Error writing output file '{args.output}': {e}", file=sys.stderr)
             return 1
         summary["output_file"] = args.output
+
+    if getattr(args, "run_dir", None):
+        saved_dir = _save_run_dir(
+            run_dir=args.run_dir,
+            seed=seed,
+            best_artifact=best,
+            summary=summary,
+        )
+        if saved_dir:
+            summary["run_dir"] = saved_dir
 
     if args.diff:
         seed_lines = seed.splitlines(keepends=True)
@@ -709,6 +738,87 @@ def _preflight_http_evaluator(url: str, *, timeout: float = 10.0) -> str | None:
         return f"Error: HTTP evaluator preflight response invalid (url: {url}): {payload_error}"
 
     return None
+
+
+def _load_spec_if_provided(spec_file: str) -> dict | None | bool:
+    """Load spec file if provided.
+
+    Returns:
+        dict: loaded spec
+        None: no spec file (not an error)
+        False: load failed (error already printed)
+    """
+    from optimize_anything.spec_loader import SpecLoadError, load_spec
+
+    try:
+        return load_spec(spec_file)
+    except SpecLoadError as exc:
+        print(f"Error loading spec file: {exc}", file=sys.stderr)
+        return False
+
+
+def _apply_spec_to_args(
+    args: argparse.Namespace,
+    spec: dict,
+) -> argparse.Namespace:
+    """Apply spec values to args. CLI flags take precedence over spec values."""
+    import copy
+
+    args = copy.copy(args)
+
+    for key in ("objective", "background", "output", "evaluator_url", "evaluator_cwd"):
+        if getattr(args, key, None) is None and spec.get(key) is not None:
+            setattr(args, key, spec[key])
+
+    if getattr(args, "evaluator_command", None) is None and spec.get("evaluator_command"):
+        args.evaluator_command = spec["evaluator_command"]
+
+    # budget: default is 100; spec overrides only if CLI user didn't explicitly set it
+    if args.budget == 100 and spec.get("budget") is not None:
+        args.budget = spec["budget"]
+
+    if getattr(args, "judge_model", None) is None and spec.get("judge_model") is not None:
+        args.judge_model = spec["judge_model"]
+
+    if getattr(args, "model", None) is None and spec.get("proposer_model") is not None:
+        args.model = spec["proposer_model"]
+
+    # Intake: apply only if neither --intake-json nor --intake-file was provided
+    if (
+        getattr(args, "intake_json", None) is None
+        and getattr(args, "intake_file", None) is None
+        and spec.get("intake")
+    ):
+        args.intake_json = json.dumps(spec["intake"])
+
+    return args
+
+
+def _save_run_dir(
+    *,
+    run_dir: str,
+    seed: str,
+    best_artifact: str | object,
+    summary: dict,
+) -> str | None:
+    """Save run artifacts to <run_dir>/run-<timestamp>/.
+
+    Returns the created directory path, or None if writing failed.
+    """
+    from datetime import datetime, timezone
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    out = Path(run_dir).expanduser() / f"run-{timestamp}"
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "seed.txt").write_text(seed)
+        best_text = best_artifact if isinstance(best_artifact, str) else json.dumps(best_artifact)
+        (out / "best_artifact.txt").write_text(best_text)
+        (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
+        return str(out)
+    except OSError as exc:
+        print(f"Warning: failed to write run-dir '{out}': {exc}", file=sys.stderr)
+        return None
 
 
 def _validate_command_executable(command_part: str, cwd: Path | None) -> str | None:

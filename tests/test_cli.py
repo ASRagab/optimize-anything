@@ -1249,6 +1249,120 @@ class TestCLI:
         assert "+++ optimized" not in captured.err
 
 
+class TestRunDir:
+    def test_run_dir_creates_directory_with_expected_files(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("initial seed content")
+        run_dir = tmp_path / "runs"
+
+        class DummyResult:
+            best_candidate = "optimized content"
+            total_metric_calls = 3
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.7, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--run-dir", str(run_dir),
+        ])
+        assert result == 0
+
+        run_dirs = list(run_dir.iterdir())
+        assert len(run_dirs) == 1
+        created = run_dirs[0]
+        assert created.name.startswith("run-")
+
+        assert (created / "seed.txt").read_text() == "initial seed content"
+        assert (created / "best_artifact.txt").read_text() == "optimized content"
+        summary = json.loads((created / "summary.json").read_text())
+        assert summary["best_artifact"] == "optimized content"
+
+    def test_run_dir_path_in_stdout_summary(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        run_dir = tmp_path / "runs"
+
+        class DummyResult:
+            best_candidate = "best"
+            total_metric_calls = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--run-dir", str(run_dir),
+        ])
+        out = json.loads(capsys.readouterr().out)
+        assert "run_dir" in out
+        assert str(run_dir) in out["run_dir"]
+
+    def test_run_dir_write_failure_does_not_exit_nonzero(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """Writing to a read-only directory prints warning but returns exit 0."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        read_only_dir = tmp_path / "ro"
+        read_only_dir.mkdir()
+        read_only_dir.chmod(0o444)
+
+        class DummyResult:
+            best_candidate = "best"
+            total_metric_calls = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--run-dir", str(read_only_dir),
+        ])
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err or "failed to write" in captured.err
+
+        read_only_dir.chmod(0o755)
+
+
 class TestHttpEvaluatorPreflight:
     def test_preflight_passes_on_valid_response(self, monkeypatch):
         from optimize_anything.cli import _preflight_http_evaluator

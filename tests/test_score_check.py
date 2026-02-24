@@ -196,3 +196,47 @@ class TestScoreCheckUpdate:
 
         unchanged = json.loads(scores_file.read_text())
         assert unchanged["artifact.txt"]["baseline"] == 0.8
+
+    def test_update_appends_history(self, tmp_path: Path):
+        """--update appends a history entry with score and date."""
+        scores_file = self._setup_passing(tmp_path, score=0.75, baseline=0.5)
+
+        rc = _score_check.check_scores(scores_file, tmp_path, update=True)
+        assert rc == 0
+
+        updated = json.loads(scores_file.read_text())
+        entry = updated["artifact.txt"]
+        assert "history" in entry
+        assert len(entry["history"]) == 1
+        assert entry["history"][0]["score"] == pytest.approx(0.75, abs=0.001)
+        assert "date" in entry["history"][0]
+        assert entry["current"] == pytest.approx(0.75, abs=0.001)
+
+    def test_update_with_run_id(self, tmp_path: Path):
+        """--run-id is recorded in history entry."""
+        scores_file = self._setup_passing(tmp_path, score=0.8, baseline=0.5)
+
+        rc = _score_check.check_scores(
+            scores_file, tmp_path, update=True, run_id="abc123"
+        )
+        assert rc == 0
+
+        entry = json.loads(scores_file.read_text())["artifact.txt"]
+        assert entry["history"][0]["run_id"] == "abc123"
+
+    def test_update_preserves_existing_history(self, tmp_path: Path):
+        """Calling --update twice appends two history entries."""
+        scores_file = self._setup_passing(tmp_path, score=0.6, baseline=0.5)
+
+        for _ in range(2):
+            _score_check.check_scores(scores_file, tmp_path, update=True)
+
+        entry = json.loads(scores_file.read_text())["artifact.txt"]
+        assert len(entry["history"]) == 2
+
+    def test_backward_compat_no_history_field(self, tmp_path: Path):
+        """scores.json without 'history' field reads and checks correctly."""
+        scores_file = self._setup_passing(tmp_path, score=0.6, baseline=0.5)
+
+        rc = _score_check.check_scores(scores_file, tmp_path, update=False)
+        assert rc == 0  # No crash from missing history key

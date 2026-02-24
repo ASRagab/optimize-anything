@@ -57,11 +57,18 @@ def run_evaluator(evaluator_path: Path, candidate: str, cwd: Path) -> float:
     return float(score)
 
 
-def check_scores(scores_path: Path, root: Path, *, update: bool = False) -> int:
+def check_scores(
+    scores_path: Path,
+    root: Path,
+    *,
+    update: bool = False,
+    run_id: str | None = None,
+) -> int:
     """Run all evaluators and compare scores to baselines.
 
     Returns 0 if all artifacts pass, 1 if any fail.
-    When update=True and all checks pass, writes measured scores back as new baselines.
+    When update=True and all checks pass, writes measured scores back as new baselines
+    and appends a history entry.
     """
     scores = load_scores(scores_path)
     any_failed = False
@@ -105,7 +112,7 @@ def check_scores(scores_path: Path, root: Path, *, update: bool = False) -> int:
             any_failed = True
 
     if not any_failed and update:
-        _write_back_scores(scores_path, scores, measured)
+        _write_back_scores(scores_path, scores, measured, run_id=run_id)
         print(f"Updated baselines written to {scores_path}")
 
     return 1 if any_failed else 0
@@ -115,16 +122,28 @@ def _write_back_scores(
     scores_path: Path,
     original: dict,
     measured: dict[str, float],
+    *,
+    run_id: str | None = None,
 ) -> None:
-    """Write measured scores back to scores.json as new baselines."""
-    from datetime import datetime, timezone
+    """Write measured scores back to scores.json as new baselines and append history."""
+    from datetime import date, datetime, timezone
 
+    today = date.today().isoformat()
     updated = {}
     for artifact_rel, entry in original.items():
         new_entry = dict(entry)
         if artifact_rel in measured:
-            new_entry["baseline"] = round(measured[artifact_rel], 6)
-            new_entry["last_run"] = datetime.now(timezone.utc).isoformat()
+            score = round(measured[artifact_rel], 6)
+            new_entry["baseline"] = score
+            new_entry["current"] = score
+            new_entry["last_run"] = today
+            history = list(new_entry.get("history", []))
+            history.append({
+                "score": score,
+                "date": today,
+                "run_id": run_id,
+            })
+            new_entry["history"] = history
         updated[artifact_rel] = new_entry
 
     with open(scores_path, "w", encoding="utf-8") as f:
@@ -152,8 +171,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=False,
         help=(
             "After all checks pass, write measured scores back to scores.json "
-            "as new baselines. Does not update if any check fails."
+            "as new baselines and append to history. Does not update if any check fails."
         ),
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional run identifier (e.g. git SHA) to record in history.",
     )
     return parser.parse_args(argv)
 
@@ -167,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: scores file not found: {scores_path}", file=sys.stderr)
         return 1
 
-    return check_scores(scores_path, root, update=args.update)
+    return check_scores(scores_path, root, update=args.update, run_id=args.run_id)
 
 
 if __name__ == "__main__":
