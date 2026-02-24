@@ -43,6 +43,33 @@ def main(argv: list[str] | None = None) -> int:
         "--budget", type=int, default=100, help="Max evaluator calls (default: 100)"
     )
     opt_parser.add_argument("--output", "-o", help="Output file for best candidate")
+    opt_parser.add_argument(
+        "--model",
+        help=(
+            "LiteLLM model string for the proposer LLM "
+            "(e.g. 'openai/gpt-4o-mini', 'claude-sonnet-4-6'). "
+            "Falls back to OPTIMIZE_ANYTHING_MODEL env var."
+        ),
+    )
+    opt_parser.add_argument(
+        "--judge-model",
+        help=(
+            "LiteLLM model string for built-in LLM-as-judge evaluation "
+            "(e.g. 'openai/gpt-4o-mini'). "
+            "Mutually exclusive with --evaluator-command and --evaluator-url."
+        ),
+    )
+    opt_parser.add_argument(
+        "--judge-objective",
+        help="Objective for the LLM judge. Falls back to --objective if not set.",
+    )
+    opt_parser.add_argument(
+        "--api-base",
+        help=(
+            "Override API base URL for litellm calls "
+            "(e.g. https://openrouter.ai/api/v1 or http://localhost:11434/v1)."
+        ),
+    )
 
     # generate-evaluator subcommand
     gen_parser = subparsers.add_parser(
@@ -147,16 +174,22 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     if intake_requested and intake_spec is None:
         return 1
 
-    if args.evaluator_command and args.evaluator_url:
+    evaluator_sources = sum([
+        bool(args.evaluator_command),
+        bool(args.evaluator_url),
+        bool(args.judge_model),
+    ])
+    if evaluator_sources > 1:
         print(
-            "Error: provide either --evaluator-command or --evaluator-url, not both",
+            "Error: provide only one of --evaluator-command, --evaluator-url, or --judge-model",
             file=sys.stderr,
         )
         return 1
 
     from optimize_anything.evaluators import command_evaluator, http_evaluator
+    from optimize_anything.llm_judge import llm_judge_evaluator
     from optimize_anything.result_contract import build_optimize_summary
-    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
     command_cwd = args.evaluator_cwd
     if command_cwd is None and intake_spec is not None:
@@ -178,6 +211,26 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         eval_fn = command_evaluator(args.evaluator_command, cwd=command_cwd)
     elif args.evaluator_url:
         eval_fn = http_evaluator(args.evaluator_url)
+    elif args.judge_model:
+        judge_objective = args.judge_objective or args.objective
+        if not judge_objective:
+            print(
+                "Error: --judge-model requires --objective or --judge-objective",
+                file=sys.stderr,
+            )
+            return 1
+        quality_dimensions = None
+        hard_constraints = None
+        if intake_spec is not None:
+            quality_dimensions = intake_spec.get("quality_dimensions")
+            hard_constraints = intake_spec.get("hard_constraints") or None
+        eval_fn = llm_judge_evaluator(
+            judge_objective,
+            model=args.judge_model,
+            quality_dimensions=quality_dimensions,
+            hard_constraints=hard_constraints,
+            api_base=args.api_base,
+        )
     else:
         if intake_spec is not None:
             execution_mode = intake_spec["execution_mode"]
@@ -193,22 +246,31 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
                 )
         else:
             print(
-                "Error: provide --evaluator-command or --evaluator-url",
+                "Error: provide --evaluator-command, --evaluator-url, or --judge-model",
                 file=sys.stderr,
             )
         return 1
 
     if args.evaluator_command:
         evaluator_label = shlex.join(args.evaluator_command)
-    else:
+    elif args.evaluator_url:
         evaluator_label = args.evaluator_url
+    else:
+        evaluator_label = f"LLM judge ({args.judge_model})"
 
     print(
         f"Running optimization (budget: {args.budget}, evaluator: {evaluator_label})...",
         file=sys.stderr,
     )
 
-    config = GEPAConfig(engine=EngineConfig(max_metric_calls=args.budget))
+    model = args.model or os.environ.get("OPTIMIZE_ANYTHING_MODEL")
+    if model:
+        config = GEPAConfig(
+            engine=EngineConfig(max_metric_calls=args.budget),
+            reflection=ReflectionConfig(reflection_lm=model),
+        )
+    else:
+        config = GEPAConfig(engine=EngineConfig(max_metric_calls=args.budget))
     try:
         result = optimize_anything(
             seed_candidate=seed,

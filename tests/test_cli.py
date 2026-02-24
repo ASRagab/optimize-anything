@@ -79,7 +79,7 @@ class TestCLI:
         )
         assert result == 1
         captured = capsys.readouterr()
-        assert "not both" in captured.err
+        assert "only one of" in captured.err
 
     def test_missing_seed_file(self, capsys):
         result = main(["explain", "/nonexistent/file.txt"])
@@ -638,6 +638,82 @@ class TestCLI:
         ])
         assert result == 0
 
+    def test_optimize_model_flag_passes_through_to_gepa(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured_config = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured_config["config"] = kwargs.get("config")
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            fake_optimize,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--model", "openai/gpt-4o-mini",
+            "--budget", "1",
+        ])
+        assert result == 0
+        cfg = captured_config["config"]
+        assert cfg.reflection.reflection_lm == "openai/gpt-4o-mini"
+
+    def test_optimize_model_env_var_fallback(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured_config = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured_config["config"] = kwargs.get("config")
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            fake_optimize,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setenv("OPTIMIZE_ANYTHING_MODEL", "gemini/gemini-2.0-flash")
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "1",
+        ])
+        assert result == 0
+        cfg = captured_config["config"]
+        assert cfg.reflection.reflection_lm == "gemini/gemini-2.0-flash"
+
     def test_optimize_prints_progress_to_stderr(
         self, tmp_path: Path, capsys, monkeypatch
     ):
@@ -798,6 +874,207 @@ class TestCLI:
 
         payload = json.loads(capsys.readouterr().out)
         assert payload["evaluator_failure_signal"]["kind"] == "repeated_zero_scores"
+
+
+    def test_optimize_judge_model_creates_llm_evaluator(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test artifact")
+        captured_eval = {}
+
+        class DummyResult:
+            best_candidate = "improved"
+            total_metric_calls = 3
+
+        def fake_optimize(**kwargs):
+            captured_eval["evaluator"] = kwargs.get("evaluator")
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            fake_optimize,
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--judge-model", "openai/gpt-4o-mini",
+            "--objective", "maximize clarity",
+            "--budget", "3",
+        ])
+        assert result == 0
+        # Evaluator was set (the llm_judge_evaluator closure)
+        assert captured_eval["evaluator"] is not None
+        assert callable(captured_eval["evaluator"])
+        # Progress message shows judge label
+        captured = capsys.readouterr()
+        assert "LLM judge (openai/gpt-4o-mini)" in captured.err
+
+    def test_optimize_judge_model_requires_objective(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        result = main([
+            "optimize", str(seed_file),
+            "--judge-model", "openai/gpt-4o-mini",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "--judge-model requires --objective or --judge-objective" in captured.err
+
+    def test_optimize_judge_objective_overrides_objective(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured_args = {}
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            captured_args["objective"] = objective
+            captured_args["model"] = model
+            return lambda c: (0.8, {"reasoning": "good"})
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.llm_judge.llm_judge_evaluator",
+            fake_llm_judge,
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--judge-model", "openai/gpt-4o-mini",
+            "--objective", "general objective",
+            "--judge-objective", "specific judge objective",
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert captured_args["objective"] == "specific judge objective"
+
+    def test_optimize_judge_model_mutual_exclusion_with_command(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        result = main([
+            "optimize", str(seed_file),
+            "--judge-model", "openai/gpt-4o-mini",
+            "--evaluator-command", "bash", "eval.sh",
+            "--objective", "test",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "only one of" in captured.err
+
+    def test_optimize_judge_model_mutual_exclusion_with_url(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        result = main([
+            "optimize", str(seed_file),
+            "--judge-model", "openai/gpt-4o-mini",
+            "--evaluator-url", "http://localhost:8000/eval",
+            "--objective", "test",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "only one of" in captured.err
+
+    def test_optimize_no_evaluator_error_mentions_judge_model(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        result = main(["optimize", str(seed_file)])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "--judge-model" in captured.err
+
+    def test_optimize_judge_model_with_intake_dimensions(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured_args = {}
+
+        def fake_llm_judge(objective, *, model, quality_dimensions=None, hard_constraints=None, **kwargs):
+            captured_args["quality_dimensions"] = quality_dimensions
+            captured_args["hard_constraints"] = hard_constraints
+            return lambda c: (0.7, {"reasoning": "ok"})
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.llm_judge.llm_judge_evaluator",
+            fake_llm_judge,
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        intake_json = json.dumps({
+            "execution_mode": "command",
+            "quality_dimensions": [
+                {"name": "clarity", "weight": 0.5},
+                {"name": "brevity", "weight": 0.5},
+            ],
+            "hard_constraints": ["must be under 200 words"],
+        })
+        result = main([
+            "optimize", str(seed_file),
+            "--judge-model", "openai/gpt-4o-mini",
+            "--objective", "maximize quality",
+            "--intake-json", intake_json,
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert len(captured_args["quality_dimensions"]) == 2
+        assert captured_args["hard_constraints"] == ["must be under 200 words"]
+
+    def test_optimize_judge_model_passes_api_base(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured_args = {}
+
+        def fake_llm_judge(objective, *, model, api_base=None, **kwargs):
+            captured_args["api_base"] = api_base
+            return lambda c: (0.5, {})
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.llm_judge.llm_judge_evaluator",
+            fake_llm_judge,
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--judge-model", "openai/gpt-4o-mini",
+            "--objective", "test",
+            "--api-base", "https://openrouter.ai/api/v1",
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert captured_args["api_base"] == "https://openrouter.ai/api/v1"
 
 
 class TestEchoScoreEvaluator:

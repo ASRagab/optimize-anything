@@ -39,11 +39,20 @@ Input/output contract for external evaluators:
 
 - `src/optimize_anything/cli.py`
   - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`
-  - Supports evaluator source flags (`--evaluator-command` or `--evaluator-url`)
+  - Three mutually exclusive evaluator sources: `--evaluator-command`, `--evaluator-url`, `--judge-model`
+  - Multi-provider flags: `--model` (proposer LLM), `--judge-model` (judge LLM), `--api-base`
+  - `--judge-objective` overrides `--objective` for the judge; falls back to `--objective`
+  - `--model` env fallback: `OPTIMIZE_ANYTHING_MODEL`
   - Supports intake flags (`--intake-json`, `--intake-file`) and `--evaluator-cwd`
 
 - `src/optimize_anything/evaluators.py`
   - `command_evaluator(...)`, `http_evaluator(...)`, strict score validation
+
+- `src/optimize_anything/llm_judge.py`
+  - `llm_judge_evaluator(objective, *, model, quality_dimensions, hard_constraints, timeout, temperature, api_base)`
+  - Uses litellm for multi-provider LLM calls; returns gepa-compatible `(score, side_info)` tuples
+  - Supports simple (score+reasoning) and dimension-weighted scoring modes
+  - Hard constraint gate: score forced to 0.0 on violation
 
 - `src/optimize_anything/intake.py`
   - Normalizes intake schema and validates:
@@ -78,6 +87,7 @@ skills/optimization-guide/
 - Use `pytest`.
 - CLI tests call `main(argv)`.
 - Evaluator tests include command, HTTP, timeout, and malformed payload cases.
+- LLM judge unit tests mock `litellm.completion`; integration tests skip via `@pytest.mark.skipif` when API keys absent.
 - Doc drift checks live in `tests/test_doc_contract.py`.
 
 ## Dependencies
