@@ -284,6 +284,85 @@ class TestLlmJudgeIntegration:
         assert 0.0 <= score <= 1.0
         assert "reasoning" in side_info or "error" not in side_info
 
+    # --- Dimension-weighted scoring (production path) ---
+
+    _DIMS = [
+        {"name": "clarity", "weight": 0.5},
+        {"name": "specificity", "weight": 0.3},
+        {"name": "conciseness", "weight": 0.2},
+    ]
+    _DIM_ARTIFACT = (
+        "To install, run `pip install my-package`. "
+        "Then call `my_package.run(config_path='settings.toml')` "
+        "to start the service on port 8080."
+    )
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("OPENAI_API_KEY"),
+        reason="OPENAI_API_KEY required",
+    )
+    def test_integration_openai_dimension_scoring(self):
+        evaluator = llm_judge_evaluator(
+            "Score technical documentation quality.",
+            model="openai/gpt-4o-mini",
+            quality_dimensions=self._DIMS,
+        )
+        score, side_info = evaluator(self._DIM_ARTIFACT)
+        assert 0.0 <= score <= 1.0
+        # Dimension-weighted mode should return per-dimension scores
+        assert any(k in side_info for k in ("clarity", "specificity", "conciseness"))
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("ANTHROPIC_API_KEY"),
+        reason="ANTHROPIC_API_KEY required",
+    )
+    def test_integration_anthropic_dimension_scoring(self):
+        evaluator = llm_judge_evaluator(
+            "Score technical documentation quality.",
+            model="anthropic/claude-haiku-4-5-20251001",
+            quality_dimensions=self._DIMS,
+        )
+        score, side_info = evaluator(self._DIM_ARTIFACT)
+        assert 0.0 <= score <= 1.0
+        assert any(k in side_info for k in ("clarity", "specificity", "conciseness"))
+
+    # --- Hard constraint enforcement ---
+
+    _CONSTRAINT_ARTIFACT_VIOLATING = "x " * 300  # ~300 words, violates "under 50 words"
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("OPENAI_API_KEY"),
+        reason="OPENAI_API_KEY required",
+    )
+    def test_integration_openai_hard_constraint_violation(self):
+        evaluator = llm_judge_evaluator(
+            "Score text quality.",
+            model="openai/gpt-4o-mini",
+            quality_dimensions=[{"name": "clarity", "weight": 1.0}],
+            hard_constraints=["Text must be under 50 words"],
+        )
+        score, side_info = evaluator(self._CONSTRAINT_ARTIFACT_VIOLATING)
+        # Model should detect the constraint violation → score forced to 0.0
+        assert score == 0.0 or side_info.get("hard_constraint_violation") is True
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("ANTHROPIC_API_KEY"),
+        reason="ANTHROPIC_API_KEY required",
+    )
+    def test_integration_anthropic_hard_constraint_violation(self):
+        evaluator = llm_judge_evaluator(
+            "Score text quality.",
+            model="anthropic/claude-haiku-4-5-20251001",
+            quality_dimensions=[{"name": "clarity", "weight": 1.0}],
+            hard_constraints=["Text must be under 50 words"],
+        )
+        score, side_info = evaluator(self._CONSTRAINT_ARTIFACT_VIOLATING)
+        assert score == 0.0 or side_info.get("hard_constraint_violation") is True
+
 
 class TestComputeWeightedScore:
     def test_basic_weighted_average(self):
