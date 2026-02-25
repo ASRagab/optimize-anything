@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "125c9650ca08",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "AGENTS.md",
+    "evaluator-cookbook.md",
+    "skills/generate-evaluator/SKILL.md",
+    "skills/optimization-guide/SKILL.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/12/5c9650ca08/0/metadata.json",
+      "transcript": "/12/5c9650ca08/0/full.jsonl",
+      "context": "/12/5c9650ca08/0/context.md",
+      "content_hash": "/12/5c9650ca08/0/content_hash.txt",
+      "prompt": "/12/5c9650ca08/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14254,
+    "cache_creation_tokens": 259287,
+    "cache_read_tokens": 13004462,
+    "output_tokens": 8748,
+    "api_call_count": 119
+  }
+}
