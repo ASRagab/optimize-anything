@@ -21,22 +21,20 @@ Before generating any evaluator, ask these:
 
 ## Evaluator Contract
 
-- **Input:** JSON on stdin (command) or POST body (HTTP): 
+- **Input:** JSON on stdin (command) or POST body (HTTP):
   ```json
-  {"candidate": "<text>"}``` 
-- **Output:** JSON on stdout or response body: 
+  {"candidate": "<text>"}
+  ```
+- **Output:** JSON on stdout or response body:
   ```json
-  {"score": <float>, ...}``` 
+  {"score": <float>, ...}
+  ```
 - Ensure the score is a float; the higher, the better.
 - Any fields beyond `score` contribute to **Actionable Side Information (ASI)** — gepa's reflection LM reads them to guide subsequent mutations.
 
 ## The Key Principle
 
-**Rich feedback drives better optimization.** An evaluator that delivers only 
-```json
-{"score": 0.3}``` provides minimal guidance. Instead, aim for a response like 
-```json
-{"score": 0.3, "errors": ["missing output format"], "strengths": ["good structure"], "suggestion": "add explicit JSON output instructions"}```, offering specific guidance for the next mutation.
+**Rich feedback drives better optimization.** An evaluator that delivers only `{"score": 0.3}` provides minimal guidance. Instead, aim for a response like `{"score": 0.3, "errors": ["missing output format"], "strengths": ["good structure"], "suggestion": "add explicit JSON output instructions"}`, offering specific guidance for the next mutation.
 
 ## Choose an Evaluator Pattern
 

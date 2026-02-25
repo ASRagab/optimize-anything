@@ -2,10 +2,12 @@
 
 ## Project Structure & Module Organization
 Core code lives in `src/optimize_anything/`:
-- `cli.py` for `optimize-anything` subcommands (`optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`)
+- `cli.py` for `optimize-anything` subcommands (`optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `analyze`)
 - `evaluators.py` for command/HTTP evaluator adapters
+- `llm_judge.py` for LLM-as-judge evaluator and dimension analysis
 - `intake.py` for intake schema normalization (`evaluation_pattern`, `execution_mode`, `quality_dimensions`, constraints)
 - `evaluator_generator.py` for evaluator scaffolding from seed/objective/intake
+- `spec_loader.py` for TOML spec file loading
 - `result_contract.py` for canonical optimize summary output used by CLI
 
 Tests are in `tests/` with shared fixtures in `tests/conftest.py`. Supporting material is in `docs/` (protocol, smoke gates, remediation, release/handoff), `examples/` (seed/evaluator samples), `commands/` (slash command docs), `skills/` (packaged skills), plus root guides `install.md` and `evaluator-cookbook.md`.
@@ -16,8 +18,12 @@ Tests are in `tests/` with shared fixtures in `tests/conftest.py`. Supporting ma
 - `uv run pytest tests/test_cli.py` — run one test module.
 - `uv run pytest -k "explain"` — run tests by name pattern.
 - `uv run optimize-anything --help` — inspect CLI usage.
+- `uv run python scripts/check.py` — unified gate: pytest + smoke + score_check.
+- `uv run python scripts/check.py --skip-smoke` — unified gate without smoke (offline).
 - `uv run python scripts/smoke_harness.py --budget 1` — run CLI smoke harness.
-- `uv run python scripts/consecutive_smoke_gate.py --budget 1` — run consecutive smoke gate.
+- `uv run python scripts/score_check.py` — score regression check.
+- `uv run python scripts/score_check.py --update` — update baselines after improvement.
+- `uv run python scripts/live_integration.py --phase green --artifact FILE --model openai/gpt-4o-mini --budget 15 --objective "..." --evaluator-command bash evaluators/eval.sh` — GREEN phase optimization.
 
 ## Coding Style & Naming Conventions
 Target Python is `>=3.10`. Follow existing style:

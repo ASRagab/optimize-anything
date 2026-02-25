@@ -1,6 +1,6 @@
 # Evaluator Cookbook
 
-An evaluator is a function that scores a candidate artifact. optimize-anything supports two evaluator types: **shell commands** and **HTTP endpoints**.
+An evaluator is a function that scores a candidate artifact. optimize-anything supports three evaluator types: **shell commands**, **HTTP endpoints**, and **LLM judges**.
 
 ## Evaluator Contract
 
@@ -142,6 +142,39 @@ curl -X POST http://localhost:3456 \
   -d '{"candidate": "{\"name\": \"test\"}"}'
 # Expected: {"score": 0.65, "validJson": true, "hasName": true}
 ```
+
+## Recipe 3: LLM Judge (No Script Required)
+
+Use an LLM to score artifacts directly — no evaluator script needed.
+
+**Usage:**
+```bash
+# Score a single artifact
+uv run optimize-anything score my-prompt.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Score clarity and persuasiveness"
+
+# Optimize with LLM judge
+uv run optimize-anything optimize my-prompt.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Maximize clarity and persuasiveness" \
+  --budget 15
+
+# Discover quality dimensions first, then optimize
+uv run optimize-anything analyze my-prompt.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Quality"
+```
+
+The LLM judge supports quality dimensions and hard constraints via intake JSON:
+```bash
+uv run optimize-anything optimize prompt.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Maximize quality" \
+  --intake-json '{"quality_dimensions": [{"name": "clarity", "weight": 0.6}, {"name": "accuracy", "weight": 0.4}], "hard_constraints": ["must be under 200 words"]}'
+```
+
+The `--judge-model` flag is mutually exclusive with `--evaluator-command` and `--evaluator-url`.
 
 ## Auto-generating Evaluators
 

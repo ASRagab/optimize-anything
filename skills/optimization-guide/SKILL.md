@@ -71,7 +71,7 @@ config = GEPAConfig(
 
 **Via CLI:**
 ```bash
-optimize-anything optimize `seed.txt` --evaluator-command `bash evaluators/eval.sh` --budget 100 --objective "maximize clarity" -o `result.txt`
+optimize-anything optimize seed.txt --evaluator-command bash evaluators/eval.sh --budget 100 --objective "maximize clarity" -o result.txt
 ```
 
 **Via Python API:**
@@ -80,7 +80,7 @@ from optimize_anything import optimize_anything, command_evaluator
 from gepa.optimize_anything import GEPAConfig, EngineConfig
 
 result = optimize_anything(
-    seed_candidate=open("`seed.txt`").read(),
+    seed_candidate=open("seed.txt").read(),
     evaluator=command_evaluator(["bash", "evaluators/eval.sh"]),
     objective="maximize clarity",
     config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
