@@ -134,6 +134,23 @@ class TestScoreCheck:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
+    def test_score_check_handles_missing_evaluator(self, tmp_path: Path):
+        """scores.json references a nonexistent evaluator => FAIL (exit 1)."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("hello")
+
+        scores_data = {
+            "artifact.txt": {
+                "evaluator": "nonexistent/eval.sh",
+                "baseline": 0.5,
+            }
+        }
+        scores_path = tmp_path / "scores.json"
+        scores_path.write_text(json.dumps(scores_data))
+
+        rc = _score_check.check_scores(scores_path, tmp_path)
+        assert rc == 1
+
 
 class TestScoreCheckUpdate:
     """Tests for the --update write-back feature."""

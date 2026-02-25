@@ -88,3 +88,25 @@ def test_hard_constraints_type_validation():
 def test_evaluator_cwd_type_validation():
     with pytest.raises(ValueError, match="evaluator_cwd must be a string or None"):
         normalize_intake_spec({"evaluator_cwd": 42})
+
+
+def test_empty_quality_dimensions_raises():
+    with pytest.raises(ValueError, match="must contain at least one dimension"):
+        normalize_intake_spec({"quality_dimensions": []})
+
+
+def test_non_mapping_intake_raises():
+    with pytest.raises(ValueError, match="intake spec must be a mapping"):
+        normalize_intake_spec(["not", "a", "mapping"])
+
+
+def test_duplicate_dimension_name_raises():
+    with pytest.raises(ValueError, match="Duplicate quality dimension name"):
+        normalize_intake_spec(
+            {
+                "quality_dimensions": [
+                    {"name": "clarity", "weight": 0.5},
+                    {"name": "clarity", "weight": 0.5},
+                ]
+            }
+        )

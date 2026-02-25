@@ -1249,6 +1249,40 @@ class TestCLI:
         assert "+++ optimized" not in captured.err
 
 
+class TestBudgetPrecedence:
+    def test_budget_explicit_100_preserved_over_spec(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """Explicit --budget 100 must not be overridden by spec budget."""
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test content")
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text(
+            '[optimization]\nobjective = "test"\nbudget = 50\n'
+        )
+
+        captured_budget = []
+
+        def fake_optimize(**kwargs):
+            captured_budget.append(kwargs.get("config"))
+            return {"best_candidate": "done", "best_score": 1.0}
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything", fake_optimize
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "echo", '{"score": 1.0}',
+            "--spec-file", str(spec_file),
+            "--budget", "100",
+        ])
+        assert result == 0
+        assert len(captured_budget) == 1
+        config = captured_budget[0]
+        assert config.engine.max_metric_calls == 100
+
+
 class TestRunDir:
     def test_run_dir_creates_directory_with_expected_files(
         self, tmp_path: Path, capsys, monkeypatch

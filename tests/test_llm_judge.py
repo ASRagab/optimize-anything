@@ -123,6 +123,25 @@ class TestLlmJudgeEvaluatorUnit:
         assert score == 0.0
         assert side_info.get("hard_constraint_violation") is True
 
+    def test_hard_constraint_violation_simple_mode(self):
+        """Hard constraint gate fires even without quality dimensions."""
+        constraints = ["must be under 10 words"]
+        response_content = json.dumps({
+            "score": 0.9,
+            "reasoning": "Violates length constraint",
+            "hard_constraints_satisfied": False,
+        })
+        evaluator = llm_judge_evaluator(
+            "maximize clarity",
+            model="openai/gpt-4o-mini",
+            hard_constraints=constraints,
+        )
+        with patch("litellm.completion", return_value=self._make_mock_completion(response_content)):
+            score, side_info = evaluator("very long text " * 50)
+
+        assert score == 0.0
+        assert side_info.get("hard_constraint_violation") is True
+
     def test_no_quality_dimensions_uses_simple_prompt_and_score(self):
         response_content = json.dumps({"score": 0.65, "reasoning": "Adequate"})
         evaluator = llm_judge_evaluator("maximize quality", model="openai/gpt-4o-mini")
