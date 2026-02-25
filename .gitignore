@@ -22,5 +22,6 @@ docs/
 smoke_outputs/
 artifacts/
 integration_runs/
+dogfood_runs/
 
 

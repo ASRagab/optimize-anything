@@ -7,7 +7,7 @@
 #         "actionability": <float>, "specificity": <float>,
 #         "conciseness": <float>, "feedback": [...]}
 #
-# Weights: structure=0.30, actionability=0.30, specificity=0.25, conciseness=0.15
+# Weights: structure=0.25, actionability=0.25, specificity=0.20, conciseness=0.30
 
 set -euo pipefail
 
