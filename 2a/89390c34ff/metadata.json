@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "2a89390c34ff",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".claude-plugin/plugin.json",
+    "CLAUDE.md",
+    "README.md",
+    "src/optimize_anything/cli.py",
+    "src/optimize_anything/llm_judge.py",
+    "tests/test_cli.py",
+    "tests/test_doc_contract.py",
+    "tests/test_llm_judge.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2a/89390c34ff/0/metadata.json",
+      "transcript": "/2a/89390c34ff/0/full.jsonl",
+      "context": "/2a/89390c34ff/0/context.md",
+      "content_hash": "/2a/89390c34ff/0/content_hash.txt",
+      "prompt": "/2a/89390c34ff/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 581,
+    "cache_creation_tokens": 228687,
+    "cache_read_tokens": 6914878,
+    "output_tokens": 6885,
+    "api_call_count": 74
+  }
+}

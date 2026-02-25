@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "2a89390c34ff",
+  "session_id": "5e568ca0-1995-4163-a7aa-84dc01309f78",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-25T14:24:23.122338Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".claude-plugin/plugin.json",
+    "CLAUDE.md",
+    "README.md",
+    "src/optimize_anything/cli.py",
+    "src/optimize_anything/llm_judge.py",
+    "tests/test_cli.py",
+    "tests/test_doc_contract.py",
+    "tests/test_llm_judge.py"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "cf7ba1d1ac0c",
+  "transcript_identifier_at_start": "d72849e3-d4b2-44da-9576-6f0b7962f167",
+  "token_usage": {
+    "input_tokens": 581,
+    "cache_creation_tokens": 228687,
+    "cache_read_tokens": 6914878,
+    "output_tokens": 6885,
+    "api_call_count": 74
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-25T14:24:22.781853Z",
+    "agent_lines": 857,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 857,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-aragab-projects-optimize-anything/5e568ca0-1995-4163-a7aa-84dc01309f78.jsonl"
+}
