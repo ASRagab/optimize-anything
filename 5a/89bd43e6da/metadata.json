@@ -5,7 +5,15 @@
   "branch": "main",
   "checkpoints_count": 1,
   "files_touched": [
-    ".gitignore"
+    ".gitignore",
+    "LICENSE",
+    "commands/analyze.md",
+    "commands/budget.md",
+    "commands/explain.md",
+    "commands/generate-evaluator.md",
+    "commands/intake.md",
+    "commands/optimize.md",
+    "commands/score.md"
   ],
   "sessions": [
     {
@@ -14,13 +22,20 @@
       "context": "/5a/89bd43e6da/0/context.md",
       "content_hash": "/5a/89bd43e6da/0/content_hash.txt",
       "prompt": "/5a/89bd43e6da/0/prompt.txt"
+    },
+    {
+      "metadata": "/5a/89bd43e6da/1/metadata.json",
+      "transcript": "/5a/89bd43e6da/1/full.jsonl",
+      "context": "/5a/89bd43e6da/1/context.md",
+      "content_hash": "/5a/89bd43e6da/1/content_hash.txt",
+      "prompt": "/5a/89bd43e6da/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14254,
-    "cache_creation_tokens": 259287,
-    "cache_read_tokens": 13004462,
-    "output_tokens": 8748,
-    "api_call_count": 119
+    "input_tokens": 14479,
+    "cache_creation_tokens": 379757,
+    "cache_read_tokens": 27147544,
+    "output_tokens": 16966,
+    "api_call_count": 252
   }
 }
