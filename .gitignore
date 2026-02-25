@@ -24,3 +24,4 @@ artifacts/
 integration_runs/
 dogfood_runs/
 .entire/
+PROMPT.md
