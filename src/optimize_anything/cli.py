@@ -184,6 +184,41 @@ def main(argv: list[str] | None = None) -> int:
         "--intake-file", help="Path to evaluator intake specification JSON file"
     )
 
+    # analyze subcommand
+    analyze_parser = subparsers.add_parser(
+        "analyze",
+        help="Analyze an artifact to discover quality dimensions for optimization",
+    )
+    analyze_parser.add_argument(
+        "artifact_file", help="Path to artifact file to analyze"
+    )
+    analyze_parser.add_argument(
+        "--judge-model",
+        required=True,
+        help="LiteLLM model string for the LLM judge (e.g. 'openai/gpt-4o-mini')",
+    )
+    analyze_parser.add_argument(
+        "--objective",
+        required=True,
+        help="Natural language scoring objective",
+    )
+    analyze_parser.add_argument(
+        "--api-base",
+        help="Override API base URL for litellm calls.",
+    )
+    analyze_parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Sampling temperature for LLM calls (default: 0.0)",
+    )
+    analyze_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=60.0,
+        help="Max seconds per LLM call (default: 60.0)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "optimize":
@@ -198,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_budget(args)
     elif args.command == "score":
         return _cmd_score(args)
+    elif args.command == "analyze":
+        return _cmd_analyze(args)
     return 1
 
 
@@ -390,6 +427,15 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             print("--- end diff ---", file=sys.stderr)
         else:
             print("(no diff: seed and optimized artifact are identical)", file=sys.stderr)
+
+    # Judge-specific plateau advisory
+    if summary.get("plateau_detected") and args.judge_model:
+        _print_judge_plateau_advisory(
+            judge_model=args.judge_model,
+            proposer_model=model,
+            has_intake=intake_spec is not None,
+            file=sys.stderr,
+        )
 
     print(json.dumps(summary, indent=2, default=str))
     return 0
@@ -606,6 +652,63 @@ def _cmd_score(args: argparse.Namespace) -> int:
     result = {"score": score, **side_info}
     print(json.dumps(result, indent=2, default=str))
     return 0
+
+
+def _cmd_analyze(args: argparse.Namespace) -> int:
+    """Analyze an artifact to discover quality dimensions for optimization."""
+    artifact = _read_seed(args.artifact_file)
+    if artifact is None:
+        return 1
+
+    from optimize_anything.llm_judge import analyze_for_dimensions
+
+    print(
+        f"Analyzing artifact with {args.judge_model}...",
+        file=sys.stderr,
+    )
+
+    try:
+        result = analyze_for_dimensions(
+            artifact=artifact,
+            objective=args.objective,
+            model=args.judge_model,
+            api_base=args.api_base,
+            timeout=args.timeout,
+            temperature=args.temperature,
+        )
+    except (ValueError, RuntimeError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(result, indent=2, default=str))
+    return 0
+
+
+def _print_judge_plateau_advisory(
+    *,
+    judge_model: str,
+    proposer_model: str | None,
+    has_intake: bool,
+    file: object = None,
+) -> None:
+    """Print actionable suggestions when LLM judge optimization plateaus."""
+    lines = [
+        "",
+        "Plateau detected with LLM judge. Suggestions:",
+        f"  1. Run `optimize-anything analyze <artifact> --judge-model {judge_model} --objective <objective>` to discover quality dimensions",
+    ]
+    if proposer_model:
+        lines.append(
+            f"  2. Consider a stronger --model (current: {proposer_model})"
+        )
+    else:
+        lines.append("  2. Try specifying --model with a stronger proposer LLM")
+    if not has_intake:
+        lines.append(
+            "  3. Try --intake-json with quality_dimensions for more granular scoring"
+        )
+    for line in lines:
+        print(line, file=file)
 
 
 def _read_seed(path: str) -> str | None:

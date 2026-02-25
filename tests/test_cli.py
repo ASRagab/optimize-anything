@@ -1841,3 +1841,243 @@ class TestScoreJudgeModel:
         # litellm renames api_base to base_url internally
         assert captured_kwargs.get("api_base") == "http://localhost:11434/v1" or \
             captured_kwargs.get("base_url") == "http://localhost:11434/v1"
+
+
+class TestAnalyzeCommand:
+    """Tests for the analyze subcommand."""
+
+    def test_analyze_help(self, capsys):
+        try:
+            main(["analyze", "--help"])
+        except SystemExit as e:
+            assert e.code == 0
+        captured = capsys.readouterr()
+        assert "artifact_file" in captured.out
+        assert "--judge-model" in captured.out
+        assert "--objective" in captured.out
+
+    def test_analyze_happy_path(self, tmp_path, monkeypatch):
+        artifact = tmp_path / "readme.md"
+        artifact.write_text("# My Project\nSome content here.")
+
+        score_response = json.dumps({"score": 0.82, "reasoning": "Good but verbose"})
+        dims_response = json.dumps({
+            "dimensions": [
+                {"name": "clarity", "weight": 0.4, "score": 0.9, "description": "How clear"},
+                {"name": "conciseness", "weight": 0.6, "score": 0.65, "description": "Brevity"},
+            ]
+        })
+
+        call_count = 0
+        def mock_completion(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            resp = type("R", (), {
+                "choices": [type("C", (), {
+                    "message": type("M", (), {
+                        "content": score_response if call_count == 1 else dims_response
+                    })()
+                })()]
+            })()
+            return resp
+
+        monkeypatch.setattr("litellm.completion", mock_completion)
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "analyze", str(artifact),
+                "--judge-model", "openai/gpt-4o-mini",
+                "--objective", "Optimize for OSS quality",
+            ])
+
+        assert rc == 0, f"stderr: {stderr.getvalue()}"
+        result = json.loads(stdout.getvalue())
+        assert result["current_score"] == pytest.approx(0.82)
+        assert len(result["suggested_dimensions"]) == 2
+        assert "intake_json" in result
+        # Verify intake_json is valid and usable
+        intake = json.loads(result["intake_json"])
+        assert "quality_dimensions" in intake
+        assert "recommendation" in result
+
+    def test_analyze_missing_file(self, tmp_path):
+        import io, contextlib
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            rc = main([
+                "analyze", str(tmp_path / "nonexistent.txt"),
+                "--judge-model", "openai/gpt-4o-mini",
+                "--objective", "test",
+            ])
+        assert rc == 1
+        assert "not found" in stderr.getvalue().lower()
+
+    def test_analyze_llm_error(self, tmp_path, monkeypatch):
+        artifact = tmp_path / "test.txt"
+        artifact.write_text("content")
+
+        monkeypatch.setattr(
+            "litellm.completion",
+            lambda **kw: (_ for _ in ()).throw(RuntimeError("API down")),
+        )
+
+        import io, contextlib
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            rc = main([
+                "analyze", str(artifact),
+                "--judge-model", "openai/gpt-4o-mini",
+                "--objective", "test",
+            ])
+        assert rc == 1
+        assert "error" in stderr.getvalue().lower()
+
+    def test_analyze_requires_judge_model(self):
+        """analyze without --judge-model should fail at argparse level."""
+        with pytest.raises(SystemExit):
+            main(["analyze", "some_file.txt", "--objective", "test"])
+
+    def test_analyze_requires_objective(self):
+        """analyze without --objective should fail at argparse level."""
+        with pytest.raises(SystemExit):
+            main(["analyze", "some_file.txt", "--judge-model", "openai/gpt-4o-mini"])
+
+
+class TestJudgePlateauAdvisory:
+    """Tests for judge-specific plateau detection advisory output."""
+
+    def test_plateau_advisory_shown_with_judge_model(self, tmp_path, monkeypatch):
+        """When plateau detected + --judge-model, print judge-specific suggestions."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("test artifact")
+
+        class PlateauResult:
+            best_candidate = "test artifact"
+            total_metric_calls = 5
+            # Flat scores trigger plateau: spread < 0.01, total_gain < 0.02
+            val_aggregate_scores = [0.88, 0.88, 0.88, 0.88, 0.88]
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kw: PlateauResult(),
+        )
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "optimize", str(seed),
+                "--judge-model", "openai/gpt-4o-mini",
+                "--objective", "maximize quality",
+                "--budget", "5",
+            ])
+
+        assert rc == 0
+        err = stderr.getvalue()
+        assert "Plateau detected with LLM judge" in err
+        assert "optimize-anything analyze" in err
+        assert "--model" in err
+        assert "--intake-json" in err
+
+    def test_no_advisory_without_judge_model(self, tmp_path, monkeypatch):
+        """Plateau advisory is not printed for command evaluators."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("test")
+
+        class PlateauResult:
+            best_candidate = "test"
+            total_metric_calls = 5
+            val_aggregate_scores = [0.88, 0.88, 0.88, 0.88, 0.88]
+
+        eval_script = tmp_path / "eval.sh"
+        eval_script.write_text('#!/bin/bash\necho \'{"score": 0.88}\'')
+        eval_script.chmod(0o755)
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kw: PlateauResult(),
+        )
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "optimize", str(seed),
+                "--evaluator-command", "bash", str(eval_script),
+                "--budget", "5",
+            ])
+
+        assert rc == 0
+        err = stderr.getvalue()
+        assert "Plateau detected with LLM judge" not in err
+
+    def test_no_advisory_when_no_plateau(self, tmp_path, monkeypatch):
+        """No advisory when scores are improving."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("test")
+
+        class ImprovingResult:
+            best_candidate = "better"
+            total_metric_calls = 5
+            val_aggregate_scores = [0.50, 0.60, 0.70, 0.80, 0.90]
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kw: ImprovingResult(),
+        )
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "optimize", str(seed),
+                "--judge-model", "openai/gpt-4o-mini",
+                "--objective", "maximize quality",
+                "--budget", "5",
+            ])
+
+        assert rc == 0
+        assert "Plateau detected with LLM judge" not in stderr.getvalue()
+
+    def test_advisory_omits_intake_hint_when_intake_provided(self, tmp_path, monkeypatch):
+        """When --intake-json is provided, don't suggest it again."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("test artifact")
+
+        class PlateauResult:
+            best_candidate = "test artifact"
+            total_metric_calls = 5
+            val_aggregate_scores = [0.88, 0.88, 0.88, 0.88, 0.88]
+
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kw: PlateauResult(),
+        )
+
+        intake = json.dumps({
+            "quality_dimensions": [{"name": "clarity", "weight": 1.0}],
+        })
+
+        import io, contextlib
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = main([
+                "optimize", str(seed),
+                "--judge-model", "openai/gpt-4o-mini",
+                "--objective", "maximize quality",
+                "--budget", "5",
+                "--intake-json", intake,
+            ])
+
+        assert rc == 0
+        err = stderr.getvalue()
+        assert "Plateau detected with LLM judge" in err
+        # Should NOT suggest --intake-json since user already provided it
+        assert "Try --intake-json" not in err

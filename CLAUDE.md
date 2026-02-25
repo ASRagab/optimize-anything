@@ -12,6 +12,7 @@ uv run pytest -k "optimize"                       # Run tests by pattern
 uv run optimize-anything --help                   # CLI entry point
 uv run optimize-anything score FILE --evaluator-command bash eval.sh  # Score one artifact
 uv run optimize-anything score FILE --judge-model openai/gpt-4o-mini --objective "Score clarity"  # LLM judge scoring
+uv run optimize-anything analyze FILE --judge-model openai/gpt-4o-mini --objective "Quality"    # Discover quality dimensions
 uv run python scripts/check.py                    # Unified gate: pytest + smoke + score_check
 uv run python scripts/check.py --skip-smoke       # Unified gate without smoke (offline)
 uv run python scripts/smoke_harness.py --budget 1 # CLI smoke check
@@ -48,7 +49,7 @@ Input/output contract for external evaluators:
 ## Delivery Surfaces
 
 - `src/optimize_anything/cli.py`
-  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`
+  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `analyze`
   - Three mutually exclusive evaluator sources: `--evaluator-command`, `--evaluator-url`, `--judge-model`
   - Multi-provider flags: `--model` (proposer LLM), `--judge-model` (judge LLM), `--api-base`
   - `--judge-objective` overrides `--objective` for the judge; falls back to `--objective`
@@ -60,6 +61,7 @@ Input/output contract for external evaluators:
 
 - `src/optimize_anything/llm_judge.py`
   - `llm_judge_evaluator(objective, *, model, quality_dimensions, hard_constraints, timeout, temperature, api_base)`
+  - `analyze_for_dimensions(artifact, objective, model, *, api_base, timeout, temperature)` — 2 LLM calls: score + dimension discovery
   - Uses litellm for multi-provider LLM calls; returns gepa-compatible `(score, side_info)` tuples
   - Supports simple (score+reasoning) and dimension-weighted scoring modes
   - Hard constraint gate: score forced to 0.0 on violation

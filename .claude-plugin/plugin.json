@@ -28,6 +28,10 @@
     {
       "name": "score",
       "description": "Score a single artifact with an evaluator without optimizing"
+    },
+    {
+      "name": "analyze",
+      "description": "Analyze an artifact to discover quality dimensions for LLM judge optimization"
     }
   ],
   "skills": [

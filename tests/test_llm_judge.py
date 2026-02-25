@@ -10,9 +10,12 @@ import pytest
 
 from optimize_anything.llm_judge import (
     llm_judge_evaluator,
+    analyze_for_dimensions,
     _build_prompt,
     _compute_weighted_score,
     _parse_judge_response,
+    _parse_dimensions_response,
+    _strip_code_fences,
 )
 
 
@@ -409,3 +412,211 @@ class TestBuildPrompt:
         assert "Quality Dimensions" in prompt
         assert "clarity" in prompt
         assert "must be concise" in prompt
+
+
+class TestStripCodeFences:
+    def test_strips_json_fence(self):
+        assert _strip_code_fences('```json\n{"a": 1}\n```') == '{"a": 1}'
+
+    def test_strips_plain_fence(self):
+        assert _strip_code_fences('```\n{"a": 1}\n```') == '{"a": 1}'
+
+    def test_strips_fence_with_trailing_whitespace(self):
+        assert _strip_code_fences('```json\n{"a": 1}\n```  \n') == '{"a": 1}'
+
+    def test_no_fence_passthrough(self):
+        assert _strip_code_fences('{"a": 1}') == '{"a": 1}'
+
+
+class TestParseDimensionsResponse:
+    def test_happy_path(self):
+        response = json.dumps({
+            "dimensions": [
+                {"name": "clarity", "weight": 0.3, "score": 0.85, "description": "How clear"},
+                {"name": "brevity", "weight": 0.7, "score": 0.6, "description": "How short"},
+            ]
+        })
+        dims = _parse_dimensions_response(response)
+        assert len(dims) == 2
+        assert dims[0]["name"] == "clarity"
+        assert dims[0]["weight"] == pytest.approx(0.3)
+        assert dims[0]["score"] == pytest.approx(0.85)
+        assert dims[1]["name"] == "brevity"
+
+    def test_clamps_weight_and_score(self):
+        response = json.dumps({
+            "dimensions": [
+                {"name": "a", "weight": 1.5, "score": -0.2, "description": "test"},
+            ]
+        })
+        dims = _parse_dimensions_response(response)
+        assert dims[0]["weight"] == 1.0
+        assert dims[0]["score"] == 0.0
+
+    def test_skips_invalid_entries(self):
+        response = json.dumps({
+            "dimensions": [
+                {"name": "", "weight": 0.5, "score": 0.5, "description": "empty name"},
+                "not a dict",
+                {"name": "valid", "weight": 0.5, "score": 0.5, "description": "ok"},
+            ]
+        })
+        dims = _parse_dimensions_response(response)
+        assert len(dims) == 1
+        assert dims[0]["name"] == "valid"
+
+    def test_empty_response_raises(self):
+        with pytest.raises(RuntimeError, match="empty response"):
+            _parse_dimensions_response("")
+
+    def test_malformed_json_raises(self):
+        with pytest.raises(RuntimeError, match="malformed JSON"):
+            _parse_dimensions_response("{not json")
+
+    def test_missing_dimensions_key_raises(self):
+        with pytest.raises(RuntimeError, match="dimensions"):
+            _parse_dimensions_response('{"other": "stuff"}')
+
+    def test_empty_dimensions_array_raises(self):
+        with pytest.raises(RuntimeError, match="dimensions"):
+            _parse_dimensions_response('{"dimensions": []}')
+
+    def test_code_fences_stripped(self):
+        response = '```json\n' + json.dumps({
+            "dimensions": [
+                {"name": "a", "weight": 0.5, "score": 0.5, "description": "test"},
+            ]
+        }) + '\n```'
+        dims = _parse_dimensions_response(response)
+        assert len(dims) == 1
+
+
+class TestAnalyzeForDimensions:
+    """Unit tests for analyze_for_dimensions — both LLM calls mocked."""
+
+    def _make_mock_response(self, content: str) -> MagicMock:
+        mock = MagicMock()
+        mock.choices[0].message.content = content
+        return mock
+
+    def test_happy_path_returns_structured_result(self):
+        score_response = json.dumps({"score": 0.82, "reasoning": "Good clarity, verbose"})
+        dims_response = json.dumps({
+            "dimensions": [
+                {"name": "clarity", "weight": 0.4, "score": 0.9, "description": "How clear"},
+                {"name": "conciseness", "weight": 0.3, "score": 0.6, "description": "How short"},
+                {"name": "examples", "weight": 0.3, "score": 0.75, "description": "Example quality"},
+            ]
+        })
+
+        call_count = 0
+        def mock_completion(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return self._make_mock_response(score_response)
+            return self._make_mock_response(dims_response)
+
+        with patch("litellm.completion", side_effect=mock_completion):
+            result = analyze_for_dimensions(
+                artifact="Some text artifact",
+                objective="Maximize quality",
+                model="openai/gpt-4o-mini",
+            )
+
+        assert result["current_score"] == pytest.approx(0.82)
+        assert result["reasoning"] == "Good clarity, verbose"
+        assert len(result["suggested_dimensions"]) == 3
+        assert result["suggested_dimensions"][0]["name"] == "clarity"
+        # intake_json should be valid JSON
+        intake = json.loads(result["intake_json"])
+        assert "quality_dimensions" in intake
+        assert len(intake["quality_dimensions"]) == 3
+        # Each intake dim has name and weight but NOT score (that's analysis-only)
+        for d in intake["quality_dimensions"]:
+            assert "name" in d
+            assert "weight" in d
+            assert "score" not in d
+        assert "recommendation" in result
+        assert "optimize-anything optimize" in result["recommendation"]
+
+    def test_makes_exactly_two_llm_calls(self):
+        score_response = json.dumps({"score": 0.5, "reasoning": "ok"})
+        dims_response = json.dumps({
+            "dimensions": [
+                {"name": "a", "weight": 1.0, "score": 0.5, "description": "d"},
+            ]
+        })
+
+        call_count = 0
+        def mock_completion(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return self._make_mock_response(score_response)
+            return self._make_mock_response(dims_response)
+
+        with patch("litellm.completion", side_effect=mock_completion):
+            analyze_for_dimensions("text", "obj", "openai/gpt-4o-mini")
+
+        assert call_count == 2
+
+    def test_scoring_failure_raises_runtime_error(self):
+        with patch("litellm.completion", side_effect=RuntimeError("API down")):
+            with pytest.raises(RuntimeError, match="Scoring LLM call failed"):
+                analyze_for_dimensions("text", "obj", "openai/gpt-4o-mini")
+
+    def test_dimension_discovery_failure_raises(self):
+        score_response = json.dumps({"score": 0.5, "reasoning": "ok"})
+        call_count = 0
+        def mock_completion(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return self._make_mock_response(score_response)
+            raise RuntimeError("API quota exceeded")
+
+        with patch("litellm.completion", side_effect=mock_completion):
+            with pytest.raises(RuntimeError, match="Dimension discovery LLM call failed"):
+                analyze_for_dimensions("text", "obj", "openai/gpt-4o-mini")
+
+    def test_invalid_objective_raises(self):
+        with pytest.raises(ValueError, match="objective must be"):
+            analyze_for_dimensions("text", "", "openai/gpt-4o-mini")
+
+    def test_invalid_model_raises(self):
+        with pytest.raises(ValueError, match="model must be"):
+            analyze_for_dimensions("text", "obj", "")
+
+    def test_api_base_forwarded(self):
+        score_response = json.dumps({"score": 0.5, "reasoning": "ok"})
+        dims_response = json.dumps({
+            "dimensions": [
+                {"name": "a", "weight": 1.0, "score": 0.5, "description": "d"},
+            ]
+        })
+
+        calls: list[dict] = []
+        call_count = 0
+        def mock_completion(**kwargs):
+            nonlocal call_count
+            calls.append(kwargs)
+            call_count += 1
+            if call_count == 1:
+                return self._make_mock_response(score_response)
+            return self._make_mock_response(dims_response)
+
+        with patch("litellm.completion", side_effect=mock_completion):
+            analyze_for_dimensions(
+                "text", "obj", "openai/gpt-4o-mini",
+                api_base="https://custom.api/v1",
+            )
+
+        assert all(c["base_url"] == "https://custom.api/v1" for c in calls)
+
+    def test_score_parse_error_raises(self):
+        """If the scoring call returns unparseable JSON, raise RuntimeError."""
+        bad_response = self._make_mock_response("not json {")
+        with patch("litellm.completion", return_value=bad_response):
+            with pytest.raises(RuntimeError, match="Scoring failed"):
+                analyze_for_dimensions("text", "obj", "openai/gpt-4o-mini")

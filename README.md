@@ -166,6 +166,18 @@ optimize-anything score artifact.txt \
   --objective "Score clarity, actionability, and specificity"
 ```
 
+### analyze
+
+Discover quality dimensions to improve LLM judge scoring:
+
+```bash
+optimize-anything analyze README.md \
+  --judge-model anthropic/claude-sonnet-4-5-20250929 \
+  --objective "Optimize for open-source project quality"
+```
+
+Returns a JSON object with `current_score`, `suggested_dimensions`, and a copy-paste `intake_json` for use with `optimize --intake-json`.
+
 ### generate-evaluator
 
 Auto-generate a starter evaluator from a seed artifact and objective:
@@ -241,19 +253,55 @@ print(result.best_candidate)
 
 ## Architecture
 
-```
-src/optimize_anything/
-  cli.py                   # CLI entry point (argparse)
-  evaluators.py            # Command and HTTP evaluator factories
-  evaluator_generator.py   # Generate evaluators from seed + objective
-  llm_judge.py             # LLM-as-judge evaluator (litellm)
-  intake.py                # Intake schema normalization
-  spec_loader.py           # TOML spec file loading
-  result_contract.py       # Canonical optimize summary output
+```mermaid
+flowchart TD
+    subgraph CLI["CLI (cli.py)"]
+        optimize["optimize"]
+        score["score"]
+        analyze["analyze"]
+        geneval["generate-evaluator"]
+    end
 
-commands/optimize.md       # /optimize command definition
-skills/                    # Claude Code skills
+    subgraph Evaluators["Evaluator Layer"]
+        cmd["Command\n(stdin/stdout)"]
+        http["HTTP\n(POST JSON)"]
+        judge["LLM Judge\n(litellm)"]
+    end
+
+    subgraph Core["gepa Engine"]
+        propose["Propose\nmutation"]
+        evaluate["Evaluate\ncandidate"]
+        reflect["Reflect\n& select"]
+    end
+
+    seed["Seed Artifact"] --> optimize
+    optimize --> intake["Intake\nNormalization"]
+    intake --> Core
+    propose --> evaluate
+    evaluate --> reflect
+    reflect --> propose
+
+    evaluate --> cmd & http & judge
+
+    optimize --> result["Result Contract\n(JSON summary)"]
+    result --> rundir["Run Dir\n(artifacts + history)"]
+
+    score --> evaluate
+    analyze -->|"1. score"| judge
+    analyze -->|"2. discover dims"| judge
+    analyze --> dims["Suggested\nDimensions"]
+    dims -.->|"--intake-json"| optimize
 ```
+
+| Module | Purpose |
+|---|---|
+| `cli.py` | CLI entry point: optimize, score, analyze, generate-evaluator, intake, explain, budget |
+| `evaluators.py` | Command and HTTP evaluator factories |
+| `llm_judge.py` | LLM-as-judge evaluator + dimension analysis (litellm) |
+| `intake.py` | Intake schema normalization and validation |
+| `result_contract.py` | Canonical optimize summary with plateau detection |
+| `spec_loader.py` | TOML spec file loading for repeatable runs |
+| `evaluator_generator.py` | Generate evaluator scripts from seed + objective |
 
 ## Uninstall
 

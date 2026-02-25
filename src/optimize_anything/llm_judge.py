@@ -1,4 +1,4 @@
-"""LLM-as-Judge evaluator factory.
+"""LLM-as-Judge evaluator factory and analysis tools.
 
 Uses litellm to call a language model as an evaluator. The model receives a
 structured prompt describing the objective, quality dimensions, and hard
@@ -241,3 +241,238 @@ def _compute_weighted_score(
         value = max(0.0, min(1.0, value))
         weighted_sum += value * dim["weight"]
     return weighted_sum / total_weight
+
+
+# ---------------------------------------------------------------------------
+# analyze_for_dimensions — pre-optimization dimension discovery
+# ---------------------------------------------------------------------------
+
+ANALYZE_SYSTEM_PROMPT = """\
+You are a careful, objective evaluator and quality analyst. You will be given
+a text artifact, its current score, and the scoring objective. Your job is to
+identify specific quality dimensions where improvement is possible.
+You must return ONLY a JSON object — no markdown, no preamble, no explanation
+outside the JSON.
+"""
+
+ANALYZE_DIMENSIONS_PROMPT = """\
+## Context
+A text artifact was scored {score:.2f} out of 1.0 on the objective:
+"{objective}"
+
+## Artifact
+```
+{artifact}
+```
+
+## Task
+Identify 4-6 specific, measurable quality dimensions where this artifact
+could improve. For each dimension, provide:
+- "name": a short snake_case identifier (e.g. "quickstart_speed")
+- "weight": a float between 0.0 and 1.0 representing relative importance
+  (weights should sum to approximately 1.0)
+- "score": a float in [0.0, 1.0] — current score on this dimension
+- "description": one sentence describing what this dimension measures
+
+Focus on dimensions that provide gradient for improvement — areas where the
+artifact is not already perfect. Avoid overly generic dimensions like
+"overall_quality".
+
+## Required JSON Output
+Return a JSON object with:
+- "dimensions": array of dimension objects as described above
+
+Example:
+{{"dimensions": [{{"name": "quickstart_speed", "weight": 0.25, "score": 0.85, "description": "Time from first read to first successful run"}}]}}
+"""
+
+
+def _strip_code_fences(text: str) -> str:
+    """Strip markdown code fences from LLM response text."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+        cleaned = cleaned[first_newline + 1:]
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rstrip()[:-len("```")].rstrip()
+    return cleaned
+
+
+def analyze_for_dimensions(
+    artifact: str,
+    objective: str,
+    model: str,
+    *,
+    api_base: str | None = None,
+    timeout: float = 60.0,
+    temperature: float = 0.0,
+) -> dict[str, Any]:
+    """Score an artifact, then discover quality dimensions for refinement.
+
+    Makes 2 LLM calls:
+    1. Score the artifact with the vague objective (baseline)
+    2. Ask the judge to identify 4-6 specific quality dimensions
+
+    Args:
+        artifact: The text artifact to analyze.
+        objective: Natural language scoring objective.
+        model: LiteLLM model string.
+        api_base: Optional custom API base URL.
+        timeout: Max seconds per LLM call.
+        temperature: Sampling temperature.
+
+    Returns:
+        Dict with current_score, suggested_dimensions, intake_json, and
+        recommendation.
+
+    Raises:
+        ValueError: If objective or model is invalid.
+        RuntimeError: If either LLM call fails.
+    """
+    _validate_objective(objective)
+    _validate_model_string(model)
+
+    import litellm
+
+    # --- Call 1: Score the artifact with vague objective ---
+    score_prompt = _build_prompt(
+        candidate=artifact,
+        objective=objective,
+        quality_dimensions=[],
+        hard_constraints=[],
+    )
+    completion_kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+            {"role": "user", "content": score_prompt},
+        ],
+        "temperature": temperature,
+        "timeout": timeout,
+        "response_format": {"type": "json_object"},
+    }
+    if api_base:
+        completion_kwargs["base_url"] = api_base
+
+    try:
+        response = litellm.completion(**completion_kwargs)
+        raw_score_content = response.choices[0].message.content
+    except Exception as exc:
+        raise RuntimeError(f"Scoring LLM call failed: {type(exc).__name__}: {exc}") from exc
+
+    score, score_info = _parse_judge_response(raw_score_content, [], [])
+    if "error" in score_info:
+        raise RuntimeError(f"Scoring failed: {score_info['error']}")
+
+    # --- Call 2: Discover quality dimensions ---
+    analyze_prompt = ANALYZE_DIMENSIONS_PROMPT.format(
+        score=score,
+        objective=objective,
+        artifact=artifact,
+    )
+    analyze_kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": ANALYZE_SYSTEM_PROMPT},
+            {"role": "user", "content": analyze_prompt},
+        ],
+        "temperature": temperature,
+        "timeout": timeout,
+        "response_format": {"type": "json_object"},
+    }
+    if api_base:
+        analyze_kwargs["base_url"] = api_base
+
+    try:
+        response = litellm.completion(**analyze_kwargs)
+        raw_dims_content = response.choices[0].message.content
+    except Exception as exc:
+        raise RuntimeError(
+            f"Dimension discovery LLM call failed: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    dimensions = _parse_dimensions_response(raw_dims_content)
+
+    # Build intake JSON for use with optimize
+    intake = {
+        "quality_dimensions": [
+            {"name": d["name"], "weight": d["weight"]}
+            for d in dimensions
+        ],
+    }
+    intake_json_str = json.dumps(intake)
+
+    return {
+        "current_score": score,
+        "reasoning": score_info.get("reasoning", ""),
+        "suggested_dimensions": dimensions,
+        "intake_json": intake_json_str,
+        "recommendation": (
+            f"Use the suggested dimensions with:\n"
+            f"  optimize-anything optimize <artifact> "
+            f"--judge-model {model} "
+            f"--objective \"{objective}\" "
+            f"--intake-json '{intake_json_str}'"
+        ),
+    }
+
+
+def _parse_dimensions_response(raw_content: str | None) -> list[dict[str, Any]]:
+    """Parse the dimension discovery LLM response.
+
+    Returns a list of validated dimension dicts.
+    Raises RuntimeError on parse failure.
+    """
+    if not raw_content:
+        raise RuntimeError("Dimension discovery returned empty response")
+
+    cleaned = _strip_code_fences(raw_content)
+
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Dimension discovery returned malformed JSON: {exc.msg}"
+        ) from exc
+
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Dimension discovery returned non-object JSON")
+
+    raw_dims = parsed.get("dimensions")
+    if not isinstance(raw_dims, list) or len(raw_dims) == 0:
+        raise RuntimeError(
+            "Dimension discovery did not return a 'dimensions' array"
+        )
+
+    validated: list[dict[str, Any]] = []
+    for i, d in enumerate(raw_dims):
+        if not isinstance(d, dict):
+            continue
+        name = d.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        try:
+            weight = float(d.get("weight", 0))
+        except (TypeError, ValueError):
+            weight = 0.0
+        weight = max(0.0, min(1.0, weight))
+        try:
+            dim_score = float(d.get("score", 0))
+        except (TypeError, ValueError):
+            dim_score = 0.0
+        dim_score = max(0.0, min(1.0, dim_score))
+        description = d.get("description", "")
+        if not isinstance(description, str):
+            description = str(description)
+
+        validated.append({
+            "name": name.strip(),
+            "weight": weight,
+            "score": dim_score,
+            "description": description,
+        })
+
+    if not validated:
+        raise RuntimeError("No valid dimensions found in LLM response")
+
+    return validated

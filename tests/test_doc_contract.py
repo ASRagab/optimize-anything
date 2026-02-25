@@ -134,7 +134,7 @@ class TestPluginManifest:
 
     def test_known_commands_present(self):
         command_names = {cmd["name"] for cmd in _plugin_json()["commands"]}
-        expected = {"optimize", "generate-evaluator", "intake", "explain", "budget", "score"}
+        expected = {"optimize", "generate-evaluator", "intake", "explain", "budget", "score", "analyze"}
         assert expected.issubset(command_names), (
             f"Missing commands in manifest: {expected - command_names}"
         )
