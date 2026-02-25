@@ -3,7 +3,7 @@
   "checkpoint_id": "ea2f92007693",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "scripts/live_integration.py",
     "scripts/score_check.py",
@@ -25,13 +25,20 @@
       "context": "/ea/2f92007693/1/context.md",
       "content_hash": "/ea/2f92007693/1/content_hash.txt",
       "prompt": "/ea/2f92007693/1/prompt.txt"
+    },
+    {
+      "metadata": "/ea/2f92007693/2/metadata.json",
+      "transcript": "/ea/2f92007693/2/full.jsonl",
+      "context": "/ea/2f92007693/2/context.md",
+      "content_hash": "/ea/2f92007693/2/content_hash.txt",
+      "prompt": "/ea/2f92007693/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14479,
-    "cache_creation_tokens": 379757,
-    "cache_read_tokens": 27147544,
-    "output_tokens": 16966,
-    "api_call_count": 252
+    "input_tokens": 14573,
+    "cache_creation_tokens": 670408,
+    "cache_read_tokens": 33359397,
+    "output_tokens": 20135,
+    "api_call_count": 329
   }
 }
