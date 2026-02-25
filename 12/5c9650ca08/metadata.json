@@ -3,7 +3,7 @@
   "checkpoint_id": "125c9650ca08",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "AGENTS.md",
     "evaluator-cookbook.md",
@@ -24,13 +24,20 @@
       "context": "/12/5c9650ca08/1/context.md",
       "content_hash": "/12/5c9650ca08/1/content_hash.txt",
       "prompt": "/12/5c9650ca08/1/prompt.txt"
+    },
+    {
+      "metadata": "/12/5c9650ca08/2/metadata.json",
+      "transcript": "/12/5c9650ca08/2/full.jsonl",
+      "context": "/12/5c9650ca08/2/context.md",
+      "content_hash": "/12/5c9650ca08/2/content_hash.txt",
+      "prompt": "/12/5c9650ca08/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14479,
-    "cache_creation_tokens": 379757,
-    "cache_read_tokens": 27147544,
-    "output_tokens": 16966,
-    "api_call_count": 252
+    "input_tokens": 14613,
+    "cache_creation_tokens": 689751,
+    "cache_read_tokens": 38569868,
+    "output_tokens": 22504,
+    "api_call_count": 369
   }
 }
