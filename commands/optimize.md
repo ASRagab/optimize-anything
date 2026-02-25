@@ -9,7 +9,7 @@ Run optimization on the given artifact using a question-driven workflow.
 1. Collect context:
    - artifact type (prompt, skill, docs, code, config)
    - objective and constraints
-   - evaluator source (`command` or `http`)
+   - evaluator source (`command`, `http`, or `--judge-model` for LLM judge)
    - execution path for evaluator (for plugin use, ask for absolute project path and pass as `evaluator_cwd`)
 2. If no evaluator exists, invoke the `generate-evaluator` skill.
 3. Validate evaluator manually before optimization:
