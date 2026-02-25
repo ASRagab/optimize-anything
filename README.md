@@ -2,28 +2,52 @@
 
 LLM-guided optimization for text artifacts using an iterative propose-evaluate-reflect loop with a bring-your-own evaluator.
 
-## Overview
+## Quickstart
 
-optimize-anything takes a seed artifact (prompt, code snippet, config, etc.), evaluates it against your custom scoring function, then uses an LLM to propose improvements. The loop runs until a budget is exhausted or a stop condition is met.
+```bash
+# 1. Install
+curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
 
-**Core loop:** seed -> evaluate -> propose mutation -> evaluate -> reflect -> repeat
+# 2. Create a seed file
+echo "Write a haiku about the ocean" > seed.txt
 
-Key features:
-- **BYO evaluator** -- shell commands or HTTP endpoints
-- **Powered by gepa** -- evolutionary search with LLM-guided mutations
-- **CLI** -- run optimizations from the terminal
-- **Evaluator generator** -- auto-generate starter evaluator scripts
+# 3. Create an evaluator (stdin JSON -> stdout JSON with score)
+cat > eval.sh << 'EOF'
+#!/usr/bin/env bash
+python3 -c '
+import json, sys
+p = json.load(sys.stdin)
+text = p["candidate"].lower()
+score = (0.4 if "haiku" in text else 0) + (0.3 if "5-7-5" in text else 0) + (0.3 if "ocean" in text else 0)
+print(json.dumps({"score": round(score, 2)}))
+'
+EOF
+chmod +x eval.sh
+
+# 4. Optimize
+uv run optimize-anything optimize seed.txt \
+  --evaluator-command bash ./eval.sh \
+  --model openai/gpt-4o-mini \
+  --budget 10 \
+  --output result.txt
+```
+
+**What just happened?** The optimizer scored your seed, used an LLM to propose improved versions, and saved the best to `result.txt`. CLI stdout returns a JSON summary with `best_artifact`, `total_metric_calls`, `score_summary`, `top_diagnostics`, `plateau_guidance`, and optional `evaluator_failure_signal`.
+
+**Core loop:** seed → evaluate → propose mutation → evaluate → reflect → repeat
+
+## Why optimize-anything?
+
+optimize-anything takes any text artifact (prompt, code, config), scores it with your evaluator, and uses an LLM to propose improvements — iterating until your budget runs out or the artifact converges.
+
+- **BYO evaluator** — shell commands, HTTP endpoints, or LLM judges
+- **Powered by gepa** — evolutionary search with LLM-guided mutations
+- **Flexible** — optimize prompts, code, configs, or any text artifact
+- **Auto-generate evaluators** — bootstrap scoring functions from objectives
 
 ## Install
 
-**Claude Code plugin** — skills + `/optimize` command inside Claude Code:
-
-```bash
-claude plugin add https://github.com/ASRagab/optimize-anything
-```
-> Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10.
-
-**Terminal CLI** — installs the `optimize-anything` command in your shell:
+**Terminal CLI** — installs the `optimize-anything` command:
 
 ```bash
 # One-liner (installs uv if needed):
@@ -32,7 +56,14 @@ curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/inst
 # Or directly with uv:
 uv tool install git+https://github.com/ASRagab/optimize-anything
 ```
-> Plugin and CLI are independent -- install either or both.
+
+**Claude Code plugin** — skills + `/optimize` command inside Claude Code:
+
+```bash
+claude plugin add https://github.com/ASRagab/optimize-anything
+```
+
+> Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10. Plugin and CLI are independent — install either or both.
 
 **From source** (for development):
 
@@ -41,127 +72,129 @@ git clone https://github.com/ASRagab/optimize-anything.git && cd optimize-anythi
 uv sync
 ```
 
-See [install.md](install.md) for platform-specific setup and troubleshooting.
-
-## Quickstart
-
-### CLI
-
-```bash
-# Create a seed file
-echo "Write a haiku about the ocean" > seed.txt
-
-# Create an evaluator (stdin JSON -> stdout JSON with score)
-cat > eval.sh << 'EVAL'
-#!/usr/bin/env bash
-python3 -c '
-import json
-import re
-import sys
-
-payload = json.load(sys.stdin)
-candidate = str(payload.get("candidate", ""))
-text = candidate.lower()
-
-checks = {
-    "mentions_haiku": bool(re.search(r"\bhaiku\b", text)),
-    "mentions_ocean": bool(re.search(r"\bocean\b", text)),
-    "requires_575": bool(re.search(r"5\s*-\s*7\s*-\s*5|5-7-5", text)),
-    "requires_three_lines": bool(
-        re.search(r"exactly\s*(3|three)\s*lines|three\s*lines", text)
-    ),
-    "forbids_extra_text": bool(
-        re.search(r"no title|no extra text|only.*poem|plain text", text)
-    ),
-}
-
-weights = {
-    "mentions_haiku": 0.15,
-    "mentions_ocean": 0.15,
-    "requires_575": 0.35,
-    "requires_three_lines": 0.2,
-    "forbids_extra_text": 0.15,
-}
-
-score = sum(weights[name] for name, ok in checks.items() if ok)
-score = round(min(score, 1.0), 4)
-
-print(
-    json.dumps(
-        {
-            "score": score,
-            "checks_passed": sum(1 for ok in checks.values() if ok),
-            **checks,
-        }
-    )
-)
-'
-EVAL
-chmod +x eval.sh
-
-# Validate evaluator manually before optimize
-echo '{"candidate":"test"}' | bash ./eval.sh
-
-# Run optimization
-ANTHROPIC_API_KEY=sk-... uv run optimize-anything optimize seed.txt \
-  --evaluator-command bash ./eval.sh \
-  --budget 10 \
-  --output result.txt
-```
-
-This evaluator is intentionally non-constant: candidates that add concrete haiku constraints
-(5-7-5, exactly 3 lines, plain text only) score higher than vague prompts, so optimization
-can move away from the original seed.
-
-The optimized artifact is written to `result.txt`. CLI stdout returns a canonical
-JSON summary (`best_artifact`, `total_metric_calls`, `score_summary`,
-`top_diagnostics`, `plateau_guidance`, optional `evaluator_failure_signal`).
-
-If your evaluator script is under `artifacts/`, use one of these path-safe forms:
-
-```bash
-# Option A: full relative script path
---evaluator-command bash artifacts/eval.sh
-
-# Option B: set evaluator working directory
---evaluator-command bash eval.sh --evaluator-cwd artifacts
-```
-
 ## Evaluator Contract
 
-Your evaluator receives JSON on stdin and must return JSON on stdout:
+Your evaluator receives JSON on stdin and returns JSON on stdout:
 
-**Input (stdin):**
+**Input:**
 ```json
-{
-  "candidate": "the text artifact being scored"
-}
+{"candidate": "the text artifact being scored"}
 ```
 
-**Output (stdout):**
+**Output:**
 ```json
-{
-  "score": 0.75,
-  "length": 42,
-  "notes": "optional diagnostic text"
-}
+{"score": 0.75, "notes": "optional diagnostic text"}
 ```
 
 - `score` (required): float, higher is better
-- Any additional fields become side information fed back to gepa's reflection LM
+- Additional fields become side information fed back to gepa's reflection LM
 
-See [evaluator-cookbook.md](evaluator-cookbook.md) for full recipes.
+## Evaluator Types
+
+### Command evaluator
+Reads stdin JSON, writes stdout JSON:
+```bash
+optimize-anything optimize seed.txt --evaluator-command bash eval.sh
+```
+
+### HTTP evaluator
+POST to a URL with JSON body:
+```bash
+optimize-anything optimize seed.txt --evaluator-url http://localhost:8080/evaluate
+```
+
+### LLM judge
+Use an LLM to score artifacts directly (no evaluator script needed):
+```bash
+optimize-anything optimize seed.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Maximize clarity and specificity"
+```
+
+> **Tip:** For best results with `--judge-model`, provide `quality_dimensions` via `--intake-json` to give the judge specific scoring criteria.
+
+## CLI Commands
+
+### optimize
+
+```bash
+optimize-anything optimize <seed_file> [options]
+```
+
+| Flag | Description | Default |
+|---|---|---|
+| `--evaluator-command <cmd...>` | Shell command evaluator | -- |
+| `--evaluator-url <url>` | HTTP POST evaluator | -- |
+| `--judge-model <model>` | LLM judge evaluator | -- |
+| `--objective <text>` | Natural language objective | -- |
+| `--budget <n>` | Max evaluator invocations | 100 |
+| `--model <model>` | Proposer LLM (e.g., `openai/gpt-4o-mini`) | env `OPTIMIZE_ANYTHING_MODEL` |
+| `--output, -o <file>` | Write best candidate to file | stdout |
+| `--diff` | Show seed vs best diff on stderr | -- |
+| `--run-dir <path>` | Save run artifacts (auto-timestamped) | -- |
+| `--spec-file <path>` | TOML spec file with bundled params | -- |
+
+<details>
+<summary>Advanced flags</summary>
+
+| Flag | Description |
+|---|---|
+| `--evaluator-cwd <path>` | Working directory for evaluator command |
+| `--judge-objective <text>` | Override objective for judge (falls back to `--objective`) |
+| `--api-base <url>` | Override API base URL for litellm |
+| `--background <text>` | Domain knowledge/constraints |
+| `--intake-json <json>` | Inline evaluator intake spec |
+| `--intake-file <path>` | Path to evaluator intake JSON file |
+
+</details>
+
+> **Note:** Always pass `--model` explicitly — gepa's default proposer may be unavailable in your environment.
+
+Exactly one of `--evaluator-command`, `--evaluator-url`, or `--judge-model` is required.
+
+### score
+
+Score a single artifact without running optimization:
+
+```bash
+# With command evaluator
+optimize-anything score artifact.txt --evaluator-command bash eval.sh
+
+# With LLM judge
+optimize-anything score artifact.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Score clarity, actionability, and specificity"
+```
+
+### generate-evaluator
+
+Auto-generate a starter evaluator from a seed artifact and objective:
+
+```bash
+optimize-anything generate-evaluator seed.txt --objective "maximize clarity" > eval.sh
+chmod +x eval.sh
+```
+
+### Other commands
+
+| Command | Description |
+|---|---|
+| `explain <seed_file>` | Preview what optimization would do |
+| `budget <seed_file>` | Recommend evaluation budget based on seed length |
+| `intake [flags]` | Normalize and validate evaluator intake specification |
 
 ## Evaluator Runtime vs Pattern
 
 Two similarly named fields serve different purposes:
 
-| Field | What it answers | Allowed values | What it affects |
-|---|---|---|---|
-| `execution_mode` (runtime type) | How the evaluator is executed | `command`, `http` | CLI wiring, infra, and failure modes |
-| `evaluation_pattern` (scoring strategy) | How scoring logic is designed | `verification`, `judge`, `simulation`, `composite` | Evaluator design intent and intake metadata |
+| Field | What it answers | Allowed values |
+|---|---|---|
+| `execution_mode` | How the evaluator runs | `command`, `http` |
+| `evaluation_pattern` | How scoring logic is designed | `verification`, `judge`, `simulation`, `composite` |
 
-Example (full intake spec):
+`execution_mode` decides `--evaluator-command` vs `--evaluator-url`. `evaluation_pattern` describes the scoring approach — it does not change transport.
+
+Example intake spec with `quality_dimensions`, `hard_constraints`, `artifact_class`, and `evaluator_cwd`:
 
 ```json
 {
@@ -175,145 +208,6 @@ Example (full intake spec):
   "hard_constraints": ["must be under 500 tokens"],
   "evaluator_cwd": "/path/to/project"
 }
-```
-
-`execution_mode` decides whether you run `--evaluator-command ...` or `--evaluator-url ...`.
-`evaluation_pattern` does not change transport; it describes the evaluator's scoring approach.
-
-## CLI Commands
-
-### optimize
-
-```bash
-uv run optimize-anything optimize <seed_file> [options]
-```
-
-| Flag | Description | Default |
-|---|---|---|
-| `seed_file` | Path to seed artifact file | (required) |
-| `--evaluator-command <cmd...>` | Shell command evaluator | -- |
-| `--evaluator-cwd <path>` | Working directory for evaluator command | current process cwd |
-| `--evaluator-url <url>` | HTTP POST evaluator URL | -- |
-| `--intake-json <json-string>` | Inline evaluator intake JSON (validated) | -- |
-| `--intake-file <path>` | Path to evaluator intake JSON file (validated) | -- |
-| `--objective <text>` | Natural language objective | -- |
-| `--background <text>` | Domain knowledge/constraints | -- |
-| `--budget <n>` | Max evaluator invocations | 100 |
-| `--model <model>` | Proposer LLM (e.g., `openai/gpt-4o-mini`) | env `OPTIMIZE_ANYTHING_MODEL` |
-| `--judge-model <model>` | LLM judge evaluator (mutually exclusive with `--evaluator-command`/`--evaluator-url`) | -- |
-| `--judge-objective <text>` | Override objective for the judge (falls back to `--objective`) | -- |
-| `--spec-file <path>` | TOML spec file with bundled optimization parameters | -- |
-| `--run-dir <path>` | Directory to save run artifacts (auto-timestamped subdirectory) | -- |
-| `--diff` | Show diff between seed and best candidate on stderr | -- |
-| `--output, -o <file>` | Write best candidate to file | stdout |
-
-If intake is provided, `execution_mode` is used to decide which evaluator source flag is required when neither `--evaluator-command` nor `--evaluator-url` is set. Explicit evaluator flags always win if both explicit flags and intake are supplied.
-`--output` must be a file path (not an existing directory).
-
-> **Note:** Always pass `--model` explicitly when using gepa — the default proposer model may be unavailable in your environment.
-
-### explain
-
-```bash
-uv run optimize-anything explain <seed_file> [--objective <text>]
-```
-
-Preview what optimization would do for a given seed artifact.
-
-### budget
-
-```bash
-uv run optimize-anything budget <seed_file>
-```
-
-Get a recommended evaluation budget based on the seed artifact length.
-
-### generate-evaluator
-
-```bash
-uv run optimize-anything generate-evaluator <seed_file> --objective <text> [--evaluator-type command|http] [--intake-json <json>] [--intake-file <path>]
-```
-
-Generate a starter evaluator script from a seed artifact and objective. Outputs to stdout.
-
-| Flag | Description | Default |
-|---|---|---|
-| `seed_file` | Path to seed artifact file | (required) |
-| `--objective <text>` | Natural language optimization objective | (required) |
-| `--evaluator-type` | Script type: `command` (bash) or `http` (Python) | inferred from intake or `command` |
-| `--intake-json <json>` | Inline intake spec JSON | -- |
-| `--intake-file <path>` | Path to intake spec JSON file | -- |
-
-### intake
-
-```bash
-uv run optimize-anything intake [options]
-```
-
-Normalize and validate an evaluator intake specification. Outputs canonical JSON to stdout.
-
-| Flag | Description | Default |
-|---|---|---|
-| `--artifact-class <text>` | Type of artifact being optimized | `general_text` |
-| `--execution-mode` | Evaluator transport: `command` or `http` | `command` |
-| `--evaluation-pattern` | Scoring strategy: `verification`, `judge`, `simulation`, `composite` | `judge` |
-| `--hard-constraint <text>` | Hard constraint (repeatable) | -- |
-| `--evaluator-cwd <path>` | Working directory for evaluator | -- |
-| `--intake-json <json>` | Inline intake spec JSON (mutually exclusive with flags) | -- |
-| `--intake-file <path>` | Path to intake spec JSON file (mutually exclusive with flags) | -- |
-
-### score
-
-Score a single artifact without running optimization:
-
-```bash
-# With command evaluator
-uv run optimize-anything score artifact.txt \
-    --evaluator-command bash evaluators/eval.sh
-
-# With LLM judge
-uv run optimize-anything score artifact.txt \
-    --judge-model openai/gpt-4o-mini \
-    --objective "Score clarity, actionability, and specificity"
-```
-
-| Flag | Description | Default |
-|---|---|---|
-| `artifact_file` | Path to artifact to score | (required) |
-| `--evaluator-command <cmd...>` | Shell command evaluator | -- |
-| `--evaluator-url <url>` | HTTP POST evaluator URL | -- |
-| `--judge-model <model>` | LLM judge model | -- |
-| `--objective <text>` | Objective for LLM judge scoring | -- |
-| `--judge-objective <text>` | Override objective for the judge | -- |
-| `--intake-json <json>` | Inline intake spec JSON | -- |
-| `--intake-file <path>` | Path to intake spec JSON file | -- |
-
-Exactly one of `--evaluator-command`, `--evaluator-url`, or `--judge-model` is required.
-
-## Architecture
-
-```
-src/optimize_anything/
-  __init__.py              # Public API re-exports
-  evaluators.py            # Command and HTTP evaluator factories
-  evaluator_generator.py   # Generate evaluator scripts from seed + objective
-  cli.py                   # CLI entry point (argparse)
-  intake.py                # Intake schema normalization
-  llm_judge.py             # LLM-as-judge evaluator (litellm)
-  spec_loader.py           # TOML spec file loading
-  result_contract.py       # Canonical optimize summary output
-  __main__.py              # python -m support
-
-commands/
-  optimize.md              # /optimize command definition
-
-skills/
-  generate-evaluator/      # Evaluator generation skill
-  optimization-guide/      # Optimization workflow guide
-
-examples/
-  evaluators/              # Sample evaluator scripts
-  seeds/                   # Sample seed artifacts
 ```
 
 ## Programmatic API
@@ -335,52 +229,40 @@ result = optimize_anything(
 print(result.best_candidate)
 ```
 
-## Generating Evaluators
-
-If you do not have an evaluator, optimize-anything can generate one:
-
-```python
-from optimize_anything.evaluator_generator import generate_evaluator_script
-
-script = generate_evaluator_script(
-    seed="Your seed artifact",
-    objective="maximize clarity",
-    evaluator_type="command",  # or "http"
-)
-```
-
-This produces a bash script (or Python HTTP server) that you can customize.
-
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | `ANTHROPIC_API_KEY missing` | Set `ANTHROPIC_API_KEY` in your environment |
-| `ModuleNotFoundError` | Run `uv sync` to install dependencies |
-| `Seed file not found` | Check the seed file path is correct |
-| `Evaluator command failed` | Manually run `echo '{"candidate":"test"}' | <your evaluator command>` and verify it exits 0 with valid JSON |
-| `Evaluator script not found` | Use a full relative script path (for example, `artifacts/eval.sh`) or set `--evaluator-cwd artifacts` |
-| `Invalid JSON` from evaluator | Ensure evaluator writes only JSON to stdout (logs go to stderr) |
-| `Error: --output must be a file path` | Pass a filename like `artifacts/result.txt`, not a directory path like `artifacts/` |
+| Evaluator fails | Test: `echo '{"candidate":"test"}' \| bash eval.sh` |
+| Script not found | Use full path or `--evaluator-cwd` |
+| Invalid JSON from evaluator | Ensure stdout is only JSON (logs go to stderr) |
+| `--output must be a file path` | Pass a filename, not a directory |
+
+## Architecture
+
+```
+src/optimize_anything/
+  cli.py                   # CLI entry point (argparse)
+  evaluators.py            # Command and HTTP evaluator factories
+  evaluator_generator.py   # Generate evaluators from seed + objective
+  llm_judge.py             # LLM-as-judge evaluator (litellm)
+  intake.py                # Intake schema normalization
+  spec_loader.py           # TOML spec file loading
+  result_contract.py       # Canonical optimize summary output
+
+commands/optimize.md       # /optimize command definition
+skills/                    # Claude Code skills
+```
 
 ## Uninstall
 
-**CLI** (`optimize-anything` command):
-
 ```bash
-uv tool uninstall optimize-anything
-```
-
-**Plugin:**
-
-```bash
-claude plugin remove optimize-anything
+uv tool uninstall optimize-anything   # CLI
+claude plugin remove optimize-anything # Plugin
 ```
 
 ## Learn More
 
-- [Concepts](CONCEPTS.md) — glossary of core terms and architecture
-- [Walkthrough](WALKTHROUGH.md) — step-by-step tutorial for a full optimization cycle
-- [Installation Guide](install.md)
-- [Evaluator Cookbook](evaluator-cookbook.md)
-- [Examples](examples/)
+- [Walkthrough](WALKTHROUGH.md) — step-by-step tutorial
+- [Concepts](CONCEPTS.md) — architecture and glossary
