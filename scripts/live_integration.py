@@ -113,8 +113,6 @@ def _run_green(args: argparse.Namespace) -> int:
         "--budget", str(args.budget),
         "--diff",
     ]
-    if args.evaluator_command:
-        cmd.extend(["--evaluator-command"] + args.evaluator_command)
     if args.model:
         cmd.extend(["--model", args.model])
     if args.judge_model:
@@ -125,6 +123,9 @@ def _run_green(args: argparse.Namespace) -> int:
         cmd.extend(["--objective", args.objective])
     if args.run_dir:
         cmd.extend(["--run-dir", args.run_dir])
+    # --evaluator-command must be last due to nargs="+" greedy parsing
+    if args.evaluator_command:
+        cmd.extend(["--evaluator-command"] + args.evaluator_command)
 
     timeout = max(300, args.budget * 30)
     try:

@@ -172,14 +172,7 @@ def _parse_judge_response(
         return 0.0, {"error": "LLM returned empty response"}
 
     # Strip markdown code fences (e.g. ```json ... ```) that some providers add
-    cleaned = raw_content.strip()
-    if cleaned.startswith("```"):
-        # Remove opening fence (```json or ```)
-        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-        cleaned = cleaned[first_newline + 1 :]
-        # Remove closing fence
-        if cleaned.rstrip().endswith("```"):
-            cleaned = cleaned.rstrip()[: -len("```")].rstrip()
+    cleaned = _strip_code_fences(raw_content)
 
     try:
         parsed = json.loads(cleaned)

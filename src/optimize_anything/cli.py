@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     opt_parser.add_argument("--objective", help="Natural language objective")
     opt_parser.add_argument("--background", help="Domain context")
     opt_parser.add_argument(
-        "--budget", type=int, default=100, help="Max evaluator calls (default: 100)"
+        "--budget", type=int, default=None, help="Max evaluator calls (default: 100)"
     )
     opt_parser.add_argument("--output", "-o", help="Output file for best candidate")
     opt_parser.add_argument(
@@ -251,6 +251,8 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     if seed is None:
         return 1
 
+    if args.budget is None:
+        args.budget = 100
     if args.budget < 1:
         print("Error: --budget must be at least 1", file=sys.stderr)
         return 1
@@ -903,7 +905,7 @@ def _preflight_http_evaluator(url: str, *, timeout: float = 10.0) -> str | None:
 
     try:
         result = resp.json()
-    except (ValueError, Exception):
+    except ValueError:
         snippet = resp.text[:300] if resp.text else "<empty body>"
         return (
             f"Error: HTTP evaluator preflight returned non-JSON response "
@@ -950,8 +952,8 @@ def _apply_spec_to_args(
     if getattr(args, "evaluator_command", None) is None and spec.get("evaluator_command"):
         args.evaluator_command = spec["evaluator_command"]
 
-    # budget: default is 100; spec overrides only if CLI user didn't explicitly set it
-    if args.budget == 100 and spec.get("budget") is not None:
+    # budget: spec overrides only if CLI user didn't explicitly set it
+    if args.budget is None and spec.get("budget") is not None:
         args.budget = spec["budget"]
 
     if getattr(args, "judge_model", None) is None and spec.get("judge_model") is not None:

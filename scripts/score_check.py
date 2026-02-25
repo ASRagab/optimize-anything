@@ -38,13 +38,19 @@ def run_evaluator(evaluator_path: Path, candidate: str, cwd: Path) -> float:
     and must output JSON on stdout with a numeric "score" field.
     """
     payload = json.dumps({"candidate": candidate})
-    proc = subprocess.run(
-        ["bash", str(evaluator_path)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        cwd=str(cwd),
-    )
+    try:
+        proc = subprocess.run(
+            ["bash", str(evaluator_path)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd),
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Evaluator {evaluator_path} timed out after 30s"
+        ) from exc
     if proc.returncode != 0:
         raise RuntimeError(
             f"Evaluator {evaluator_path} exited with code {proc.returncode}: "

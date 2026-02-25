@@ -103,6 +103,7 @@ def _normalize_quality_dimensions(value: Any) -> list[dict[str, Any]]:
         raise ValueError("quality_dimensions must contain at least one dimension")
 
     names: list[str] = []
+    seen_names: set[str] = set()
     weights: list[float] = []
 
     for idx, item in enumerate(value):
@@ -134,6 +135,11 @@ def _normalize_quality_dimensions(value: Any) -> list[dict[str, Any]]:
         if weight <= 0:
             raise ValueError(f"quality_dimensions[{idx}].weight must be > 0")
 
+        if normalized_name in seen_names:
+            raise ValueError(
+                f"Duplicate quality dimension name: '{normalized_name}'"
+            )
+        seen_names.add(normalized_name)
         names.append(normalized_name)
         weights.append(weight)
 
