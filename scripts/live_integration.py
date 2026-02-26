@@ -62,6 +62,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--round", type=int, default=1, help="Current round number")
     parser.add_argument("--baseline", type=float, help="Baseline score for comparison")
+    parser.add_argument(
+        "--evaluator-url",
+        help="HTTP evaluator URL (mutually exclusive with --evaluator-command)",
+    )
     # MUST be last nargs="+" argument to avoid greedy consumption of subsequent flags
     parser.add_argument(
         "--evaluator-command",
@@ -82,6 +86,12 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             }))
             return 1
+
+    if args.evaluator_command and args.evaluator_url:
+        print(json.dumps({
+            "error": "--evaluator-command and --evaluator-url are mutually exclusive",
+        }))
+        return 1
 
     if args.providers and not args.objective:
         print(json.dumps({
@@ -104,7 +114,10 @@ def _run_green(args: argparse.Namespace) -> int:
         return 1
 
     # Score the artifact before optimization
-    initial_score = _score_with_command(artifact_path, args.evaluator_command)
+    if args.evaluator_url:
+        initial_score = _score_with_url(artifact_path, args.evaluator_url)
+    else:
+        initial_score = _score_with_command(artifact_path, args.evaluator_command)
 
     # Build optimize command
     cmd = [
@@ -126,6 +139,8 @@ def _run_green(args: argparse.Namespace) -> int:
     # --evaluator-command must be last due to nargs="+" greedy parsing
     if args.evaluator_command:
         cmd.extend(["--evaluator-command"] + args.evaluator_command)
+    elif args.evaluator_url:
+        cmd.extend(["--evaluator-url", args.evaluator_url])
 
     timeout = max(300, args.budget * 30)
     try:
@@ -213,6 +228,9 @@ def _run_red(args: argparse.Namespace) -> int:
     if args.evaluator_command:
         cmd_score = _score_with_command(artifact_path, args.evaluator_command)
         scores["command"] = cmd_score
+    elif args.evaluator_url:
+        url_score = _score_with_url(artifact_path, args.evaluator_url)
+        scores["http"] = url_score
 
     # 2. LLM judge scores (one per provider)
     providers = args.providers or []
@@ -318,6 +336,37 @@ def _score_with_command(
         return None
     except Exception as exc:
         print(f"Warning: command evaluator failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return None
+
+
+def _score_with_url(
+    artifact_path: Path,
+    evaluator_url: str,
+) -> float | None:
+    """Score artifact using HTTP evaluator via CLI."""
+    cmd = [
+        sys.executable, "-m", "optimize_anything.cli",
+        "score", str(artifact_path),
+        "--evaluator-url", evaluator_url,
+    ]
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0:
+            print(f"Warning: HTTP evaluator exited with code {proc.returncode}", file=sys.stderr)
+            if proc.stderr:
+                print(f"  stderr: {proc.stderr.strip()[:200]}", file=sys.stderr)
+            return None
+        result = json.loads(proc.stdout)
+        return result.get("score")
+    except subprocess.TimeoutExpired:
+        print("Warning: HTTP evaluator timed out after 30s", file=sys.stderr)
+        return None
+    except json.JSONDecodeError as exc:
+        print(f"Warning: HTTP evaluator returned invalid JSON: {exc}", file=sys.stderr)
+        return None
+    except Exception as exc:
+        print(f"Warning: HTTP evaluator failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
 
 
