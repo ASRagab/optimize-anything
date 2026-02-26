@@ -3,7 +3,7 @@
   "checkpoint_id": "c96c25ed46d5",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "scripts/evaluator_http_server.py"
   ],
@@ -14,13 +14,20 @@
       "context": "/c9/6c25ed46d5/0/context.md",
       "content_hash": "/c9/6c25ed46d5/0/content_hash.txt",
       "prompt": "/c9/6c25ed46d5/0/prompt.txt"
+    },
+    {
+      "metadata": "/c9/6c25ed46d5/1/metadata.json",
+      "transcript": "/c9/6c25ed46d5/1/full.jsonl",
+      "context": "/c9/6c25ed46d5/1/context.md",
+      "content_hash": "/c9/6c25ed46d5/1/content_hash.txt",
+      "prompt": "/c9/6c25ed46d5/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14254,
-    "cache_creation_tokens": 259287,
-    "cache_read_tokens": 13004462,
-    "output_tokens": 8748,
-    "api_call_count": 119
+    "input_tokens": 15220,
+    "cache_creation_tokens": 312552,
+    "cache_read_tokens": 14846220,
+    "output_tokens": 11494,
+    "api_call_count": 149
   }
 }
