@@ -3,7 +3,7 @@
   "checkpoint_id": "159e283d81b4",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "scripts/live_integration.py"
   ],
@@ -28,13 +28,20 @@
       "context": "/15/9e283d81b4/2/context.md",
       "content_hash": "/15/9e283d81b4/2/content_hash.txt",
       "prompt": "/15/9e283d81b4/2/prompt.txt"
+    },
+    {
+      "metadata": "/15/9e283d81b4/3/metadata.json",
+      "transcript": "/15/9e283d81b4/3/full.jsonl",
+      "context": "/15/9e283d81b4/3/context.md",
+      "content_hash": "/15/9e283d81b4/3/content_hash.txt",
+      "prompt": "/15/9e283d81b4/3/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 15457,
-    "cache_creation_tokens": 445318,
-    "cache_read_tokens": 30071823,
-    "output_tokens": 20462,
-    "api_call_count": 294
+    "input_tokens": 15661,
+    "cache_creation_tokens": 758922,
+    "cache_read_tokens": 42625909,
+    "output_tokens": 26918,
+    "api_call_count": 419
   }
 }
