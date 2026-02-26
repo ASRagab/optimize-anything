@@ -1684,7 +1684,7 @@ class TestScoreJudgeModel:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             rc = main([
                 "score", str(artifact),
-                "--judge-model", "openai/gpt-5.1-mini",
+                "--judge-model", "openai/gpt-5.1",
                 "--objective", "Maximize clarity",
             ])
 
@@ -1701,7 +1701,7 @@ class TestScoreJudgeModel:
         import io, contextlib
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            rc = main(["score", str(artifact), "--judge-model", "openai/gpt-5.1-mini"])
+            rc = main(["score", str(artifact), "--judge-model", "openai/gpt-5.1"])
 
         assert rc == 1
         assert "objective" in stderr.getvalue().lower()
@@ -1717,7 +1717,7 @@ class TestScoreJudgeModel:
             rc = main([
                 "score", str(artifact),
                 "--evaluator-command", "echo", "{}",
-                "--judge-model", "openai/gpt-5.1-mini",
+                "--judge-model", "openai/gpt-5.1",
                 "--objective", "test",
             ])
 
@@ -1735,7 +1735,7 @@ class TestScoreJudgeModel:
             rc = main([
                 "score", str(artifact),
                 "--evaluator-url", "http://localhost:9999",
-                "--judge-model", "openai/gpt-5.1-mini",
+                "--judge-model", "openai/gpt-5.1",
                 "--objective", "test",
             ])
 
@@ -1769,7 +1769,7 @@ class TestScoreJudgeModel:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             rc = main([
                 "score", str(artifact),
-                "--judge-model", "openai/gpt-5.1-mini",
+                "--judge-model", "openai/gpt-5.1",
                 "--objective", "general objective",
                 "--judge-objective", "specific judge objective",
             ])
@@ -1831,7 +1831,7 @@ class TestScoreJudgeModel:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             rc = main([
                 "score", str(artifact),
-                "--judge-model", "openai/gpt-5.1-mini",
+                "--judge-model", "openai/gpt-5.1",
                 "--objective", "Score quality",
                 "--intake-json", json.dumps(intake),
             ])
@@ -1866,7 +1866,7 @@ class TestScoreJudgeModel:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             rc = main([
                 "score", str(artifact),
-                "--judge-model", "openai/gpt-5.1-mini",
+                "--judge-model", "openai/gpt-5.1",
                 "--objective", "Score quality",
                 "--api-base", "http://localhost:11434/v1",
             ])

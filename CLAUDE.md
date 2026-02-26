@@ -24,7 +24,7 @@ uv run python scripts/live_integration.py --phase green \
     --evaluator-command bash evaluators/skill_clarity.sh  # GREEN phase optimization
 uv run python scripts/live_integration.py --phase red \
     --artifact FILE --objective "..." \
-    --providers openai/gpt-5.1-mini anthropic/claude-sonnet-4-5-20250929 \
+    --providers openai/gpt-5.1 anthropic/claude-sonnet-4-5-20250929 \
     --baseline 0.85 \
     --evaluator-command bash evaluators/skill_clarity.sh  # RED phase validation
 ```

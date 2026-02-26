@@ -305,7 +305,7 @@ class TestProvidersValidation:
                 sys.executable, SCRIPT,
                 "--phase", "red",
                 "--artifact", str(artifact),
-                "--providers", "openai/gpt-5.1-mini",
+                "--providers", "openai/gpt-5.1",
             ],
             capture_output=True,
             text=True,

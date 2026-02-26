@@ -16,7 +16,7 @@ Usage:
     python scripts/live_integration.py --phase red \
         --artifact skills/generate-evaluator/SKILL.md \
         --objective "Score skill quality" \
-        --providers openai/gpt-5.1-mini anthropic/claude-sonnet-4-5-20250929 \
+        --providers openai/gpt-5.1 anthropic/claude-sonnet-4-5-20250929 \
         --evaluator-command bash evaluators/skill_clarity.sh
 """
 from __future__ import annotations
@@ -236,7 +236,7 @@ def _run_red(args: argparse.Namespace) -> int:
     providers = args.providers or []
     for provider in providers:
         judge_score = _score_with_judge(artifact_path, provider, args.objective)
-        # Use a clean key: "openai/gpt-5.1-mini" -> "openai_gpt_5_1_mini"
+        # Use a clean key: "openai/gpt-5.1" -> "openai_gpt_5_1"
         key = provider.replace("/", "_").replace("-", "_").replace(".", "_")
         scores[key] = judge_score
 

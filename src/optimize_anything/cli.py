@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         "--judge-model",
         help=(
             "LiteLLM model string for LLM-as-judge scoring "
-            "(e.g. 'openai/gpt-5.1-mini'). "
+            "(e.g. 'openai/gpt-5.1'). "
             "Mutually exclusive with --evaluator-command and --evaluator-url."
         ),
     )
