@@ -29,8 +29,17 @@ class EvaluatorHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"status": "ok"})
 
     def do_POST(self) -> None:
-        """Score a candidate via the command evaluator."""
-        content_length = int(self.headers.get("Content-Length", 0))
+        """Score a candidate via the command evaluator.
+
+        Evaluator-side failures return HTTP 200 with {"score": 0.0, "error": ...}
+        so that callers using resp.raise_for_status() treat them as valid responses.
+        Callers must inspect the "error" key to distinguish real scores from failures.
+        """
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json(400, {"score": 0.0, "error": "Invalid Content-Length header"})
+            return
         if content_length == 0:
             self._send_json(400, {"score": 0.0, "error": "Empty request body"})
             return
@@ -88,16 +97,16 @@ class EvaluatorHandler(BaseHTTPRequestHandler):
         self._send_json(200, result)
 
     def _send_json(self, status: int, data: dict) -> None:
-        response = json.dumps(data)
+        encoded = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(response)))
+        self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
-        self.wfile.write(response.encode())
+        self.wfile.write(encoded)
 
-    def log_message(self, format: str, *args) -> None:
+    def log_message(self, fmt: str, *args) -> None:
         """Log to stderr with compact format."""
-        print(f"[evaluator-http] {args[0]}", file=sys.stderr)
+        print(f"[evaluator-http] {args[0]} {args[1] if len(args) > 1 else ''}", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         description="HTTP server wrapping a command evaluator",
     )
     parser.add_argument("--port", type=int, default=8234, help="Port to listen on")
-    # Must be last due to nargs="+"
+    # MUST be last nargs="+" argument to avoid greedy consumption of subsequent flags
     parser.add_argument(
         "--evaluator-command",
         nargs="+",
@@ -123,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down.", file=sys.stderr)
-    server.server_close()
+    finally:
+        server.server_close()
     return 0
 
 
