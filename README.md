@@ -113,6 +113,8 @@ optimize-anything optimize seed.txt \
 
 > **Tip:** For best results with `--judge-model`, provide `quality_dimensions` via `--intake-json` to give the judge specific scoring criteria.
 
+> See [EXAMPLES.md](EXAMPLES.md) for complete worked examples of each evaluator type and evaluation pattern.
+
 ## CLI Commands
 
 ### optimize
