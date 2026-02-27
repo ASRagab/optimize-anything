@@ -42,6 +42,7 @@ jobs:
 
   integration:
     name: Integration (${{ matrix.provider }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

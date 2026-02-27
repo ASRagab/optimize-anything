@@ -60,7 +60,9 @@ uv tool install git+https://github.com/ASRagab/optimize-anything
 **Claude Code plugin** — skills + `/optimize` command inside Claude Code:
 
 ```bash
-claude plugin add https://github.com/ASRagab/optimize-anything
+# Add the marketplace, then install the plugin:
+/plugin marketplace add ASRagab/optimize-anything
+/plugin install optimize-anything@optimize-anything
 ```
 
 > Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10. Plugin and CLI are independent — install either or both.
@@ -308,8 +310,8 @@ flowchart TD
 ## Uninstall
 
 ```bash
-uv tool uninstall optimize-anything   # CLI
-claude plugin remove optimize-anything # Plugin
+uv tool uninstall optimize-anything                        # CLI
+/plugin uninstall optimize-anything@optimize-anything      # Plugin
 ```
 
 ## Learn More

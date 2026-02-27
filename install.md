@@ -20,14 +20,18 @@ The plugin auto-discovers skills and the `/optimize` command.
 
 ### Install
 
+Inside Claude Code, add the marketplace and install the plugin:
+
 ```bash
-claude plugin add https://github.com/ASRagab/optimize-anything
+/plugin marketplace add ASRagab/optimize-anything
+/plugin install optimize-anything@optimize-anything
 ```
 
 Or from a local clone:
 
 ```bash
-claude plugin add /path/to/optimize-anything
+/plugin marketplace add /path/to/optimize-anything
+/plugin install optimize-anything@optimize-anything
 ```
 
 ### What you get
@@ -42,7 +46,7 @@ In Claude Code, run `/optimize` or ask Claude to use the optimization-guide skil
 ### Uninstall
 
 ```bash
-claude plugin remove optimize-anything
+/plugin uninstall optimize-anything@optimize-anything
 ```
 
 ---
@@ -105,9 +109,10 @@ uv run optimize-anything --help   # Check CLI
 
 ### Use as plugin from source
 
-If you've cloned the repo, you can also add it as a Claude Code plugin:
+If you've cloned the repo, you can add it as a local marketplace in Claude Code:
 ```bash
-claude plugin add /path/to/optimize-anything
+/plugin marketplace add /path/to/optimize-anything
+/plugin install optimize-anything@optimize-anything
 ```
 
 ---
