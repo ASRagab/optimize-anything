@@ -3,7 +3,7 @@
   "checkpoint_id": "3d8773e9c65e",
   "strategy": "manual-commit",
   "branch": "aragab/update-plugin-metadata",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     ".claude-plugin/plugin.json"
   ],
@@ -28,13 +28,20 @@
       "context": "/3d/8773e9c65e/2/context.md",
       "content_hash": "/3d/8773e9c65e/2/content_hash.txt",
       "prompt": "/3d/8773e9c65e/2/prompt.txt"
+    },
+    {
+      "metadata": "/3d/8773e9c65e/3/metadata.json",
+      "transcript": "/3d/8773e9c65e/3/full.jsonl",
+      "context": "/3d/8773e9c65e/3/context.md",
+      "content_hash": "/3d/8773e9c65e/3/content_hash.txt",
+      "prompt": "/3d/8773e9c65e/3/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 15720,
-    "cache_creation_tokens": 631184,
-    "cache_read_tokens": 39895837,
-    "output_tokens": 30203,
-    "api_call_count": 377
+    "input_tokens": 15924,
+    "cache_creation_tokens": 944788,
+    "cache_read_tokens": 52449923,
+    "output_tokens": 36659,
+    "api_call_count": 502
   }
 }
