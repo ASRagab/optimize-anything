@@ -3,8 +3,10 @@
   "checkpoint_id": "a81844950506",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 4,
+  "checkpoints_count": 5,
   "files_touched": [
+    ".entire/settings.json",
+    ".pre-commit-config.yaml",
     "evaluator-cookbook.md",
     "evaluators/cookbook_clarity.sh",
     "scores.json",
@@ -30,13 +32,20 @@
       "context": "/a8/1844950506/0/context.md",
       "content_hash": "/a8/1844950506/0/content_hash.txt",
       "prompt": "/a8/1844950506/0/prompt.txt"
+    },
+    {
+      "metadata": "/a8/1844950506/1/metadata.json",
+      "transcript": "/a8/1844950506/1/full.jsonl",
+      "context": "/a8/1844950506/1/context.md",
+      "content_hash": "/a8/1844950506/1/content_hash.txt",
+      "prompt": "/a8/1844950506/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 6247,
-    "cache_creation_tokens": 269347,
-    "cache_read_tokens": 17289632,
-    "output_tokens": 59834,
-    "api_call_count": 160
+    "input_tokens": 20501,
+    "cache_creation_tokens": 528634,
+    "cache_read_tokens": 30294094,
+    "output_tokens": 68582,
+    "api_call_count": 279
   }
 }
