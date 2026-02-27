@@ -1,49 +1,17 @@
 {
   "name": "optimize-anything",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Optimize any text artifact using gepa — prompts, code, configs, skills",
-  "keywords": ["optimization", "gepa", "prompts", "evaluator"],
-  "author": "optimize-anything contributors",
-  "commands": [
-    {
-      "name": "optimize",
-      "description": "Run optimization on a seed artifact with an evaluator"
-    },
-    {
-      "name": "generate-evaluator",
-      "description": "Generate an evaluator script for a text artifact"
-    },
-    {
-      "name": "intake",
-      "description": "Normalize evaluator intake specification"
-    },
-    {
-      "name": "explain",
-      "description": "Explain the optimization plan for a seed artifact"
-    },
-    {
-      "name": "budget",
-      "description": "Recommend evaluation budget for a seed artifact"
-    },
-    {
-      "name": "score",
-      "description": "Score a single artifact with an evaluator without optimizing"
-    },
-    {
-      "name": "analyze",
-      "description": "Analyze an artifact to discover quality dimensions for LLM judge optimization"
-    }
+  "keywords": [
+    "optimization",
+    "gepa",
+    "prompts",
+    "evaluator"
   ],
-  "skills": [
-    {
-      "name": "generate-evaluator",
-      "path": "skills/generate-evaluator/SKILL.md",
-      "description": "Generate an evaluator script for a text artifact, choosing the right scoring pattern for the objective"
-    },
-    {
-      "name": "optimization-guide",
-      "path": "skills/optimization-guide/SKILL.md",
-      "description": "Guide for running optimizations with optimize-anything, covering modes, configuration, and interpretation"
-    }
-  ]
+  "author": {
+    "name": "optimize-anything contributors"
+  },
+  "repository": "https://github.com/ASRagab/optimize-anything",
+  "homepage": "https://github.com/ASRagab/optimize-anything",
+  "license": "MIT"
 }
