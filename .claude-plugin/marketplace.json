@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Claude Code plugin for optimizing text artifacts using gepa",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "plugins": [
     {
       "name": "optimize-anything",
       "source": "./",
       "description": "Optimize any text artifact using gepa — prompts, code, configs, skills",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "homepage": "https://github.com/ASRagab/optimize-anything",
       "repository": "https://github.com/ASRagab/optimize-anything",
       "keywords": ["optimization", "gepa", "prompts", "evaluator", "llm-judge"],

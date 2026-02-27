@@ -13,5 +13,18 @@
   },
   "repository": "https://github.com/ASRagab/optimize-anything",
   "homepage": "https://github.com/ASRagab/optimize-anything",
-  "license": "MIT"
+  "license": "MIT",
+  "commands": [
+    { "name": "optimize", "description": "Run gepa optimization on a text artifact" },
+    { "name": "generate-evaluator", "description": "Generate a scoring evaluator from a seed artifact and objective" },
+    { "name": "intake", "description": "Normalize and validate an optimization intake spec" },
+    { "name": "explain", "description": "Explain what optimize-anything will do for a given configuration" },
+    { "name": "budget", "description": "Estimate token and API cost budget for an optimization run" },
+    { "name": "score", "description": "Score a single artifact against an evaluator" },
+    { "name": "analyze", "description": "Discover quality dimensions for an artifact and objective" }
+  ],
+  "skills": [
+    { "name": "generate-evaluator", "path": "skills/generate-evaluator/SKILL.md", "description": "Guide for creating custom evaluator scripts" },
+    { "name": "optimization-guide", "path": "skills/optimization-guide/SKILL.md", "description": "End-to-end optimization workflow guidance" }
+  ]
 }
