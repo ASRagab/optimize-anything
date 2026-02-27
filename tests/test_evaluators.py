@@ -77,6 +77,15 @@ class TestCommandEvaluator:
         assert score == 0.0
         assert "must be numeric" in info["error"]
 
+    def test_out_of_range_score_value(self, tmp_path: Path):
+        script = tmp_path / "bad_range.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'{"score": 1.2}\'\n')
+        script.chmod(0o755)
+        evaluate = command_evaluator([str(script)])
+        score, info = evaluate("candidate")
+        assert score == 0.0
+        assert "between 0.0 and 1.0" in info["error"]
+
     def test_non_object_json_output(self, tmp_path: Path):
         script = tmp_path / "list_output.sh"
         script.write_text('#!/usr/bin/env bash\necho \'[1, 2, 3]\'\n')
@@ -198,6 +207,17 @@ class TestHttpEvaluator:
             assert score == 0.0
             assert "must be numeric" in info["error"]
 
+    def test_out_of_range_score_value(self):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"score": -0.25, "detail": "oops"}
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response):
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            score, info = evaluate("test")
+            assert score == 0.0
+            assert "between 0.0 and 1.0" in info["error"]
+
     def test_non_object_json_body(self):
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
@@ -246,3 +266,11 @@ class TestValidateEvaluatorPayload:
         import math
         err = validate_evaluator_payload({"score": math.nan})
         assert err == "evaluator output 'score' must be finite"
+
+    def test_score_below_zero_returns_error(self):
+        err = validate_evaluator_payload({"score": -0.01})
+        assert err == "evaluator output 'score' must be between 0.0 and 1.0"
+
+    def test_score_above_one_returns_error(self):
+        err = validate_evaluator_payload({"score": 1.01})
+        assert err == "evaluator output 'score' must be between 0.0 and 1.0"

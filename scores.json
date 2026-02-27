@@ -1,28 +1,52 @@
 {
   "skills/generate-evaluator/SKILL.md": {
     "evaluator": "evaluators/skill_clarity.sh",
-    "baseline": 0.8728,
-    "current": 0.8728,
+    "baseline": 0.9477,
+    "current": 0.9477,
     "target": 0.9,
-    "last_run": "2026-02-24",
+    "last_run": "2026-02-26",
     "history": [
       {
         "score": 0.8728,
         "date": "2026-02-24",
+        "run_id": null
+      },
+      {
+        "score": 0.9477,
+        "date": "2026-02-26",
+        "run_id": null
+      }
+    ]
+  },
+  "evaluator-cookbook.md": {
+    "evaluator": "evaluators/cookbook_clarity.sh",
+    "baseline": 0.9002,
+    "current": 0.9002,
+    "target": 0.90,
+    "last_run": "2026-02-27",
+    "history": [
+      {
+        "score": 0.9002,
+        "date": "2026-02-27",
         "run_id": null
       }
     ]
   },
   "skills/optimization-guide/SKILL.md": {
     "evaluator": "evaluators/skill_clarity.sh",
-    "baseline": 0.8984,
-    "current": 0.8984,
+    "baseline": 0.8985,
+    "current": 0.8985,
     "target": 0.88,
-    "last_run": "2026-02-24",
+    "last_run": "2026-02-26",
     "history": [
       {
         "score": 0.8984,
         "date": "2026-02-24",
+        "run_id": null
+      },
+      {
+        "score": 0.8985,
+        "date": "2026-02-26",
         "run_id": null
       }
     ]

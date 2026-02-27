@@ -16,14 +16,7 @@ class SpecLoadError(ValueError):
 
 
 def load_spec(spec_path: str | Path) -> dict[str, Any]:
-    """Load and normalize a TOML spec file.
-
-    Returns:
-        Normalized spec dict with keys matching CLI argument names.
-
-    Raises:
-        SpecLoadError: If the file is missing, not valid TOML, or has invalid field types.
-    """
+    """Load and normalize a TOML spec file into CLI-compatible argument dict."""
     spec_path = Path(spec_path).expanduser().resolve()
     if not spec_path.exists():
         raise SpecLoadError(f"spec file not found: {spec_path}")

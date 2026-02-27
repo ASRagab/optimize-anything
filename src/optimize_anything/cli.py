@@ -238,6 +238,83 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
+def _resolve_evaluator(
+    *,
+    evaluator_command: list[str] | None,
+    evaluator_url: str | None,
+    judge_model: str | None,
+    judge_objective: str | None,
+    objective: str | None,
+    evaluator_cwd: str | None,
+    intake_spec: dict[str, object] | None,
+    allow_intake_fallback: bool = False,
+    api_base: str | None = None,
+) -> tuple[object | None, str]:
+    """Resolve evaluator from command, URL, judge model, or intake spec.
+
+    Returns (eval_fn, evaluator_label) on success, or (None, error_message) on failure.
+    """
+    from optimize_anything.evaluators import command_evaluator, http_evaluator
+    from optimize_anything.llm_judge import llm_judge_evaluator
+
+    command_cwd = evaluator_cwd
+    if command_cwd is None and intake_spec is not None:
+        command_cwd = intake_spec.get("evaluator_cwd")
+
+    evaluator_sources = sum([
+        bool(evaluator_command),
+        bool(evaluator_url),
+        bool(judge_model),
+    ])
+    if evaluator_sources > 1:
+        return (None, "Error: provide only one of --evaluator-command, --evaluator-url, or --judge-model")
+
+    if evaluator_sources == 0:
+        if allow_intake_fallback and intake_spec is not None:
+            execution_mode = intake_spec["execution_mode"]
+            if execution_mode == "command":
+                return (None, "Error: intake execution_mode='command' requires --evaluator-command")
+            else:
+                return (None, "Error: intake execution_mode='http' requires --evaluator-url")
+        return (None, "Error: provide --evaluator-command, --evaluator-url, or --judge-model")
+
+    if evaluator_command:
+        preflight_error = _preflight_command_evaluator(
+            evaluator_command,
+            cwd=command_cwd,
+        )
+        if preflight_error is not None:
+            return (None, preflight_error)
+        eval_fn = command_evaluator(evaluator_command, cwd=command_cwd)
+        evaluator_label = shlex.join(evaluator_command)
+    elif evaluator_url:
+        preflight_error = _preflight_http_evaluator(evaluator_url)
+        if preflight_error is not None:
+            return (None, preflight_error)
+        eval_fn = http_evaluator(evaluator_url)
+        evaluator_label = evaluator_url
+    else:  # judge_model
+        judge_obj = judge_objective or objective
+        if not judge_obj:
+            return (None, "Error: --judge-model requires --objective or --judge-objective")
+
+        quality_dimensions = None
+        hard_constraints = None
+        if intake_spec is not None:
+            quality_dimensions = intake_spec.get("quality_dimensions")
+            hard_constraints = intake_spec.get("hard_constraints") or None
+        eval_fn = llm_judge_evaluator(
+            judge_obj,
+            model=judge_model,
+            quality_dimensions=quality_dimensions,
+            hard_constraints=hard_constraints,
+            api_base=api_base,
+        )
+        evaluator_label = f"LLM judge ({judge_model})"
+
+    return (eval_fn, evaluator_label)
+
+
 def _cmd_optimize(args: argparse.Namespace) -> int:
     # Apply spec file defaults (lower precedence than CLI flags)
     if getattr(args, "spec_file", None):
@@ -265,85 +342,26 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     if intake_requested and intake_spec is None:
         return 1
 
-    evaluator_sources = sum([
-        bool(args.evaluator_command),
-        bool(args.evaluator_url),
-        bool(args.judge_model),
-    ])
-    if evaluator_sources > 1:
-        print(
-            "Error: provide only one of --evaluator-command, --evaluator-url, or --judge-model",
-            file=sys.stderr,
-        )
-        return 1
-
-    from optimize_anything.evaluators import command_evaluator, http_evaluator
-    from optimize_anything.llm_judge import llm_judge_evaluator
-    from optimize_anything.result_contract import build_optimize_summary
-    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-
-    command_cwd = args.evaluator_cwd
-    if command_cwd is None and intake_spec is not None:
-        command_cwd = intake_spec.get("evaluator_cwd")
-
     output_error = _validate_output_path(args.output)
     if output_error is not None:
         print(output_error, file=sys.stderr)
         return 1
+    from optimize_anything.result_contract import build_optimize_summary
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
-    if args.evaluator_command:
-        preflight_error = _preflight_command_evaluator(
-            args.evaluator_command,
-            cwd=command_cwd,
-        )
-        if preflight_error is not None:
-            print(preflight_error, file=sys.stderr)
-            return 1
-        eval_fn = command_evaluator(args.evaluator_command, cwd=command_cwd)
-    elif args.evaluator_url:
-        preflight_error = _preflight_http_evaluator(args.evaluator_url)
-        if preflight_error is not None:
-            print(preflight_error, file=sys.stderr)
-            return 1
-        eval_fn = http_evaluator(args.evaluator_url)
-    elif args.judge_model:
-        judge_objective = args.judge_objective or args.objective
-        if not judge_objective:
-            print(
-                "Error: --judge-model requires --objective or --judge-objective",
-                file=sys.stderr,
-            )
-            return 1
-        quality_dimensions = None
-        hard_constraints = None
-        if intake_spec is not None:
-            quality_dimensions = intake_spec.get("quality_dimensions")
-            hard_constraints = intake_spec.get("hard_constraints") or None
-        eval_fn = llm_judge_evaluator(
-            judge_objective,
-            model=args.judge_model,
-            quality_dimensions=quality_dimensions,
-            hard_constraints=hard_constraints,
-            api_base=args.api_base,
-        )
-    else:
-        if intake_spec is not None:
-            execution_mode = intake_spec["execution_mode"]
-            if execution_mode == "command":
-                print(
-                    "Error: intake execution_mode='command' requires --evaluator-command",
-                    file=sys.stderr,
-                )
-            else:
-                print(
-                    "Error: intake execution_mode='http' requires --evaluator-url",
-                    file=sys.stderr,
-                )
-        else:
-            print(
-                "Error: provide --evaluator-command, --evaluator-url, or --judge-model",
-                file=sys.stderr,
-            )
+    eval_fn, evaluator_label = _resolve_evaluator(
+        evaluator_command=args.evaluator_command,
+        evaluator_url=args.evaluator_url,
+        judge_model=args.judge_model,
+        judge_objective=args.judge_objective,
+        objective=args.objective,
+        evaluator_cwd=args.evaluator_cwd,
+        intake_spec=intake_spec,
+        allow_intake_fallback=True,
+        api_base=args.api_base,
+    )
+    if eval_fn is None:
+        print(evaluator_label, file=sys.stderr)
         return 1
 
     if args.evaluator_url and args.evaluator_cwd:
@@ -352,13 +370,6 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             "The HTTP evaluator runs in the server's own working directory.",
             file=sys.stderr,
         )
-
-    if args.evaluator_command:
-        evaluator_label = shlex.join(args.evaluator_command)
-    elif args.evaluator_url:
-        evaluator_label = args.evaluator_url
-    else:
-        evaluator_label = f"LLM judge ({args.judge_model})"
 
     print(
         f"Running optimization (budget: {args.budget}, evaluator: {evaluator_label})...",
@@ -560,7 +571,6 @@ def _cmd_budget(args: argparse.Namespace) -> int:
 
 
 def _cmd_score(args: argparse.Namespace) -> int:
-    """Score a single artifact using an evaluator without running optimization."""
     artifact = _read_seed(args.artifact_file)
     if artifact is None:
         return 1
@@ -573,70 +583,20 @@ def _cmd_score(args: argparse.Namespace) -> int:
     if intake_requested and intake_spec is None:
         return 1
 
-    command_cwd = args.evaluator_cwd
-    if command_cwd is None and intake_spec is not None:
-        command_cwd = intake_spec.get("evaluator_cwd")
-
-    evaluator_sources = sum([
-        bool(args.evaluator_command),
-        bool(args.evaluator_url),
-        bool(args.judge_model),
-    ])
-    if evaluator_sources > 1:
-        print(
-            "Error: provide only one of --evaluator-command, --evaluator-url, or --judge-model",
-            file=sys.stderr,
-        )
+    eval_fn, error = _resolve_evaluator(
+        evaluator_command=args.evaluator_command,
+        evaluator_url=args.evaluator_url,
+        judge_model=args.judge_model,
+        judge_objective=args.judge_objective,
+        objective=args.objective,
+        evaluator_cwd=args.evaluator_cwd,
+        intake_spec=intake_spec,
+        allow_intake_fallback=False,
+        api_base=args.api_base,
+    )
+    if eval_fn is None:
+        print(error, file=sys.stderr)
         return 1
-
-    if evaluator_sources == 0:
-        print(
-            "Error: provide --evaluator-command, --evaluator-url, or --judge-model",
-            file=sys.stderr,
-        )
-        return 1
-
-    from optimize_anything.evaluators import command_evaluator, http_evaluator
-
-    if args.evaluator_command:
-        preflight_error = _preflight_command_evaluator(
-            args.evaluator_command,
-            cwd=command_cwd,
-        )
-        if preflight_error is not None:
-            print(preflight_error, file=sys.stderr)
-            return 1
-        eval_fn = command_evaluator(args.evaluator_command, cwd=command_cwd)
-    elif args.evaluator_url:
-        preflight_error = _preflight_http_evaluator(args.evaluator_url)
-        if preflight_error is not None:
-            print(preflight_error, file=sys.stderr)
-            return 1
-        eval_fn = http_evaluator(args.evaluator_url)
-    else:
-        from optimize_anything.llm_judge import llm_judge_evaluator
-
-        judge_objective = args.judge_objective or args.objective
-        if not judge_objective:
-            print(
-                "Error: --judge-model requires --objective or --judge-objective",
-                file=sys.stderr,
-            )
-            return 1
-
-        quality_dimensions = None
-        hard_constraints = None
-        if intake_spec is not None:
-            quality_dimensions = intake_spec.get("quality_dimensions")
-            hard_constraints = intake_spec.get("hard_constraints") or None
-
-        eval_fn = llm_judge_evaluator(
-            judge_objective,
-            model=args.judge_model,
-            quality_dimensions=quality_dimensions,
-            hard_constraints=hard_constraints,
-            api_base=args.api_base,
-        )
 
     if args.evaluator_url and args.evaluator_cwd:
         print(
@@ -657,7 +617,6 @@ def _cmd_score(args: argparse.Namespace) -> int:
 
 
 def _cmd_analyze(args: argparse.Namespace) -> int:
-    """Analyze an artifact to discover quality dimensions for optimization."""
     artifact = _read_seed(args.artifact_file)
     if artifact is None:
         return 1
@@ -875,10 +834,6 @@ def _preflight_command_evaluator(command: list[str], *, cwd: str | None) -> str 
 
 
 def _preflight_http_evaluator(url: str, *, timeout: float = 10.0) -> str | None:
-    """Send a preflight request to an HTTP evaluator and validate the response.
-
-    Returns None if the evaluator is healthy, or an error string.
-    """
     import httpx
 
     payload = {"candidate": "__optimize_anything_preflight__"}

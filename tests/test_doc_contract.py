@@ -8,7 +8,12 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DOC_PATHS = (Path("README.md"),)
+DOC_PATHS = (
+    Path("README.md"),
+    Path("docs/mcp-protocol.md"),
+    Path("docs/release-checklist.md"),
+    Path("docs/final-readiness-review.md"),
+)
 
 
 def _read_text(path: Path) -> str:
@@ -90,6 +95,13 @@ def test_cli_intake_flags_are_documented_and_in_runtime():
         terms=required_flags,
         label="src/optimize_anything/cli.py",
     )
+
+
+def test_removed_server_artifacts_not_referenced_in_active_docs():
+    docs_text = _combined_docs_text()
+    forbidden_terms = ["optimize_anything.server", "tests/test_server.py"]
+    for term in forbidden_terms:
+        assert term not in docs_text, f"active docs still reference removed artifact: {term}"
 
 
 # --- Plugin manifest tests ---

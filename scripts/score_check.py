@@ -21,22 +21,16 @@ TOLERANCE = 0.01
 
 
 def load_scores(scores_path: Path) -> dict:
-    """Read and parse the scores.json file."""
     with open(scores_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def read_artifact(artifact_path: Path) -> str:
-    """Read an artifact file and return its text content."""
     return artifact_path.read_text(encoding="utf-8")
 
 
 def run_evaluator(evaluator_path: Path, candidate: str, cwd: Path) -> float:
-    """Pipe a candidate through an evaluator and return the score.
-
-    The evaluator receives JSON on stdin: {"candidate": "<text>"}
-    and must output JSON on stdout with a numeric "score" field.
-    """
+    """Pipe a candidate through an evaluator and return the score."""
     payload = json.dumps({"candidate": candidate})
     try:
         proc = subprocess.run(
@@ -70,12 +64,7 @@ def check_scores(
     update: bool = False,
     run_id: str | None = None,
 ) -> int:
-    """Run all evaluators and compare scores to baselines.
-
-    Returns 0 if all artifacts pass, 1 if any fail.
-    When update=True and all checks pass, writes measured scores back as new baselines
-    and appends a history entry.
-    """
+    """Run all evaluators and compare scores to baselines."""
     scores = load_scores(scores_path)
     any_failed = False
     measured: dict[str, float] = {}
@@ -86,13 +75,11 @@ def check_scores(
         evaluator_path = root / evaluator_rel
         baseline = entry["baseline"]
 
-        # Check artifact exists
         if not artifact_path.exists():
             print(f"FAIL  {artifact_rel}  (artifact not found: {artifact_path})")
             any_failed = True
             continue
 
-        # Check evaluator exists
         if not evaluator_path.exists():
             print(f"FAIL  {artifact_rel}  (evaluator not found: {evaluator_path})")
             any_failed = True
@@ -131,7 +118,6 @@ def _write_back_scores(
     *,
     run_id: str | None = None,
 ) -> None:
-    """Write measured scores back to scores.json as new baselines and append history."""
     from datetime import date, datetime, timezone
 
     today = date.today().isoformat()

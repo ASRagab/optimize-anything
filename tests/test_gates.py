@@ -36,3 +36,13 @@ class TestCheckGates:
 
         args_default = parsed.parse_args([])
         assert args_default.skip_smoke is False
+
+    def test_main_skip_smoke_summary_uses_skip_status(self, monkeypatch, capsys):
+        monkeypatch.setattr(check, "_run_gate", lambda label, cmd, cwd: True)
+        rc = check.main(["--skip-smoke"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "[SKIP] smoke harness (--skip-smoke)" in captured.out
+        assert "  [SKIP] smoke harness" in captured.out
+        assert "  [PASS] pytest" in captured.out
+        assert "  [PASS] score check" in captured.out

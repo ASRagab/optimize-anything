@@ -20,20 +20,7 @@ def command_evaluator(
     timeout: float = 30.0,
     cwd: str | None = None,
 ) -> Callable[[str], tuple[float, dict[str, Any]]]:
-    """Create an evaluator that runs a shell command.
-
-    The command receives JSON on stdin: {"candidate": "<text>"}
-    and must output JSON on stdout with at least a "score" field.
-    Additional fields become side information for gepa's reflection.
-
-    Args:
-        command: Command and arguments to execute.
-        timeout: Max seconds to wait for the command.
-        cwd: Working directory used to run the command.
-
-    Returns:
-        An evaluator function compatible with gepa.
-    """
+    """Create an evaluator that runs a shell command."""
 
     def evaluate(candidate: str) -> tuple[float, dict[str, Any]]:
         payload = json.dumps({"candidate": candidate})
@@ -78,19 +65,7 @@ def http_evaluator(
     timeout: float = 30.0,
     headers: dict[str, str] | None = None,
 ) -> Callable[[str], tuple[float, dict[str, Any]]]:
-    """Create an evaluator that calls an HTTP endpoint.
-
-    Sends a POST request with JSON body: {"candidate": "<text>"}
-    Expects a JSON response with at least a "score" field.
-
-    Args:
-        url: HTTP endpoint URL.
-        timeout: Max seconds to wait for the response.
-        headers: Optional HTTP headers.
-
-    Returns:
-        An evaluator function compatible with gepa.
-    """
+    """Create an evaluator that calls an HTTP endpoint."""
 
     def evaluate(candidate: str) -> tuple[float, dict[str, Any]]:
         payload = {"candidate": candidate}
@@ -123,22 +98,20 @@ def http_evaluator(
 
 
 def validate_evaluator_payload(result: Any) -> str | None:
-    """Validate an evaluator JSON payload.
-
-    Returns None if valid, or a human-readable error string.
-    This is the shared validation used by both CLI preflight and runtime checking.
-    """
+    """Return None if valid, or a human-readable error string."""
     if not isinstance(result, dict):
         return "evaluator output must be a JSON object"
     if "score" not in result:
         return "evaluator output missing required 'score' field"
-    raw_score = result.get("score")
+    raw_score = result["score"]
     try:
         score = float(raw_score)
     except (TypeError, ValueError):
         return "evaluator output 'score' must be numeric"
     if not math.isfinite(score):
         return "evaluator output 'score' must be finite"
+    if score < 0.0 or score > 1.0:
+        return "evaluator output 'score' must be between 0.0 and 1.0"
     return None
 
 
@@ -168,4 +141,8 @@ def _parse_evaluator_result(result: Any) -> tuple[float, dict[str, Any]]:
         side_info["score"] = raw_score
         return 0.0, side_info
 
+    if score < 0.0 or score > 1.0:
+        side_info["error"] = "Evaluator 'score' must be between 0.0 and 1.0"
+        side_info["score"] = raw_score
+        return 0.0, side_info
     return score, side_info

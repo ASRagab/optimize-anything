@@ -13,19 +13,8 @@ def generate_evaluator_script(
     evaluator_type: str | None = None,
     intake: Mapping[str, Any] | None = None,
 ) -> str:
-    """Generate an evaluator script for the given seed and objective.
-
-    The generated script reads {"candidate": "..."} from stdin
+    """Generate an evaluator script that reads {"candidate": "..."} on stdin
     and outputs {"score": <float>, ...} to stdout.
-
-    Args:
-        seed: The seed artifact text.
-        objective: What to optimize for.
-        evaluator_type: "command" for bash script, "http" for Python HTTP server.
-        intake: Optional normalized intake metadata used to select template families.
-
-    Returns:
-        The script content as a string.
     """
     normalized_intake = _normalize_intake_if_provided(intake)
     resolved_evaluator_type = _resolve_evaluator_type(

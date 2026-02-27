@@ -107,13 +107,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_green(args: argparse.Namespace) -> int:
-    """Run GREEN phase: optimize artifact, return structured results."""
     artifact_path = Path(args.artifact)
     if not artifact_path.exists():
         print(json.dumps({"error": f"Artifact not found: {args.artifact}"}))
         return 1
 
-    # Score the artifact before optimization
     if args.evaluator_url:
         initial_score = _score_with_url(artifact_path, args.evaluator_url)
     else:
@@ -216,7 +214,6 @@ def _run_green(args: argparse.Namespace) -> int:
 
 
 def _run_red(args: argparse.Namespace) -> int:
-    """Run RED phase: score artifact with multiple evaluator backends."""
     artifact_path = Path(args.artifact)
     if not artifact_path.exists():
         print(json.dumps({"error": f"Artifact not found: {args.artifact}"}))
@@ -224,7 +221,6 @@ def _run_red(args: argparse.Namespace) -> int:
 
     scores = {}
 
-    # 1. Command evaluator score (if provided)
     if args.evaluator_command:
         cmd_score = _score_with_command(artifact_path, args.evaluator_command)
         scores["command"] = cmd_score
@@ -232,7 +228,6 @@ def _run_red(args: argparse.Namespace) -> int:
         url_score = _score_with_url(artifact_path, args.evaluator_url)
         scores["http"] = url_score
 
-    # 2. LLM judge scores (one per provider)
     providers = args.providers or []
     for provider in providers:
         judge_score = _score_with_judge(artifact_path, provider, args.objective)
@@ -240,7 +235,6 @@ def _run_red(args: argparse.Namespace) -> int:
         key = provider.replace("/", "_").replace("-", "_").replace(".", "_")
         scores[key] = judge_score
 
-    # Cross-provider analysis
     judge_scores = [v for k, v in scores.items() if k != "command" and v is not None]
     cross_provider_delta = (
         round(max(judge_scores) - min(judge_scores), 4) if len(judge_scores) >= 2 else 0.0
@@ -276,12 +270,7 @@ def _run_red(args: argparse.Namespace) -> int:
 
 
 def _extract_json_from_output(output: str) -> dict | None:
-    """Extract the last JSON object from mixed stdout output.
-
-    The gepa engine prints iteration progress lines to stdout before the
-    CLI prints its JSON summary. This function finds and parses that
-    trailing JSON object.
-    """
+    """Extract the last JSON object from mixed stdout (gepa prints progress before JSON)."""
     # Try parsing the entire output first (fast path)
     try:
         return json.loads(output)
@@ -311,7 +300,6 @@ def _score_with_command(
     artifact_path: Path,
     evaluator_command: list[str] | None,
 ) -> float | None:
-    """Score artifact using command evaluator via CLI."""
     if not evaluator_command:
         return None
 
@@ -343,7 +331,6 @@ def _score_with_url(
     artifact_path: Path,
     evaluator_url: str,
 ) -> float | None:
-    """Score artifact using HTTP evaluator via CLI."""
     cmd = [
         sys.executable, "-m", "optimize_anything.cli",
         "score", str(artifact_path),
@@ -375,7 +362,6 @@ def _score_with_judge(
     model: str,
     objective: str | None,
 ) -> float | None:
-    """Score artifact using LLM judge via CLI."""
     if not objective:
         return None
 

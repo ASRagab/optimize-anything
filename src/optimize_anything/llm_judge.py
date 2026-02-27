@@ -76,20 +76,7 @@ def llm_judge_evaluator(
     temperature: float = 0.0,
     api_base: str | None = None,
 ) -> Callable[[str], tuple[float, dict[str, Any]]]:
-    """Create an LLM-as-judge evaluator.
-
-    Args:
-        objective: Natural language description of what a good artifact looks like.
-        model: LiteLLM model string (e.g. "openai/gpt-4o-mini").
-        quality_dimensions: List of {"name": str, "weight": float} dicts from intake spec.
-        hard_constraints: List of constraint strings.
-        timeout: Max seconds to wait for the LLM response.
-        temperature: Sampling temperature. Default 0.0 for determinism.
-        api_base: Optional custom API base URL.
-
-    Returns:
-        An evaluator function compatible with gepa: candidate -> (score, side_info).
-    """
+    """Create an LLM-as-judge evaluator compatible with gepa's evaluator contract."""
     _validate_objective(objective)
     _validate_model_string(model)
     dims = quality_dimensions or []
@@ -236,10 +223,6 @@ def _compute_weighted_score(
     return weighted_sum / total_weight
 
 
-# ---------------------------------------------------------------------------
-# analyze_for_dimensions — pre-optimization dimension discovery
-# ---------------------------------------------------------------------------
-
 ANALYZE_SYSTEM_PROMPT = """\
 You are a careful, objective evaluator and quality analyst. You will be given
 a text artifact, its current score, and the scoring objective. Your job is to
@@ -300,27 +283,10 @@ def analyze_for_dimensions(
     timeout: float = 60.0,
     temperature: float = 0.0,
 ) -> dict[str, Any]:
-    """Score an artifact, then discover quality dimensions for refinement.
+    """Score an artifact then discover quality dimensions for refinement.
 
-    Makes 2 LLM calls:
-    1. Score the artifact with the vague objective (baseline)
-    2. Ask the judge to identify 4-6 specific quality dimensions
-
-    Args:
-        artifact: The text artifact to analyze.
-        objective: Natural language scoring objective.
-        model: LiteLLM model string.
-        api_base: Optional custom API base URL.
-        timeout: Max seconds per LLM call.
-        temperature: Sampling temperature.
-
-    Returns:
-        Dict with current_score, suggested_dimensions, intake_json, and
-        recommendation.
-
-    Raises:
-        ValueError: If objective or model is invalid.
-        RuntimeError: If either LLM call fails.
+    Makes 2 LLM calls: (1) score with vague objective, (2) identify 4-6
+    specific quality dimensions where improvement is possible.
     """
     _validate_objective(objective)
     _validate_model_string(model)
@@ -411,11 +377,7 @@ def analyze_for_dimensions(
 
 
 def _parse_dimensions_response(raw_content: str | None) -> list[dict[str, Any]]:
-    """Parse the dimension discovery LLM response.
-
-    Returns a list of validated dimension dicts.
-    Raises RuntimeError on parse failure.
-    """
+    """Parse the dimension discovery LLM response into validated dimension dicts."""
     if not raw_content:
         raise RuntimeError("Dimension discovery returned empty response")
 

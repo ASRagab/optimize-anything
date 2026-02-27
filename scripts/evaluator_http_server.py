@@ -55,7 +55,6 @@ class EvaluatorHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"score": 0.0, "error": "Missing 'candidate' field"})
             return
 
-        # Forward to command evaluator
         stdin_data = json.dumps({"candidate": payload["candidate"]})
         try:
             proc = subprocess.run(
@@ -83,7 +82,6 @@ class EvaluatorHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # Parse and forward the evaluator's JSON response
         try:
             result = json.loads(proc.stdout)
         except json.JSONDecodeError:

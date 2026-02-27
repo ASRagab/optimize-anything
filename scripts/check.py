@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
     root = Path(__file__).parent.parent.resolve()
 
-    results: list[tuple[str, bool]] = []
+    results: list[tuple[str, bool | str]] = []
 
     # Gate 1: pytest
     passed = _run_gate(
@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     # Gate 2: smoke harness
     if args.skip_smoke:
         print("\n[SKIP] smoke harness (--skip-smoke)")
-        results.append(("smoke harness", True))
+        results.append(("smoke harness", "SKIP"))
     else:
         passed = _run_gate(
             "smoke harness",
@@ -81,11 +81,15 @@ def main(argv: list[str] | None = None) -> int:
     print("Summary")
     print("=" * 60)
     all_passed = True
-    for label, ok in results:
-        status = "PASS" if ok else "FAIL"
-        print(f"  [{status}] {label}")
-        if not ok:
+    for label, status in results:
+        if status == "SKIP":
+            tag = "SKIP"
+        elif status:
+            tag = "PASS"
+        else:
+            tag = "FAIL"
             all_passed = False
+        print(f"  [{tag}] {label}")
 
     if all_passed:
         print("\nAll gates passed.")
