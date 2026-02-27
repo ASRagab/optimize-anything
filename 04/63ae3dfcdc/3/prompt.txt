@@ -1,0 +1,43 @@
+Run uv run pytest -v -m "not integration"
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.2, pluggy-1.6.0
+rootdir: /home/runner/work/optimize-anything/optimize-anything
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1
+collected 264 items / 8 deselected / 256 selected
+
+tests/test_cli.py ...................................................... [ 21%]
+.....................................                                    [ 35%]
+tests/test_doc_contract.py F
+
+=================================== FAILURES ===================================
+___________________ test_intake_schema_fields_are_documented ___________________
+tests/test_doc_contract.py:40: in test_intake_schema_fields_are_documented
+    docs_text = _combined_docs_text()
+                ^^^^^^^^^^^^^^^^^^^^^
+tests/test_doc_contract.py:24: in _combined_docs_text
+    return "\n".join(_read_text(path) for path in DOC_PATHS)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_doc_contract.py:24: in <genexpr>
+    return "\n".join(_read_text(path) for path in DOC_PATHS)
+                     ^^^^^^^^^^^^^^^^
+tests/test_doc_contract.py:20: in _read_text
+    return (REPO_ROOT / path).read_text(encoding="utf-8")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py:1013: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/work/optimize-anything/optimize-anything/docs/mcp-protocol.md'
+=========================== short test summary info ============================
+FAILED tests/test_doc_contract.py::test_intake_schema_fields_are_documented - FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/work/optimize-anything/optimize-anything/docs/mcp-protocol.md'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+================== 1 failed, 91 passed, 8 deselected in 2.61s ==================
+Error: Process completed with exit code 1. test failures
+
+---
+
+commit and push please
