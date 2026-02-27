@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "4016afa80602",
+  "session_id": "acc1ae2d-e0c2-40b1-8cf5-94573739a6e6",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-27T07:18:15.777383Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "tests/test_doc_contract.py",
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json",
+    "commands/generate-evaluator.md"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "73b41dacda42",
+  "transcript_identifier_at_start": "f60621a8-39f9-4e20-a84a-3ddc56b0f111",
+  "token_usage": {
+    "input_tokens": 204,
+    "cache_creation_tokens": 313604,
+    "cache_read_tokens": 12554086,
+    "output_tokens": 6456,
+    "api_call_count": 125
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-27T07:18:15.200964Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 24,
+    "human_removed": 54,
+    "total_committed": 16,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-aragab-projects-optimize-anything/acc1ae2d-e0c2-40b1-8cf5-94573739a6e6.jsonl"
+}
