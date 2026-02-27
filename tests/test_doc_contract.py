@@ -116,35 +116,24 @@ class TestPluginManifest:
         for field in ("name", "version", "description"):
             assert field in data, f"plugin.json missing '{field}'"
 
-    def test_manifest_has_commands_array(self):
-        data = _plugin_json()
-        assert "commands" in data
-        assert isinstance(data["commands"], list)
-        assert len(data["commands"]) > 0
-
-    def test_manifest_has_skills_array(self):
-        data = _plugin_json()
-        assert "skills" in data
-        assert isinstance(data["skills"], list)
-        assert len(data["skills"]) > 0
-
-    def test_each_command_has_name_and_description(self):
-        for cmd in _plugin_json()["commands"]:
-            assert "name" in cmd, f"Command missing 'name': {cmd}"
-            assert "description" in cmd, f"Command missing 'description': {cmd}"
-
-    def test_each_skill_has_name_path_and_description(self):
-        data = _plugin_json()
-        for skill in data["skills"]:
-            assert "name" in skill, f"Skill missing 'name': {skill}"
-            assert "path" in skill, f"Skill missing 'path': {skill}"
-            assert "description" in skill, f"Skill missing 'description': {skill}"
-            skill_path = REPO_ROOT / skill["path"]
-            assert skill_path.exists(), f"Skill file not found: {skill_path}"
-
-    def test_known_commands_present(self):
-        command_names = {cmd["name"] for cmd in _plugin_json()["commands"]}
+    def test_commands_directory_has_expected_files(self):
+        """Auto-discovery finds commands from the commands/ directory."""
+        commands_dir = REPO_ROOT / "commands"
+        assert commands_dir.is_dir(), "commands/ directory missing"
+        command_files = {p.stem for p in commands_dir.glob("*.md")}
         expected = {"optimize", "generate-evaluator", "intake", "explain", "budget", "score", "analyze"}
-        assert expected.issubset(command_names), (
-            f"Missing commands in manifest: {expected - command_names}"
+        assert expected.issubset(command_files), (
+            f"Missing command files: {expected - command_files}"
+        )
+
+    def test_skills_directory_has_expected_entries(self):
+        """Auto-discovery finds skills from skills/*/SKILL.md."""
+        skills_dir = REPO_ROOT / "skills"
+        assert skills_dir.is_dir(), "skills/ directory missing"
+        skill_dirs = {
+            p.parent.name for p in skills_dir.glob("*/SKILL.md")
+        }
+        expected = {"generate-evaluator", "optimization-guide"}
+        assert expected.issubset(skill_dirs), (
+            f"Missing skill directories: {expected - skill_dirs}"
         )
