@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "a81844950506",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "evaluator-cookbook.md",
+    "evaluators/cookbook_clarity.sh",
+    "scores.json",
+    "scripts/check.py",
+    "scripts/evaluator_http_server.py",
+    "scripts/live_integration.py",
+    "scripts/score_check.py",
+    "skills/generate-evaluator/SKILL.md",
+    "src/optimize_anything/cli.py",
+    "src/optimize_anything/evaluator_generator.py",
+    "src/optimize_anything/evaluators.py",
+    "src/optimize_anything/llm_judge.py",
+    "src/optimize_anything/spec_loader.py",
+    "tests/conftest.py",
+    "tests/test_doc_contract.py",
+    "tests/test_evaluators.py",
+    "tests/test_gates.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a8/1844950506/0/metadata.json",
+      "transcript": "/a8/1844950506/0/full.jsonl",
+      "context": "/a8/1844950506/0/context.md",
+      "content_hash": "/a8/1844950506/0/content_hash.txt",
+      "prompt": "/a8/1844950506/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6247,
+    "cache_creation_tokens": 269347,
+    "cache_read_tokens": 17289632,
+    "output_tokens": 59834,
+    "api_call_count": 160
+  }
+}
