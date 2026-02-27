@@ -10,9 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOC_PATHS = (
     Path("README.md"),
-    Path("docs/mcp-protocol.md"),
-    Path("docs/release-checklist.md"),
-    Path("docs/final-readiness-review.md"),
+    Path("CLAUDE.md"),
 )
 
 
