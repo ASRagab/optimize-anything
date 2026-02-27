@@ -1,0 +1,28 @@
+In .claude-plugin/plugin.json, the `commands` and `skills` arrays were removed but they are required by the plugin contract and validated by tests in tests/test_doc_contract.py (lines 119-150). You need to restore these arrays while keeping the new metadata fields. The final plugin.json should contain:
+
+1. The new metadata fields (author object, repository, homepage, license) — these are fine to keep.
+2. The original `commands` array with all 7 commands: optimize, generate-evaluator, intake, explain, budget, score, analyze — each with name and description.
+3. The original `skills` array with 2 skills: generate-evaluator (path: skills/generate-evaluator/SKILL.md) and optimization-guide (path: skills/optimization-guide/SKILL.md) — each with name, path, and description.
+
+Also update the version in .claude-plugin/marketplace.json (lines 8 and 15) from 0.1.0 to 0.1.1 to keep versions in sync with plugin.json. and Run uv run pytest -v -m "not integration"
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.2, pluggy-1.6.0
+rootdir: /home/runner/work/optimize-anything/optimize-anything
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1
+collected 264 items / 8 deselected / 256 selected
+
+tests/test_cli.py ...................................................... [ 21%]
+.....................................                                    [ 35%]
+tests/test_doc_contract.py .....F
+
+=================================== FAILURES ===================================
+_____________ TestPluginManifest.test_manifest_has_commands_array ______________
+tests/test_doc_contract.py:121: in test_manifest_has_commands_array
+    assert "commands" in data
+E   AssertionError: assert 'commands' in {'author': {'name': 'optimize-anything contributors'}, 'description': 'Optimize any text artifact using gepa — prompts...ge': 'https://github.com/ASRagab/optimize-anything', 'keywords': ['optimization', 'gepa', 'prompts', 'evaluator'], ...}
+=========================== short test summary info ============================
+FAILED tests/test_doc_contract.py::TestPluginManifest::test_manifest_has_commands_array - AssertionError: assert 'commands' in {'author': {'name': 'optimize-anything contributors'}, 'description': 'Optimize any text artifact using gepa — prompts...ge': 'https://github.com/ASRagab/optimize-anything', 'keywords': ['optimization', 'gepa', 'prompts', 'evaluator'], ...}
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+================== 1 failed, 96 passed, 8 deselected in 2.65s ================== please fix both errors
