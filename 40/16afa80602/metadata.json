@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "4016afa80602",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json",
+    "commands/generate-evaluator.md",
+    "tests/test_doc_contract.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/40/16afa80602/0/metadata.json",
+      "transcript": "/40/16afa80602/0/full.jsonl",
+      "context": "/40/16afa80602/0/context.md",
+      "content_hash": "/40/16afa80602/0/content_hash.txt",
+      "prompt": "/40/16afa80602/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 174,
+    "cache_creation_tokens": 56667,
+    "cache_read_tokens": 968219,
+    "output_tokens": 7324,
+    "api_call_count": 22
+  }
+}
