@@ -3,7 +3,7 @@
   "checkpoint_id": "b9450708586d",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     ".claude-plugin/marketplace.json",
     ".github/workflows/ci.yml",
@@ -17,13 +17,20 @@
       "context": "/b9/450708586d/0/context.md",
       "content_hash": "/b9/450708586d/0/content_hash.txt",
       "prompt": "/b9/450708586d/0/prompt.txt"
+    },
+    {
+      "metadata": "/b9/450708586d/1/metadata.json",
+      "transcript": "/b9/450708586d/1/full.jsonl",
+      "context": "/b9/450708586d/1/context.md",
+      "content_hash": "/b9/450708586d/1/content_hash.txt",
+      "prompt": "/b9/450708586d/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14254,
-    "cache_creation_tokens": 259287,
-    "cache_read_tokens": 13004462,
-    "output_tokens": 8748,
-    "api_call_count": 119
+    "input_tokens": 15495,
+    "cache_creation_tokens": 510714,
+    "cache_read_tokens": 25752755,
+    "output_tokens": 21985,
+    "api_call_count": 244
   }
 }
