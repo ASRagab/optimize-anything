@@ -121,7 +121,7 @@ class TestPluginManifest:
         commands_dir = REPO_ROOT / "commands"
         assert commands_dir.is_dir(), "commands/ directory missing"
         command_files = {p.stem for p in commands_dir.glob("*.md")}
-        expected = {"optimize", "generate-evaluator", "intake", "explain", "budget", "score", "analyze"}
+        expected = {"optimize", "intake", "explain", "budget", "score", "analyze"}
         assert expected.issubset(command_files), (
             f"Missing command files: {expected - command_files}"
         )
