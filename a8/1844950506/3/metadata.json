@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.4.5",
+  "checkpoint_id": "a81844950506",
+  "session_id": "86dfa07c-e9c1-48d1-a2c3-e641b7e9c4e6",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-27T04:40:16.986068Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "src/optimize_anything/llm_judge.py",
+    "src/optimize_anything/spec_loader.py",
+    "tests/test_evaluators.py",
+    ".entire/settings.json",
+    "scripts/check.py",
+    "scripts/score_check.py",
+    "src/optimize_anything/cli.py",
+    "src/optimize_anything/evaluator_generator.py",
+    "tests/conftest.py",
+    "tests/test_gates.py",
+    "scripts/evaluator_http_server.py",
+    "scripts/live_integration.py",
+    "src/optimize_anything/evaluators.py",
+    "evaluator-cookbook.md",
+    "evaluators/cookbook_clarity.sh",
+    "scores.json",
+    "tests/test_doc_contract.py",
+    ".pre-commit-config.yaml",
+    "skills/generate-evaluator/SKILL.md"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "b9c5aaf39922",
+  "checkpoint_transcript_start": 1598,
+  "transcript_lines_at_start": 1598,
+  "token_usage": {
+    "input_tokens": 225,
+    "cache_creation_tokens": 120470,
+    "cache_read_tokens": 14143082,
+    "output_tokens": 8218,
+    "api_call_count": 133
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-27T04:40:16.583979Z",
+    "agent_lines": 680,
+    "human_added": 5,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 686,
+    "agent_percentage": 99.12536443148689
+  },
+  "transcript_path": ".claude/projects/-Users-aragab-projects-optimize-anything/86dfa07c-e9c1-48d1-a2c3-e641b7e9c4e6.jsonl"
+}
