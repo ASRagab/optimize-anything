@@ -88,7 +88,39 @@ result = optimize_anything(
 print(result.best_candidate)
 ```
 
-### 6. Interpret Results
+### 6. Early Stopping and Cache Reuse
+
+Use plateau-based early stopping to avoid wasting budget after convergence:
+
+```bash
+optimize-anything optimize seed.txt \
+  --evaluator-command bash evaluators/eval.sh \
+  --budget 120 \
+  --early-stop \
+  --early-stop-window 10 \
+  --early-stop-threshold 0.005
+```
+
+Notes:
+1. `--early-stop` is auto-enabled when `--budget > 30`.
+2. Tune `--early-stop-window` and `--early-stop-threshold` for noisier evaluators.
+3. CLI output includes `early_stopped` and `stopped_at_iteration` when a run exits early.
+
+For cache reuse across runs, copy prior disk cache entries into a new run directory:
+
+```bash
+optimize-anything optimize seed.txt \
+  --evaluator-command bash evaluators/eval.sh \
+  --run-dir runs \
+  --cache \
+  --cache-from runs/run-20260303-120000
+```
+
+Notes:
+1. `--cache-from` requires `--cache` and `--run-dir`.
+2. `--cache-from` copies `fitness_cache/` from the previous run before optimization starts.
+
+### 7. Interpret Results
 
 The result contains:
 1. Inspect `best_candidate` — the optimized artifact.

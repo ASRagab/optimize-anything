@@ -46,6 +46,10 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         "parallel": None,
         "workers": None,
         "cache": None,
+        "cache_from": None,
+        "early_stop": None,
+        "early_stop_window": None,
+        "early_stop_threshold": None,
         "evaluator_command": None,
         "evaluator_url": None,
         "evaluator_cwd": None,
@@ -91,6 +95,30 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         if not isinstance(cache_raw, bool):
             raise SpecLoadError("optimization.cache must be a boolean")
         result["cache"] = cache_raw
+
+    if "cache_from" in opt:
+        cache_from_raw = opt["cache_from"]
+        if not isinstance(cache_from_raw, str):
+            raise SpecLoadError("optimization.cache_from must be a string")
+        result["cache_from"] = str(_resolve_path(cache_from_raw, base=spec_dir))
+
+    if "early_stop" in opt:
+        early_stop_raw = opt["early_stop"]
+        if not isinstance(early_stop_raw, bool):
+            raise SpecLoadError("optimization.early_stop must be a boolean")
+        result["early_stop"] = early_stop_raw
+
+    if "early_stop_window" in opt:
+        window_raw = opt["early_stop_window"]
+        if not isinstance(window_raw, int) or window_raw <= 0:
+            raise SpecLoadError("optimization.early_stop_window must be a positive integer")
+        result["early_stop_window"] = window_raw
+
+    if "early_stop_threshold" in opt:
+        threshold_raw = opt["early_stop_threshold"]
+        if not isinstance(threshold_raw, (int, float)) or threshold_raw < 0:
+            raise SpecLoadError("optimization.early_stop_threshold must be a non-negative number")
+        result["early_stop_threshold"] = float(threshold_raw)
 
     if "command" in evaluator:
         cmd = evaluator["command"]

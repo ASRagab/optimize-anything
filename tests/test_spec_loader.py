@@ -100,6 +100,23 @@ class TestLoadSpec:
         assert result["workers"] == 4
         assert result["cache"] is True
 
+    def test_early_stop_and_cache_from_parsed(self, tmp_path: Path):
+        cache_source = tmp_path / "previous-run"
+        cache_source.mkdir()
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text(
+            "[optimization]\n"
+            'early_stop = true\n'
+            'early_stop_window = 8\n'
+            'early_stop_threshold = 0.01\n'
+            'cache_from = "previous-run"\n'
+        )
+        result = load_spec(spec_file)
+        assert result["early_stop"] is True
+        assert result["early_stop_window"] == 8
+        assert result["early_stop_threshold"] == 0.01
+        assert result["cache_from"] == str(cache_source)
+
     def test_empty_spec_returns_all_none(self, tmp_path: Path):
         spec_file = tmp_path / "opt.toml"
         spec_file.write_text("")

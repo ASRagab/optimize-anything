@@ -196,6 +196,49 @@ class TestCLI:
         assert payload["top_diagnostics"][0]["name"] == "clarity"
         assert "plateau_guidance" in payload
 
+    def test_optimize_summary_includes_early_stop_fields_when_stopped_early(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        class DummyResult:
+            best_candidate = "candidate v2"
+            total_metric_calls = 12
+            num_full_val_evals = 4
+            val_aggregate_scores = [0.2, 0.25]
+            best_idx = 1
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None: "fake-evaluator",
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kwargs: DummyResult(),
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+
+        result = main(
+            [
+                "optimize",
+                str(seed_file),
+                "--evaluator-command",
+                "bash",
+                "eval.sh",
+                "--early-stop",
+                "--budget",
+                "100",
+            ]
+        )
+        assert result == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["early_stopped"] is True
+        assert payload["stopped_at_iteration"] == 4
+
     def test_optimize_rejects_invalid_intake_json(self, tmp_path: Path, capsys):
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("test")
@@ -1680,6 +1723,95 @@ class TestEngineConfigWiring:
         ])
         assert result == 0
         assert captured["config"].engine.run_dir.endswith("run-20260303-150000")
+
+    def test_early_stop_flag_creates_stop_callbacks(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr("optimize_anything.cli._preflight_command_evaluator", lambda command, cwd=None: None)
+        monkeypatch.setattr("optimize_anything.evaluators.command_evaluator", lambda command, cwd=None, **kwargs: lambda c: (0.5, {}))
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        rc = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--early-stop",
+            "--budget", "10",
+        ])
+        assert rc == 0
+        assert captured["config"].stop_callbacks is not None
+        assert len(captured["config"].stop_callbacks) == 1
+
+    def test_early_stop_auto_enabled_when_budget_above_30(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 10
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr("optimize_anything.cli._preflight_command_evaluator", lambda command, cwd=None: None)
+        monkeypatch.setattr("optimize_anything.evaluators.command_evaluator", lambda command, cwd=None, **kwargs: lambda c: (0.5, {}))
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        rc = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "31",
+        ])
+        assert rc == 0
+        assert captured["config"].stop_callbacks is not None
+
+    def test_cache_from_requires_cache_flag(self, tmp_path: Path, capsys):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        rc = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--cache-from", str(tmp_path),
+            "--budget", "10",
+        ])
+        assert rc == 1
+        assert "requires --cache" in capsys.readouterr().err
+
+    def test_early_stop_not_auto_enabled_when_budget_30_or_less(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 10
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr("optimize_anything.cli._preflight_command_evaluator", lambda command, cwd=None: None)
+        monkeypatch.setattr("optimize_anything.evaluators.command_evaluator", lambda command, cwd=None, **kwargs: lambda c: (0.5, {}))
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        rc = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "30",
+        ])
+        assert rc == 0
+        assert captured["config"].stop_callbacks is None
 
 
 class TestRunDir:

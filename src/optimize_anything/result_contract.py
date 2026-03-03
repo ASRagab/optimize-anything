@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_optimize_summary(result: Any) -> dict[str, Any]:
+def build_optimize_summary(
+    result: Any,
+    *,
+    requested_budget: int | None = None,
+    early_stop_active: bool = False,
+) -> dict[str, Any]:
     """Normalize GEPA result objects into a stable output schema."""
     scores = _coerce_numeric_list(getattr(result, "val_aggregate_scores", None))
     best_idx = _resolve_best_idx(result, scores)
@@ -17,9 +22,10 @@ def build_optimize_summary(result: Any) -> dict[str, Any]:
     plateau_detected, plateau_guidance = _compute_plateau_guidance(scores)
     evaluator_failure_signal = _extract_evaluator_failure_signal(result, scores)
 
+    total_metric_calls = getattr(result, "total_metric_calls", None)
     summary: dict[str, Any] = {
         "best_artifact": getattr(result, "best_candidate", None),
-        "total_metric_calls": getattr(result, "total_metric_calls", None),
+        "total_metric_calls": total_metric_calls,
         "score_summary": {
             "initial": initial_score,
             "latest": latest_score,
@@ -35,6 +41,16 @@ def build_optimize_summary(result: Any) -> dict[str, Any]:
     }
     if evaluator_failure_signal is None:
         summary.pop("evaluator_failure_signal")
+
+    early_stopped, stopped_at_iteration = _resolve_early_stop(
+        result,
+        requested_budget=requested_budget,
+        early_stop_active=early_stop_active,
+    )
+    if early_stopped:
+        summary["early_stopped"] = True
+        summary["stopped_at_iteration"] = stopped_at_iteration
+
     return summary
 
 
@@ -181,6 +197,29 @@ def _extract_failure_metric_signal(raw: Any) -> dict[str, Any] | None:
         ),
         "metrics": active_metrics[:3],
     }
+
+
+def _resolve_early_stop(
+    result: Any,
+    *,
+    requested_budget: int | None,
+    early_stop_active: bool,
+) -> tuple[bool, int | None]:
+    if not early_stop_active or requested_budget is None:
+        return False, None
+
+    total_metric_calls = getattr(result, "total_metric_calls", None)
+    if not isinstance(total_metric_calls, int) or total_metric_calls >= requested_budget:
+        return False, None
+
+    stopped_at_iteration = getattr(result, "num_full_val_evals", None)
+    if not isinstance(stopped_at_iteration, int):
+        subscores = getattr(result, "val_aggregate_scores", None)
+        if isinstance(subscores, list):
+            stopped_at_iteration = max(0, len(subscores) - 1)
+        else:
+            stopped_at_iteration = None
+    return True, stopped_at_iteration
 
 
 def _delta(new: float | None, old: float | None) -> float | None:

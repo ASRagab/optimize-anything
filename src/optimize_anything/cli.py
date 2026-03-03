@@ -111,6 +111,31 @@ def main(argv: list[str] | None = None) -> int:
         help="Enable evaluator result caching.",
     )
     opt_parser.add_argument(
+        "--cache-from",
+        help=(
+            "Path to a previous run directory whose fitness_cache/ entries should be reused. "
+            "Requires --cache."
+        ),
+    )
+    opt_parser.add_argument(
+        "--early-stop",
+        action="store_true",
+        default=False,
+        help="Enable plateau-based early stopping (auto-enabled when budget > 30).",
+    )
+    opt_parser.add_argument(
+        "--early-stop-window",
+        type=int,
+        default=10,
+        help="Plateau window size for early stopping.",
+    )
+    opt_parser.add_argument(
+        "--early-stop-threshold",
+        type=float,
+        default=0.005,
+        help="Minimum required score improvement over the early-stop window.",
+    )
+    opt_parser.add_argument(
         "--spec-file",
         help="Path to a TOML spec file for repeatable optimization runs.",
     )
@@ -465,6 +490,18 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         print("Error: --budget must be at least 1", file=sys.stderr)
         return 1
 
+    if args.early_stop_window < 1:
+        print("Error: --early-stop-window must be at least 1", file=sys.stderr)
+        return 1
+
+    if args.early_stop_threshold < 0:
+        print("Error: --early-stop-threshold must be non-negative", file=sys.stderr)
+        return 1
+
+    if args.cache_from and not args.cache:
+        print("Error: --cache-from requires --cache", file=sys.stderr)
+        return 1
+
     if args.valset and not args.dataset:
         print("Error: --valset requires --dataset", file=sys.stderr)
         return 1
@@ -502,6 +539,7 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         print(output_error, file=sys.stderr)
         return 1
     from optimize_anything.result_contract import build_optimize_summary
+    from optimize_anything.stop import plateau_stop_callback
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
     eval_fn, evaluator_label = _resolve_evaluator(
@@ -538,7 +576,26 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     if getattr(args, "run_dir", None):
         gepa_run_dir = _timestamped_run_dir(args.run_dir)
 
+    if args.cache_from:
+        if gepa_run_dir is None:
+            print("Error: --cache-from requires --run-dir so cache can be copied into a new run", file=sys.stderr)
+            return 1
+        cache_copy_error = _copy_cache_from_run(args.cache_from, gepa_run_dir)
+        if cache_copy_error is not None:
+            print(f"Error: {cache_copy_error}", file=sys.stderr)
+            return 1
+
     parallel_enabled = args.parallel or (args.workers is not None)
+    early_stop_active = bool(args.early_stop or args.budget > 30)
+    stop_callbacks = None
+    if early_stop_active:
+        stop_callbacks = [
+            plateau_stop_callback(
+                window=args.early_stop_window,
+                threshold=args.early_stop_threshold,
+            )
+        ]
+
     engine = EngineConfig(
         max_metric_calls=args.budget,
         run_dir=gepa_run_dir,
@@ -551,9 +608,10 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         config = GEPAConfig(
             engine=engine,
             reflection=ReflectionConfig(reflection_lm=model),
+            stop_callbacks=stop_callbacks,
         )
     else:
-        config = GEPAConfig(engine=engine)
+        config = GEPAConfig(engine=engine, stop_callbacks=stop_callbacks)
     try:
         result = optimize_anything(
             seed_candidate=seed,
@@ -577,7 +635,11 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         return 1
 
     print("Optimization complete.", file=sys.stderr)
-    summary = build_optimize_summary(result)
+    summary = build_optimize_summary(
+        result,
+        requested_budget=args.budget,
+        early_stop_active=early_stop_active,
+    )
     best = summary["best_artifact"]
     if args.output:
         try:
@@ -1089,7 +1151,16 @@ def _apply_spec_to_args(
 
     args = copy.copy(args)
 
-    for key in ("seed_file", "objective", "background", "output", "evaluator_url", "evaluator_cwd", "task_model"):
+    for key in (
+        "seed_file",
+        "objective",
+        "background",
+        "output",
+        "evaluator_url",
+        "evaluator_cwd",
+        "task_model",
+        "cache_from",
+    ):
         if getattr(args, key, None) is None and spec.get(key) is not None:
             setattr(args, key, spec[key])
 
@@ -1114,6 +1185,21 @@ def _apply_spec_to_args(
 
     if not getattr(args, "cache", False) and spec.get("cache") is True:
         args.cache = True
+
+    if not getattr(args, "early_stop", False) and spec.get("early_stop") is True:
+        args.early_stop = True
+
+    if (
+        getattr(args, "early_stop_window", None) == 10
+        and spec.get("early_stop_window") is not None
+    ):
+        args.early_stop_window = spec["early_stop_window"]
+
+    if (
+        getattr(args, "early_stop_threshold", None) == 0.005
+        and spec.get("early_stop_threshold") is not None
+    ):
+        args.early_stop_threshold = spec["early_stop_threshold"]
 
     # Intake: apply only if neither --intake-json nor --intake-file was provided
     if (
@@ -1157,6 +1243,25 @@ def _save_run_dir(
     except OSError as exc:
         print(f"Warning: failed to write run-dir '{out}': {exc}", file=sys.stderr)
         return None
+
+
+def _copy_cache_from_run(source_run_dir: str, target_run_dir: str) -> str | None:
+    """Copy fitness cache files from an existing run into a new run dir."""
+    source = Path(source_run_dir).expanduser()
+    if not source.exists() or not source.is_dir():
+        return f"--cache-from directory not found: {source_run_dir}"
+
+    source_cache = source / "fitness_cache"
+    if not source_cache.exists() or not source_cache.is_dir():
+        return f"no fitness_cache directory found in --cache-from path: {source_run_dir}"
+
+    destination_cache = Path(target_run_dir).expanduser() / "fitness_cache"
+    try:
+        destination_cache.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_cache, destination_cache, dirs_exist_ok=True)
+    except OSError as exc:
+        return f"failed to copy cache from '{source_cache}' to '{destination_cache}': {exc}"
+    return None
 
 
 def _validate_command_executable(command_part: str, cwd: Path | None) -> str | None:

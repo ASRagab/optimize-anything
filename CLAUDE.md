@@ -56,6 +56,8 @@ Input/output contract for external evaluators:
   - `--judge-objective` overrides `--objective` for the judge; falls back to `--objective`
   - `--model` env fallback: `OPTIMIZE_ANYTHING_MODEL`
   - Supports intake flags (`--intake-json`, `--intake-file`) and `--evaluator-cwd`
+  - Early stopping controls: `--early-stop`, `--early-stop-window`, `--early-stop-threshold`
+  - Cache controls: `--cache` plus cache warm-start via `--cache-from <run-dir>` (copies prior `fitness_cache`)
 
 - `src/optimize_anything/evaluators.py`
   - `command_evaluator(...)`, `http_evaluator(...)`, strict score validation
