@@ -182,6 +182,60 @@ Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-
 | `--task-model <model>` | Optional metadata forwarded to evaluators | -- |
 | `--score-range unit|any` | Score validation mode for cmd/http | `unit` |
 
+## Claude Code Plugin
+
+optimize-anything is also a Claude Code plugin with guided slash commands and skills.
+
+### Installation
+
+```bash
+# In Claude Code
+/plugin install ASRagab/optimize-anything
+```
+
+Or clone and install locally:
+
+```bash
+git clone https://github.com/ASRagab/optimize-anything.git
+cd optimize-anything
+/plugin install .
+```
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/optimize-anything:optimize` | Guided optimization workflow — walks you through mode selection, evaluator setup, execution, and results |
+| `/optimize-anything:quick` | Zero-config one-shot optimization. Just provide a file and objective. |
+| `/optimize-anything:analyze` | Discover quality dimensions for an artifact and objective |
+| `/optimize-anything:score` | Score a single artifact without optimization |
+| `/optimize-anything:validate` | Cross-validate with multiple LLM judges |
+| `/optimize-anything:compare` | Side-by-side comparison of two artifacts |
+| `/optimize-anything:budget` | Get a budget recommendation for your artifact |
+| `/optimize-anything:explain` | Preview the optimization plan without running it |
+| `/optimize-anything:intake` | Normalize and validate an intake specification |
+
+### Skills
+
+The plugin includes three skills that Claude Code can invoke automatically:
+
+- **optimization-guide** — Full workflow walkthrough covering modes, configuration, budget, and result interpretation
+- **generate-evaluator** — Choose the right evaluator pattern (judge, command, composite) and generate a script
+- **evaluator-patterns** — Library of ready-to-use evaluator templates for prompts, code, docs, and agent instructions
+
+### Typical Plugin Workflow
+
+```
+/optimize-anything:analyze prompt.txt --objective "Score clarity"
+  → discovers quality dimensions
+
+/optimize-anything:quick prompt.txt "improve clarity and specificity"
+  → runs analyze + optimize with sensible defaults, shows diff
+
+/optimize-anything:validate result.txt --providers openai/gpt-4o anthropic/claude-sonnet-4-5
+  → cross-checks the result with multiple judges
+```
+
 ## Learn More
 
 - [EXAMPLES.md](EXAMPLES.md)

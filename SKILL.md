@@ -19,12 +19,19 @@ Any text artifact with a measurable quality signal:
 
 1. **Prepare a seed** — the text you want to optimize
 2. **Create an evaluator** — use the **generate-evaluator** skill to build one matched to your objective
-3. **Run optimization** — use `/optimize` or the CLI
+3. **Run optimization** — use `/optimize-anything:optimize` for guided mode, or `/optimize-anything:quick` for zero-config
+
+Or skip evaluator setup entirely — the guided workflow handles it:
+
+```
+/optimize-anything:quick my-prompt.txt "make it clearer and more specific"
+```
 
 ## Available Skills
 
-- **generate-evaluator** — Choose the right evaluator pattern (verification, LLM-as-judge, simulation, composite) and generate a script
+- **generate-evaluator** — Choose the right evaluator pattern (judge, command, composite) and generate a script
 - **optimization-guide** — Full workflow walkthrough covering optimization modes, configuration, budget, and result interpretation
+- **evaluator-patterns** — Library of ready-to-use evaluator templates for prompts, code, docs, and agent instructions
 
 ## Key Concept: Evaluator Quality = Optimization Quality
 
