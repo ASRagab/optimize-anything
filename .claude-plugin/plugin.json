@@ -1,6 +1,6 @@
 {
   "name": "optimize-anything",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Optimize any text artifact using gepa — prompts, code, configs, skills",
   "keywords": ["optimization", "gepa", "prompts", "evaluator"],
   "author": {

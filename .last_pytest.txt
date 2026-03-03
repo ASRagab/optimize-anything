@@ -1,0 +1,23 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0
+rootdir: /tmp/optimize-anything
+configfile: pyproject.toml
+plugins: anyio-4.12.1
+collected 316 items
+
+tests/test_cli.py ...................................................... [ 17%]
+..................................................................       [ 37%]
+tests/test_dataset.py .......                                            [ 40%]
+tests/test_doc_contract.py ..........                                    [ 43%]
+tests/test_evaluator_generator.py ................                       [ 48%]
+tests/test_evaluators.py .......................................         [ 60%]
+tests/test_gates.py ....                                                 [ 62%]
+tests/test_intake.py ...............                                     [ 66%]
+tests/test_live_integration.py ....................                      [ 73%]
+tests/test_llm_judge.py ......................s..s.s.................... [ 88%]
+......                                                                   [ 90%]
+tests/test_score_check.py ...........                                    [ 93%]
+tests/test_spec_loader.py ..................                             [ 99%]
+tests/test_stop.py ..                                                    [100%]
+
+======================= 313 passed, 3 skipped in 11.73s ========================
