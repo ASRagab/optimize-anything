@@ -2555,6 +2555,117 @@ class TestValidateCommand:
         assert payload["min"] == pytest.approx(0.6)
         assert payload["max"] == pytest.approx(0.8)
 
+    def test_validate_single_provider_failure_continues(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        by_model = {
+            "openai/gpt-4o-mini": 0.6,
+            "google/gemini-2.0-flash": 0.8,
+        }
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            if model == "anthropic/claude-sonnet-4-5":
+                raise RuntimeError("provider unavailable")
+
+            def _eval(candidate):
+                return by_model[model], {"reasoning": f"r-{model}"}
+
+            return _eval
+
+        monkeypatch.setattr("optimize_anything.llm_judge.llm_judge_evaluator", fake_llm_judge)
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-4o-mini",
+            "anthropic/claude-sonnet-4-5",
+            "google/gemini-2.0-flash",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["summary"]["successful"] == 2
+        assert payload["summary"]["failed"] == 1
+        failed = [item for item in payload["results"] if item["score"] is None]
+        assert len(failed) == 1
+        assert failed[0]["provider"] == "anthropic/claude-sonnet-4-5"
+        assert "provider unavailable" in failed[0]["error"]
+
+    def test_validate_all_providers_fail(self, tmp_path: Path, capsys, monkeypatch):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            raise RuntimeError(f"down-{model}")
+
+        monkeypatch.setattr("optimize_anything.llm_judge.llm_judge_evaluator", fake_llm_judge)
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-4o-mini",
+            "anthropic/claude-sonnet-4-5",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "Error: all providers failed" in captured.err
+        payload = json.loads(captured.out)
+        assert payload["summary"]["successful"] == 0
+        assert payload["summary"]["failed"] == 2
+        assert payload["mean"] is None
+        assert payload["stddev"] is None
+        assert payload["min"] is None
+        assert payload["max"] is None
+
+    def test_validate_mixed_success_stats(self, tmp_path: Path, capsys, monkeypatch):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        by_model = {
+            "openai/gpt-4o-mini": 0.2,
+            "anthropic/claude-sonnet-4-5": 0.4,
+            "google/gemini-2.0-flash": 0.6,
+        }
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            if model == "meta/llama-3.3-70b-instruct":
+                raise RuntimeError("timeout")
+
+            def _eval(candidate):
+                return by_model[model], {"reasoning": f"r-{model}"}
+
+            return _eval
+
+        monkeypatch.setattr("optimize_anything.llm_judge.llm_judge_evaluator", fake_llm_judge)
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-4o-mini",
+            "anthropic/claude-sonnet-4-5",
+            "google/gemini-2.0-flash",
+            "meta/llama-3.3-70b-instruct",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["summary"]["successful"] == 3
+        assert payload["summary"]["failed"] == 1
+        assert payload["mean"] == pytest.approx(0.4)
+        assert payload["stddev"] == pytest.approx(0.2)
+        assert payload["min"] == pytest.approx(0.2)
+        assert payload["max"] == pytest.approx(0.6)
+
 
 class TestAnalyzeCommand:
     """Tests for the analyze subcommand."""

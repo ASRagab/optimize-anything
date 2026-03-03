@@ -110,6 +110,33 @@ def test_validate_subcommand_is_documented_and_in_runtime():
     _assert_contains_terms(text=cli_source, terms=["validate_parser", "_cmd_validate"], label="src/optimize_anything/cli.py")
 
 
+def test_all_command_markdown_files_have_name_and_description_frontmatter():
+    commands_dir = REPO_ROOT / "commands"
+    command_files = sorted(commands_dir.glob("*.md"))
+    assert command_files, "No command markdown files found in commands/"
+
+    for path in command_files:
+        text = path.read_text(encoding="utf-8")
+        match = re.match(r"^---\n(.*?)\n---\n", text, flags=re.DOTALL)
+        assert match is not None, f"{path.relative_to(REPO_ROOT)} missing YAML frontmatter"
+        frontmatter = match.group(1)
+        assert re.search(r"^name:\s*.+$", frontmatter, flags=re.MULTILINE), (
+            f"{path.relative_to(REPO_ROOT)} frontmatter missing 'name'"
+        )
+        assert re.search(r"^description:\s*.+$", frontmatter, flags=re.MULTILINE), (
+            f"{path.relative_to(REPO_ROOT)} frontmatter missing 'description'"
+        )
+
+
+def test_concepts_mentions_multi_task_and_generalization():
+    concepts_text = _read_text(Path("CONCEPTS.md"))
+    _assert_contains_terms(
+        text=concepts_text,
+        terms=["Multi-task", "Generalization"],
+        label="CONCEPTS.md",
+    )
+
+
 # --- Plugin manifest tests ---
 
 
@@ -141,7 +168,7 @@ class TestPluginManifest:
         skill_dirs = {
             p.parent.name for p in skills_dir.glob("*/SKILL.md")
         }
-        expected = {"generate-evaluator", "optimization-guide"}
+        expected = {"generate-evaluator", "optimization-guide", "evaluator-patterns"}
         assert expected.issubset(skill_dirs), (
             f"Missing skill directories: {expected - skill_dirs}"
         )

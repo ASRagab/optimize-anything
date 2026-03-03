@@ -1,73 +1,100 @@
-# Concepts
+# CONCEPTS
 
-Core concepts for understanding optimize-anything. For a hands-on tutorial, see [WALKTHROUGH.md](WALKTHROUGH.md).
+Core concepts for optimize-anything v2.
 
 ## Artifact
 
-The text being optimized. Can be a prompt, config, skill file, evaluator script, or any text where quality can be scored. Passed as a file path to the CLI.
+The text being optimized (prompt, config, docs, code, etc.).
 
 ## Evaluator
 
-A function that scores an artifact candidate. Returns `{"score": <float>, ...}`. Three runtime modes:
+A scorer that returns JSON with required `score` plus optional diagnostics.
+Runtime options:
+- Command (`--evaluator-command`)
+- HTTP (`--evaluator-url`)
+- LLM Judge (`--judge-model`)
 
-- **Command** (`--evaluator-command`): shell script receiving JSON on stdin
-- **HTTP** (`--evaluator-url`): endpoint receiving POST JSON
-- **LLM judge** (`--judge-model`): litellm-backed model scoring against an objective
+## Evaluator Protocol v2
 
-## Evaluator Protocol
+Evaluator input is additive and backward-compatible:
 
-- **Input:** `{"_protocol_version": 2, "candidate": "<text>"}` via stdin (command) or POST body (HTTP)
-- In dataset-backed modes, input includes `"example": {...}` for each example-bound evaluation call
-- **Output:** JSON with required `score` key (0.0-1.0) and optional diagnostic keys
-- Diagnostic keys become "Actionable Side Information" for gepa's reflection LM
+```json
+{"_protocol_version": 2, "candidate": "...", "example": {...}, "task_model": "..."}
+```
 
-## Evaluation Pattern vs Execution Mode
+- `candidate` required
+- `_protocol_version`, `example`, and `task_model` optional
+- Existing evaluators that only consume `candidate` still work
 
-Two independent axes:
+Evaluator output (unchanged):
 
-| Concept | What it answers | Values |
-|---------|----------------|--------|
-| `execution_mode` | How the evaluator runs (transport) | `command`, `http` |
-| `evaluation_pattern` | What scoring strategy it implements (intent) | `verification`, `judge`, `simulation`, `composite` |
+```json
+{"score": 0.73, "reasoning": "..."}
+```
 
-A verification evaluator can run as a command or HTTP endpoint. These are never conflated.
+## Multi-task mode
 
-## gepa
+Enabled by `--dataset`. Each candidate is evaluated across dataset examples (`example` payload populated per call).
 
-The optimization engine. Runs propose/evaluate/reflect cycles to improve artifacts. Uses a proposer LLM to generate candidates and an evaluator to score them. Configure with `--model` (proposer) and `--budget` (max evaluator calls).
+## Generalization mode
 
-## Multi-task Mode
+Enabled by `--dataset` + `--valset`. Train set drives optimization; valset is used for out-of-sample validation aggregate.
 
-Enabled by passing `--dataset <train.jsonl>`. GEPA evaluates each candidate across dataset examples (one evaluator call per example), so optimization targets aggregate performance across tasks instead of a single fixed instance.
+## Early Stopping
 
-## Generalization Mode
+Plateau-based termination of optimization before full budget is spent.
+- Enable manually with `--early-stop`
+- Auto-enabled when `--budget > 30`
+- Tuned by `--early-stop-window` and `--early-stop-threshold`
 
-Enabled by passing both `--dataset <train.jsonl>` and `--valset <val.jsonl>`. Optimization uses the training dataset to evolve candidates, while validation aggregates are computed on the separate valset to measure out-of-sample quality.
+## Cache Reuse
+
+Evaluator results can be cached (`--cache`) and warm-started from a previous run via `--cache-from <run-dir>`.
+This reduces repeated evaluator work across similar reruns.
+
+## Seedless Mode
+
+`--no-seed` runs optimization without an input seed file.
+Requires both:
+- `--objective`
+- `--model`
+
+## Score Range
+
+Controls validation rules for command/HTTP evaluator scores:
+- `unit` (default): score must be finite and within `[0,1]`
+- `any`: score must be finite float (unbounded)
+
+## Task Model metadata
+
+`--task-model` is optional metadata forwarded into protocol payload and (for command evaluators) environment variables. It identifies the model context being optimized for.
 
 ## Intake Specification
 
-Schema describing what the evaluator expects: quality dimensions (with weights), hard constraints, evaluation pattern, and execution mode. Normalized by `intake.py`. Provide via `--intake-json` or `--intake-file`.
+Optional structured evaluator guidance (`--intake-json` / `--intake-file`) including:
+- `artifact_class`
+- `quality_dimensions`
+- `hard_constraints`
+- `evaluation_pattern`
+- `execution_mode`
+- `evaluator_cwd`
 
-## Quality Dimensions
+## Evaluation Pattern vs Execution Mode
 
-Named scoring axes (e.g., "clarity", "conciseness") with float weights that sum to 1.0. Used by the LLM judge for dimension-weighted scoring and by intake normalization.
+These are independent axes:
 
-## Hard Constraints
+| Concept | Purpose | Values |
+|---|---|---|
+| `execution_mode` | Transport/runtime | `command`, `http` |
+| `evaluation_pattern` | Scoring strategy intent | `verification`, `judge`, `simulation`, `composite` |
 
-Boolean pass/fail conditions. If any constraint is violated, the LLM judge forces the score to 0.0 regardless of other dimensions.
+## Result contract
 
-## RED-GREEN-OBSERVER Cycle
-
-An iterative optimization workflow orchestrated by `scripts/live_integration.py`:
-
-- **GREEN:** Run gepa to optimize an artifact (proposer generates, evaluator scores)
-- **RED:** Validate the result with multi-provider scoring (command + LLM judges)
-- **OBSERVER:** Read the score matrix and decide: continue, adjust objective, or stop
-
-## Score Baselines
-
-Tracked in `scores.json`. The `score_check.py` script ensures artifacts don't regress below their baselines. Use `--update` to raise baselines after improvements.
-
-## Spec File
-
-A TOML file (`--spec-file`) that bundles optimization parameters (artifact path, evaluator, budget, objective) for repeatable runs. Loaded by `spec_loader.py`.
+`optimize` returns a normalized summary including:
+- `best_artifact`
+- `total_metric_calls`
+- `score_summary`
+- `top_diagnostics` (list of `{name, value}`)
+- `plateau_detected`, `plateau_guidance`
+- optional `evaluator_failure_signal`
+- optional `early_stopped`, `stopped_at_iteration`

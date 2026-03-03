@@ -30,9 +30,11 @@ Present these options and ask the user to choose one unless they already specifi
 - If no evaluator is specified:
   1. Run `analyze` first:
      - `optimize-anything analyze <file> --judge-model <model> --objective "<objective>"`
-  2. Ask: **"Should we use LLM judge directly, or do you want a custom evaluator?"**
-  3. If custom evaluator is needed, invoke evaluator generation workflow.
-  4. If LLM judge is acceptable, use `--judge-model` in optimize.
+  2. Fallback if analyze fails:
+     - Continue without `--intake-json` and note: `analyze failed; using direct judge fallback`.
+  3. Ask: **"Should we use LLM judge directly, or do you want a custom evaluator?"**
+  4. If custom evaluator is needed, invoke evaluator generation workflow.
+  5. If LLM judge is acceptable, use `--judge-model` in optimize.
 
 ## Step 4: Build and run the optimize command
 Construct the command from selected mode and user inputs.
@@ -47,6 +49,9 @@ Mode guidance:
 - Thorough: `--budget 150` (or user-specified)
 - Multi-task: include `--dataset`
 - Generalization: include `--dataset` and `--valset`
+
+Fallback text to include when analysis fails:
+- `Analysis failed, so optimization will run with --judge-model and objective only (no intake dimensions).`
 
 For larger budgets (especially >50), suggest `--parallel` (and optionally `--workers`) when evaluator setup can support concurrency.
 

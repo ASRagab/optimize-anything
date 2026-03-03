@@ -1,170 +1,109 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (`claude.ai/code`) when working in this repository.
+Repository guidance for Claude Code.
 
-## Commands
+## Core commands
 
 ```bash
-uv sync                                           # Install runtime + dev dependencies
-uv run pytest                                     # Run full test suite
-uv run pytest tests/test_cli.py                   # Run one test module
-uv run pytest -k "optimize"                       # Run tests by pattern
-uv run optimize-anything --help                   # CLI entry point
-uv run optimize-anything score FILE --evaluator-command bash eval.sh  # Score one artifact
-uv run optimize-anything score FILE --judge-model openai/gpt-4o-mini --objective "Score clarity"  # LLM judge scoring
-uv run optimize-anything analyze FILE --judge-model openai/gpt-4o-mini --objective "Quality"    # Discover quality dimensions
-uv run optimize-anything validate FILE --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 --objective "Quality"  # Multi-provider judge validation
-uv run python scripts/check.py                    # Unified gate: pytest + smoke + score_check
-uv run python scripts/check.py --skip-smoke       # Unified gate without smoke (offline)
-uv run python scripts/smoke_harness.py --budget 1 # CLI smoke check
-uv run python scripts/score_check.py              # Score regression check
-uv run python scripts/score_check.py --update     # Update baselines after improvement
-uv run python scripts/live_integration.py --phase green \
-    --artifact FILE --model openai/gpt-4o-mini --budget 15 \
-    --objective "..." --run-dir integration_runs \
-    --evaluator-command bash evaluators/skill_clarity.sh  # GREEN phase optimization
-uv run python scripts/live_integration.py --phase red \
-    --artifact FILE --objective "..." \
-    --providers openai/gpt-5.1 anthropic/claude-sonnet-4-5-20250929 \
-    --baseline 0.85 \
-    --evaluator-command bash evaluators/skill_clarity.sh  # RED phase validation
+uv sync
+uv run pytest
+uv run optimize-anything --help
+
+# Optimize
+uv run optimize-anything optimize seed.txt --evaluator-command bash eval.sh --model openai/gpt-4o-mini --objective "Improve quality"
+
+# Generate evaluator (default type: judge)
+uv run optimize-anything generate-evaluator seed.txt --objective "Score quality" > eval.py
+
+# Score one artifact
+uv run optimize-anything score artifact.txt --judge-model openai/gpt-4o-mini --objective "Score clarity"
+
+# Analyze for quality dimensions
+uv run optimize-anything analyze artifact.txt --judge-model openai/gpt-4o-mini --objective "Quality"
+
+# Validate across providers
+uv run optimize-anything validate artifact.txt \
+  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --objective "Score quality" \
+  --intake-file intake.json
 ```
 
-## Architecture
+## Delivery surfaces
 
-`optimize-anything` is a Claude Code plugin + CLI wrapper around `gepa.optimize_anything()`:
+- CLI subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `analyze`, `validate`
+- Evaluator runtimes: command / http / LLM judge
+- Protocol source of truth: `PROTOCOL.md`
 
-- `gepa` performs propose/evaluate/reflect optimization.
-- This repo provides evaluator adapters, intake normalization, generation helpers, and delivery surfaces.
+## Optimize flags (complete, 28)
 
-Core evaluator protocol:
+| Flag | Description |
+|---|---|
+| `--no-seed` | Run without seed file; requires `--objective` and `--model` |
+| `--evaluator-command <cmd...>` | Command evaluator (stdin/stdout JSON) |
+| `--evaluator-url <url>` | HTTP evaluator endpoint |
+| `--intake-json <json>` | Inline intake spec |
+| `--intake-file <path>` | Intake spec JSON file |
+| `--evaluator-cwd <path>` | Working directory for command evaluator |
+| `--objective <text>` | Optimization objective |
+| `--background <text>` | Domain context |
+| `--dataset <path>` | Train dataset JSONL |
+| `--valset <path>` | Validation dataset JSONL (requires `--dataset`) |
+| `--budget <int>` | Max evaluator calls (default 100) |
+| `--output, -o <file>` | Write best artifact to file |
+| `--model <model>` | Proposer model (fallback: `OPTIMIZE_ANYTHING_MODEL`) |
+| `--judge-model <model>` | Built-in LLM judge evaluator model |
+| `--judge-objective <text>` | Judge objective override |
+| `--api-base <url>` | LiteLLM API base override |
+| `--diff` | Print unified diff (seed vs best) |
+| `--run-dir <path>` | Persist run artifacts in timestamped dir |
+| `--parallel` | Enable parallel evaluator calls |
+| `--workers <int>` | Max workers for parallel mode |
+| `--cache` | Enable evaluator cache |
+| `--cache-from <run-dir>` | Reuse previous run `fitness_cache` (requires `--cache`) |
+| `--early-stop` | Enable plateau-based early stopping |
+| `--early-stop-window <int>` | Early-stop plateau window (default 10) |
+| `--early-stop-threshold <float>` | Min improvement threshold (default 0.005) |
+| `--spec-file <path>` | Load TOML spec defaults |
+| `--task-model <model>` | Optional metadata forwarded to evaluator payload/env |
+| `--score-range unit|any` | Score validation mode for command/http evaluators |
 
-```text
-evaluator(candidate: str) -> tuple[float, dict]
+Notes:
+- Exactly one evaluator source: `--evaluator-command` OR `--evaluator-url` OR `--judge-model`.
+- Early stop auto-activates when budget > 30.
+
+## Validate subcommand
+
+`validate` runs LLM-judge scoring for one artifact across 2+ providers and reports mean/stddev/min/max.
+
+```bash
+uv run optimize-anything validate runs/run-20260303-130000/best_artifact.txt \
+  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --objective "Score clarity, constraints, and robustness" \
+  --intake-file intake.json
 ```
 
-Input/output contract for external evaluators:
-- Input: `{"_protocol_version": 2, "candidate": "<text>", "example": {...}, "task_model": "..."}` (stdin for command mode, POST JSON for http mode)
-  - `example` and `task_model` are optional.
-- Output: JSON object with required numeric `score` and optional diagnostic keys
-
-## Delivery Surfaces
-
-- `src/optimize_anything/cli.py`
-  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `validate`, `analyze`
-  - Three mutually exclusive evaluator sources: `--evaluator-command`, `--evaluator-url`, `--judge-model`
-  - Multi-provider flags: `--model` (proposer LLM), `--judge-model` (judge LLM), `--api-base`
-  - `--judge-objective` overrides `--objective` for the judge; falls back to `--objective`
-  - `--model` env fallback: `OPTIMIZE_ANYTHING_MODEL`
-  - Supports intake flags (`--intake-json`, `--intake-file`) and `--evaluator-cwd`
-  - Early stopping controls: `--early-stop`, `--early-stop-window`, `--early-stop-threshold`
-  - Cache controls: `--cache` plus cache warm-start via `--cache-from <run-dir>` (copies prior `fitness_cache`)
-  - Data/generalization flags: `--dataset`, `--valset`
-  - Parallelism flags: `--parallel`, `--workers`
-  - Seed handling: `--no-seed` (requires `--objective` and `--model`)
-  - Proposer/evaluator metadata: `--task-model`
-  - Score validation mode: `--score-range unit|any`
-
-- `src/optimize_anything/evaluators.py`
-  - `command_evaluator(...)`, `http_evaluator(...)`, strict score validation
-
-- `src/optimize_anything/llm_judge.py`
-  - `llm_judge_evaluator(objective, *, model, quality_dimensions, hard_constraints, timeout, temperature, api_base)`
-  - `analyze_for_dimensions(artifact, objective, model, *, api_base, timeout, temperature)` — 2 LLM calls: score + dimension discovery
-  - Uses litellm for multi-provider LLM calls; returns gepa-compatible `(score, side_info)` tuples
-  - Supports simple (score+reasoning) and dimension-weighted scoring modes
-  - Hard constraint gate: score forced to 0.0 on violation
-
-- `src/optimize_anything/intake.py`
-  - Normalizes intake schema and validates:
-    - `artifact_class`
-    - `quality_dimensions`
-    - `hard_constraints`
-    - `evaluation_pattern` (`verification|judge|simulation|composite`)
-    - `execution_mode` (`command|http`)
-    - `evaluator_cwd`
-
-- `src/optimize_anything/result_contract.py`
-  - Canonical optimize summary for CLI output
-
-- `src/optimize_anything/spec_loader.py`
-  - TOML spec file loading for repeatable optimization runs
-  - `--spec-file` flag overrides CLI arguments with spec values
-
-- `scripts/live_integration.py`
-  - RED-GREEN-OBSERVER cycle orchestrator
-  - `--phase green`: optimize artifact, output structured JSON
-  - `--phase red`: multi-provider scoring, output score matrix
-  - `--model`: proposer LLM (REQUIRED — gepa default may be unavailable)
-  - `--evaluator-command` MUST be the last flag (nargs="+" greedy parsing)
-
-## Important Distinction
-
-- `execution_mode` / runtime type: transport and execution path (`command` vs `http`)
-- `evaluation_pattern`: scoring strategy intent (`verification`, `judge`, `simulation`, `composite`)
-
-Do not conflate these in docs or implementation.
-
-## Plugin Structure
+## Plugin structure
 
 ```text
 .claude-plugin/plugin.json
 commands/optimize.md
+commands/quick.md
+commands/validate.md
 skills/generate-evaluator/
 skills/optimization-guide/
+skills/evaluator-patterns/
 ```
 
-## Common CLI Workflows
+Be explicit about the distinction:
+- `execution_mode` = runtime transport (`command`/`http`)
+- `evaluation_pattern` = scoring strategy (`verification`/`judge`/`simulation`/`composite`)
 
-### Dataset / Valset optimization
+## Intake schema
 
-```bash
-# Multi-task optimization (train set only)
-uv run optimize-anything optimize prompt.txt \
-  --judge-model openai/gpt-4o-mini \
-  --objective "Improve quality across use cases" \
-  --dataset data/train.jsonl \
-  --budget 120 --parallel --workers 4 --cache --run-dir runs --diff --early-stop
-
-# Generalization optimization (train + validation)
-uv run optimize-anything optimize prompt.txt \
-  --judge-model openai/gpt-4o-mini \
-  --objective "Generalize to unseen examples" \
-  --dataset data/train.jsonl --valset data/val.jsonl \
-  --budget 150 --cache --cache-from runs/run-20260303-120000 --run-dir runs --diff --early-stop
-```
-
-### Multi-provider validation
-
-```bash
-uv run optimize-anything validate result.txt \
-  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
-  --objective "Score for clarity, constraint adherence, and robustness" \
-  --intake-file intake.json
-```
-
-## Testing Notes
-
-- Use `pytest`.
-- CLI tests call `main(argv)`.
-- Evaluator tests include command, HTTP, timeout, and malformed payload cases.
-- LLM judge unit tests mock `litellm.completion`; integration tests skip via `@pytest.mark.skipif` when API keys absent.
-- Live integration tests in `tests/test_live_integration.py`.
-- `@pytest.mark.integration` for tests requiring API keys.
-- Code fence stripping tested in `test_llm_judge.py`.
-- Doc drift checks live in `tests/test_doc_contract.py`.
-
-## Known Gotchas
-
-- `--evaluator-command` in `live_integration.py` uses `nargs="+"` — must be the LAST
-  flag or it swallows subsequent arguments like `--model`
-- gepa's default proposer model may be unavailable — always pass `--model` explicitly
-- Anthropic models wrap JSON responses in markdown code fences — `llm_judge.py`
-  strips these automatically
-- `scores.json` baselines: use `score_check.py --update` after accepting improvements
-
-## Dependencies
-
-- `gepa` (optimization engine)
-- `httpx` (HTTP evaluator client)
-- `litellm` (runtime dependency required for live optimization flows)
+The intake specification (`--intake-json` / `--intake-file`) normalizes these fields:
+- `artifact_class` — type of artifact (prompt, code, config, docs)
+- `quality_dimensions` — named scoring axes with float weights
+- `hard_constraints` — boolean pass/fail conditions (violation forces score to 0.0)
+- `evaluation_pattern` — scoring strategy (`verification`, `judge`, `simulation`, `composite`)
+- `execution_mode` — evaluator transport (`command`, `http`)
+- `evaluator_cwd` — working directory for command evaluators

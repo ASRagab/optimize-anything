@@ -123,7 +123,15 @@ def llm_judge_evaluator(
             response = litellm.completion(**completion_kwargs)
             raw_content = response.choices[0].message.content
         except Exception as exc:
-            return 0.0, {"error": f"LLM call failed: {type(exc).__name__}: {exc}"}
+            error_side_info: dict[str, Any] = {
+                "error": f"LLM call failed: {type(exc).__name__}: {exc}",
+                "reasoning": "LLM judge call failed; returned fallback score 0.0.",
+            }
+            for dim in dims:
+                name = dim.get("name")
+                if isinstance(name, str) and name:
+                    error_side_info.setdefault(name, 0.0)
+            return 0.0, error_side_info
 
         return _parse_judge_response(raw_content, dims, constraints)
 

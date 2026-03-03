@@ -10,6 +10,7 @@ Run a no-questions-asked fast optimization.
 ## Behavior (do not ask follow-up questions)
 1. Run analysis to discover dimensions:
    - `optimize-anything analyze <file> --judge-model openai/gpt-4o-mini --objective "<objective>"`
+   - If analyze fails, continue with fallback: `analyze failed; optimizing without --intake-json`.
 2. Run optimization using LLM judge with:
    - `--judge-model openai/gpt-4o-mini`
    - `--budget 50`

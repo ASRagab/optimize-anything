@@ -913,34 +913,71 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     hard_constraints = intake_spec.get("hard_constraints") if intake_spec else None
 
     provider_results: list[dict[str, object]] = []
+    successful_scores: list[float] = []
     for provider in args.providers:
-        evaluator = llm_judge_evaluator(
-            args.objective,
-            model=provider,
-            quality_dimensions=quality_dimensions,
-            hard_constraints=hard_constraints,
-            api_base=args.api_base,
-        )
-        score, side_info = evaluator(artifact)
-        provider_results.append(
-            {
-                "provider": provider,
-                "score": score,
-                **side_info,
-            }
-        )
+        try:
+            evaluator = llm_judge_evaluator(
+                args.objective,
+                model=provider,
+                quality_dimensions=quality_dimensions,
+                hard_constraints=hard_constraints,
+                api_base=args.api_base,
+            )
+            score, side_info = evaluator(artifact)
+            numeric_score = float(score)
+        except Exception as exc:
+            provider_results.append(
+                {
+                    "provider": provider,
+                    "score": None,
+                    "error": str(exc),
+                }
+            )
+            continue
 
-    scores = [float(item["score"]) for item in provider_results]
+        result: dict[str, object] = {
+            "provider": provider,
+            "score": numeric_score,
+        }
+        if isinstance(side_info, dict):
+            result.update(side_info)
+        provider_results.append(result)
+        successful_scores.append(numeric_score)
+
+    successful_count = len(successful_scores)
+    failed_count = len(provider_results) - successful_count
+    aggregate_mean = statistics.mean(successful_scores) if successful_scores else None
+    aggregate_stddev = (
+        statistics.stdev(successful_scores)
+        if len(successful_scores) > 1
+        else (0.0 if successful_scores else None)
+    )
+    aggregate_min = min(successful_scores) if successful_scores else None
+    aggregate_max = max(successful_scores) if successful_scores else None
+
     summary = {
         "artifact_file": args.artifact_file,
         "objective": args.objective,
-        "providers": provider_results,
-        "mean": statistics.mean(scores),
-        "stddev": statistics.stdev(scores),
-        "min": min(scores),
-        "max": max(scores),
+        "results": provider_results,
+        "providers": provider_results,  # backward-compatible alias
+        "summary": {
+            "successful": successful_count,
+            "failed": failed_count,
+            "mean": aggregate_mean,
+            "stddev": aggregate_stddev,
+            "min": aggregate_min,
+            "max": aggregate_max,
+        },
+        # Backward-compatible aggregate aliases
+        "mean": aggregate_mean,
+        "stddev": aggregate_stddev,
+        "min": aggregate_min,
+        "max": aggregate_max,
     }
     print(json.dumps(summary, indent=2, default=str))
+    if successful_count == 0:
+        print("Error: all providers failed", file=sys.stderr)
+        return 1
     return 0
 
 
