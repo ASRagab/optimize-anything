@@ -1,6 +1,6 @@
 [project]
 name = "optimize-anything"
-version = "0.3.0"
+version = "0.3.1"
 description = "Optimize any text artifact using gepa — prompts, code, configs, skills"
 readme = "README.md"
 license = {text = "MIT"}
