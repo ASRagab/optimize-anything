@@ -40,6 +40,13 @@ class TestLoadSpec:
         assert result["proposer_model"] == "anthropic/claude-sonnet-4-6"
         assert result["judge_model"] == "openai/gpt-4o-mini"
 
+
+    def test_task_model_parsed_from_optimization_section(self, tmp_path: Path):
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text('[optimization]\ntask_model = "openai/gpt-4o-mini"\n')
+        result = load_spec(spec_file)
+        assert result["task_model"] == "openai/gpt-4o-mini"
+
     def test_intake_section_preserved(self, tmp_path: Path):
         spec_file = tmp_path / "opt.toml"
         spec_file.write_text(
@@ -82,6 +89,16 @@ class TestLoadSpec:
         spec_file.write_text("[optimization]\nbudget = 50\n")
         result = load_spec(spec_file)
         assert result["budget"] == 50
+
+    def test_parallel_workers_cache_parsed(self, tmp_path: Path):
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text(
+            "[optimization]\nparallel = true\nworkers = 4\ncache = true\n"
+        )
+        result = load_spec(spec_file)
+        assert result["parallel"] is True
+        assert result["workers"] == 4
+        assert result["cache"] is True
 
     def test_empty_spec_returns_all_none(self, tmp_path: Path):
         spec_file = tmp_path / "opt.toml"

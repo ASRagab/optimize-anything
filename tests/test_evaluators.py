@@ -95,6 +95,38 @@ class TestCommandEvaluator:
         assert score == 0.0
         assert "must be a JSON object" in info["error"]
 
+
+    def test_task_model_in_command_payload_and_env(self):
+        with patch("optimize_anything.evaluators.subprocess.run") as mock_run:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.stdout = '{"score": 0.5}'
+            mock_run.return_value = mock_proc
+
+            evaluate = command_evaluator(["bash", "eval.sh"], task_model="openai/gpt-4o-mini")
+            score, _ = evaluate("candidate text")
+
+            assert score == 0.5
+            call_kwargs = mock_run.call_args.kwargs
+            payload = json.loads(call_kwargs["input"])
+            assert payload["task_model"] == "openai/gpt-4o-mini"
+            assert call_kwargs["env"]["OPTIMIZE_ANYTHING_TASK_MODEL"] == "openai/gpt-4o-mini"
+
+    def test_example_in_command_payload(self):
+        with patch("optimize_anything.evaluators.subprocess.run") as mock_run:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.stdout = '{"score": 0.5}'
+            mock_run.return_value = mock_proc
+
+            evaluate = command_evaluator(["bash", "eval.sh"])
+            example = {"input": "foo", "label": "bar"}
+            score, _ = evaluate("candidate text", example=example)
+
+            assert score == 0.5
+            payload = json.loads(mock_run.call_args.kwargs["input"])
+            assert payload["example"] == example
+
     def test_command_uses_cwd(self, tmp_path: Path):
         script = tmp_path / "eval.sh"
         script.write_text(
@@ -131,7 +163,7 @@ class TestHttpEvaluator:
             assert info == {"detail": "good"}
             mock_post.assert_called_once_with(
                 "http://localhost:8000/eval",
-                json={"candidate": "test candidate"},
+                json={"_protocol_version": 2, "candidate": "test candidate"},
                 timeout=30.0,
                 headers={},
             )
@@ -149,10 +181,37 @@ class TestHttpEvaluator:
             evaluate("x")
             mock_post.assert_called_once_with(
                 "http://localhost:8000/eval",
-                json={"candidate": "x"},
+                json={"_protocol_version": 2, "candidate": "x"},
                 timeout=30.0,
                 headers={"Authorization": "Bearer tok"},
             )
+
+    def test_task_model_in_http_payload(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"score": 0.7}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response) as mock_post:
+            evaluate = http_evaluator("http://localhost:8000/eval", task_model="anthropic/claude-sonnet-4-6")
+            score, _ = evaluate("test candidate")
+
+            assert score == 0.7
+            payload = mock_post.call_args.kwargs["json"]
+            assert payload["task_model"] == "anthropic/claude-sonnet-4-6"
+
+    def test_example_in_http_payload(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"score": 0.9}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("optimize_anything.evaluators.httpx.post", return_value=mock_response) as mock_post:
+            evaluate = http_evaluator("http://localhost:8000/eval")
+            example = {"context": "x", "expected": 1}
+            score, _ = evaluate("test candidate", example=example)
+
+            assert score == 0.9
+            payload = mock_post.call_args.kwargs["json"]
+            assert payload["example"] == example
 
     def test_timeout_error(self):
         import httpx as httpx_mod
@@ -274,3 +333,43 @@ class TestValidateEvaluatorPayload:
     def test_score_above_one_returns_error(self):
         err = validate_evaluator_payload({"score": 1.01})
         assert err == "evaluator output 'score' must be between 0.0 and 1.0"
+
+    def test_score_range_any_accepts_out_of_range_score(self):
+        assert validate_evaluator_payload({"score": 1.5}, score_range="any") is None
+
+    def test_score_range_any_rejects_nan_and_inf(self):
+        import math
+        assert validate_evaluator_payload({"score": math.nan}, score_range="any") == "evaluator output 'score' must be finite"
+        assert validate_evaluator_payload({"score": math.inf}, score_range="any") == "evaluator output 'score' must be finite"
+
+
+class TestScoreRangeParsing:
+    def test_command_evaluator_unit_rejects_out_of_range(self, tmp_path: Path):
+        script = tmp_path / "score_15.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'{"score": 1.5}\'\n')
+        script.chmod(0o755)
+
+        evaluate = command_evaluator([str(script)], score_range="unit")
+        score, info = evaluate("candidate")
+        assert score == 0.0
+        assert "between 0.0 and 1.0" in info["error"]
+
+    def test_command_evaluator_any_accepts_out_of_range(self, tmp_path: Path):
+        script = tmp_path / "score_15.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'{"score": 1.5}\'\n')
+        script.chmod(0o755)
+
+        evaluate = command_evaluator([str(script)], score_range="any")
+        score, info = evaluate("candidate")
+        assert score == pytest.approx(1.5)
+        assert "error" not in info
+
+    def test_score_range_unit_is_default(self, tmp_path: Path):
+        script = tmp_path / "score_15.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'{"score": 1.5}\'\n')
+        script.chmod(0o755)
+
+        evaluate = command_evaluator([str(script)])
+        score, info = evaluate("candidate")
+        assert score == 0.0
+        assert "between 0.0 and 1.0" in info["error"]

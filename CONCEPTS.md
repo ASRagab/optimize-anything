@@ -16,7 +16,8 @@ A function that scores an artifact candidate. Returns `{"score": <float>, ...}`.
 
 ## Evaluator Protocol
 
-- **Input:** `{"candidate": "<text>"}` via stdin (command) or POST body (HTTP)
+- **Input:** `{"_protocol_version": 2, "candidate": "<text>"}` via stdin (command) or POST body (HTTP)
+- In dataset-backed modes, input includes `"example": {...}` for each example-bound evaluation call
 - **Output:** JSON with required `score` key (0.0-1.0) and optional diagnostic keys
 - Diagnostic keys become "Actionable Side Information" for gepa's reflection LM
 
@@ -34,6 +35,14 @@ A verification evaluator can run as a command or HTTP endpoint. These are never 
 ## gepa
 
 The optimization engine. Runs propose/evaluate/reflect cycles to improve artifacts. Uses a proposer LLM to generate candidates and an evaluator to score them. Configure with `--model` (proposer) and `--budget` (max evaluator calls).
+
+## Multi-task Mode
+
+Enabled by passing `--dataset <train.jsonl>`. GEPA evaluates each candidate across dataset examples (one evaluator call per example), so optimization targets aggregate performance across tasks instead of a single fixed instance.
+
+## Generalization Mode
+
+Enabled by passing both `--dataset <train.jsonl>` and `--valset <val.jsonl>`. Optimization uses the training dataset to evolve candidates, while validation aggregates are computed on the separate valset to measure out-of-sample quality.
 
 ## Intake Specification
 

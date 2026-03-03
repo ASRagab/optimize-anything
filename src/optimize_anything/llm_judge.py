@@ -24,11 +24,17 @@ JUDGE_PROMPT_WITH_DIMENSIONS = """\
 ## Objective
 {objective}
 
+## Task Model Context
+{task_model_context}
+
 ## Quality Dimensions (higher is better, weights shown)
 {dimensions_text}
 
 ## Hard Constraints (all must be satisfied; if any is violated, score must be 0.0)
 {constraints_text}
+
+## Example Context (optional)
+{example_text}
 
 ## Artifact to Evaluate
 ```
@@ -50,6 +56,12 @@ Example:
 JUDGE_PROMPT_SIMPLE = """\
 ## Objective
 {objective}
+
+## Task Model Context
+{task_model_context}
+
+## Example Context (optional)
+{example_text}
 
 ## Artifact to Evaluate
 ```
@@ -75,19 +87,22 @@ def llm_judge_evaluator(
     timeout: float = 60.0,
     temperature: float = 0.0,
     api_base: str | None = None,
-) -> Callable[[str], tuple[float, dict[str, Any]]]:
+    task_model: str | None = None,
+) -> Callable[[str, Any | None], tuple[float, dict[str, Any]]]:
     """Create an LLM-as-judge evaluator compatible with gepa's evaluator contract."""
     _validate_objective(objective)
     _validate_model_string(model)
     dims = quality_dimensions or []
     constraints = hard_constraints or []
 
-    def evaluate(candidate: str) -> tuple[float, dict[str, Any]]:
+    def evaluate(candidate: str, example: Any | None = None) -> tuple[float, dict[str, Any]]:
         prompt = _build_prompt(
             candidate=candidate,
             objective=objective,
             quality_dimensions=dims,
             hard_constraints=constraints,
+            task_model=task_model,
+            example=example,
         )
         try:
             import litellm
@@ -131,7 +146,11 @@ def _build_prompt(
     objective: str,
     quality_dimensions: list[dict[str, Any]],
     hard_constraints: list[str],
+    task_model: str | None = None,
+    example: Any | None = None,
 ) -> str:
+    task_model_context = task_model if task_model else "(not provided)"
+    example_text = json.dumps(example, ensure_ascii=False, indent=2) if example is not None else "(none)"
     if quality_dimensions:
         dimensions_text = "\n".join(
             f"- {d['name']} (weight={d['weight']:.4f})" for d in quality_dimensions
@@ -146,8 +165,15 @@ def _build_prompt(
             dimensions_text=dimensions_text,
             constraints_text=constraints_text,
             candidate=candidate,
+            task_model_context=task_model_context,
+            example_text=example_text,
         )
-    return JUDGE_PROMPT_SIMPLE.format(objective=objective, candidate=candidate)
+    return JUDGE_PROMPT_SIMPLE.format(
+        objective=objective,
+        candidate=candidate,
+        task_model_context=task_model_context,
+        example_text=example_text,
+    )
 
 
 def _parse_judge_response(

@@ -12,10 +12,10 @@ def generate_evaluator_script(
     objective: str,
     evaluator_type: str | None = None,
     intake: Mapping[str, Any] | None = None,
+    model: str = "openai/gpt-4o-mini",
+    dataset: bool = False,
 ) -> str:
-    """Generate an evaluator script that reads {"candidate": "..."} on stdin
-    and outputs {"score": <float>, ...} to stdout.
-    """
+    """Generate an evaluator script that reads input JSON and outputs score JSON."""
     normalized_intake = _normalize_intake_if_provided(intake)
     resolved_evaluator_type = _resolve_evaluator_type(
         evaluator_type=evaluator_type,
@@ -32,6 +32,27 @@ def generate_evaluator_script(
             template_family=template_family,
             rubric_summary=rubric_summary,
             quality_dimensions=quality_dimensions,
+            dataset=dataset,
+        )
+    if resolved_evaluator_type == "judge":
+        return _generate_judge_evaluator(
+            seed,
+            objective,
+            template_family=template_family,
+            rubric_summary=rubric_summary,
+            quality_dimensions=quality_dimensions,
+            model=model,
+            dataset=dataset,
+        )
+    if resolved_evaluator_type == "composite":
+        return _generate_composite_evaluator(
+            seed,
+            objective,
+            template_family=template_family,
+            rubric_summary=rubric_summary,
+            quality_dimensions=quality_dimensions,
+            model=model,
+            dataset=dataset,
         )
     return _generate_command_evaluator(
         seed,
@@ -39,6 +60,7 @@ def generate_evaluator_script(
         template_family=template_family,
         rubric_summary=rubric_summary,
         quality_dimensions=quality_dimensions,
+        dataset=dataset,
     )
 
 
@@ -59,12 +81,10 @@ def _resolve_evaluator_type(
 ) -> str:
     if evaluator_type is not None:
         mode = evaluator_type.strip().lower()
-        if mode not in {"command", "http"}:
-            raise ValueError("evaluator_type must be 'command' or 'http'")
+        if mode not in {"judge", "command", "http", "composite"}:
+            raise ValueError("evaluator_type must be 'judge', 'command', 'http', or 'composite'")
         return mode
-    if normalized_intake is not None:
-        return str(normalized_intake["execution_mode"])
-    return "command"
+    return "judge"
 
 
 def _select_template_family(intake: Mapping[str, Any] | None) -> str:
@@ -169,6 +189,15 @@ def _compact_text(value: Any, *, max_length: int) -> str:
     return f"{text[: max_length - 3]}..."
 
 
+def _dataset_extract_snippet() -> str:
+    return textwrap.dedent("""\
+        example = data.get("example")
+        expected = ""
+        if isinstance(example, dict):
+            expected = str(example.get("expected", ""))
+    """)
+
+
 def _generate_command_evaluator(
     seed: str,
     objective: str,
@@ -176,22 +205,27 @@ def _generate_command_evaluator(
     template_family: str,
     rubric_summary: str,
     quality_dimensions: list[tuple[str, float]],
+    dataset: bool = False,
 ) -> str:
     """Generate a bash evaluator script."""
     seed_length = len(seed)
     objective_preview = objective.replace("\n", "\\n")
     rubric_preview = rubric_summary.replace("\n", "\\n")
+    dataset_input = '{"candidate": "<text>", "example": {...}}' if dataset else '{"candidate": "<text>"}'
+    dataset_extract = _dataset_extract_snippet() if dataset else 'example = None\nexpected = ""\n'
+    dataset_diag = '        "example_used": example is not None,\n'
+    dataset_compare = textwrap.dedent("""\
+        expected_overlap = 0.0
+        if expected:
+            expected_overlap = 1.0 if expected.lower() in candidate_lower else 0.0
+            score = round(min(1.0, score + 0.2 * expected_overlap), 4)
+    """) if dataset else "expected_overlap = 0.0\n"
     return textwrap.dedent(f"""\
         #!/usr/bin/env bash
         # Auto-generated evaluator for: {objective_preview}
         # Seed length: {seed_length} chars
         # Template family: {template_family}
         # Rubric summary: {rubric_preview}
-        #
-        # Input:  JSON on stdin: {{"candidate": "<text>"}}
-        # Output: JSON on stdout: {{"score": <float>, ...}}
-        #
-        # Customize the scoring logic below to match your objective.
 
         set -euo pipefail
 
@@ -218,84 +252,23 @@ def _generate_command_evaluator(
 
         candidate = str(data.get("candidate", ""))
         candidate_lower = candidate.lower()
+{_indent(dataset_extract, 8)}
         length = len(candidate)
-
         if length == 0 or SEED_LENGTH == 0:
             length_similarity = 0.0
         else:
             length_similarity = min(length, SEED_LENGTH) / max(length, SEED_LENGTH)
 
-        family_signal = 0.0
-        family_diag = {{}}
-        if TEMPLATE_FAMILY == "instructional_content":
-            heading_hits = candidate.count("\\n#") + (1 if candidate.lstrip().startswith("#") else 0)
-            list_hits = candidate.count("\\n- ") + candidate.count("\\n* ")
-            ordered_hits = candidate.count("\\n1. ") + candidate.count("\\n2. ")
-            family_signal = min(1.0, (heading_hits + list_hits + ordered_hits) / 10.0)
-            family_diag = {{
-                "instructional_structure": round(family_signal, 4),
-                "heading_hits": heading_hits,
-            }}
-        elif TEMPLATE_FAMILY == "instruction_artifact":
-            imperative_hits = sum(
-                phrase in candidate_lower
-                for phrase in ("use ", "run ", "click ", "set ", "add ", "remove ")
-            )
-            constraint_hits = sum(
-                phrase in candidate_lower
-                for phrase in ("must", "should", "required", "avoid", "do not")
-            )
-            family_signal = min(1.0, (imperative_hits + constraint_hits) / 6.0)
-            family_diag = {{
-                "instruction_precision": round(family_signal, 4),
-                "imperative_hits": int(imperative_hits),
-            }}
-        elif TEMPLATE_FAMILY == "executable_analytical":
-            code_hits = candidate.count("```") + sum(
-                token in candidate for token in ("def ", "SELECT ", "FROM ", "{{", "}}", "();")
-            )
-            reasoning_hits = sum(
-                phrase in candidate_lower
-                for phrase in ("because", "therefore", "assume", "result", "tradeoff")
-            )
-            family_signal = min(1.0, (code_hits + reasoning_hits) / 8.0)
-            family_diag = {{
-                "analysis_executable_balance": round(family_signal, 4),
-                "code_hits": int(code_hits),
-            }}
-        else:
-            sentence_hits = candidate.count(".") + candidate.count("!") + candidate.count("?")
-            paragraph_hits = candidate.count("\\n\\n")
-            family_signal = min(1.0, (sentence_hits + paragraph_hits) / 20.0)
-            family_diag = {{
-                "general_coherence_signal": round(family_signal, 4),
-                "sentence_hits": sentence_hits,
-            }}
-
-        def _dimension_signal(name: str) -> float:
-            name_lower = name.lower()
-            if "clarity" in name_lower or "readab" in name_lower or "structure" in name_lower:
-                return family_signal
-            if "correct" in name_lower or "accuracy" in name_lower or "factual" in name_lower:
-                return length_similarity
-            if "concise" in name_lower or "brev" in name_lower or "length" in name_lower:
-                if length == 0 and SEED_LENGTH == 0:
-                    return 1.0
-                if length == 0 or SEED_LENGTH == 0:
-                    return 0.0
-                return max(0.0, 1.0 - (abs(length - SEED_LENGTH) / max(length, SEED_LENGTH)))
-            return (length_similarity + family_signal) / 2
-
+        base_score = max(0.0, min(1.0, length_similarity))
         dimension_scores = {{}}
         weighted_score = 0.0
         for name, weight in QUALITY_DIMENSIONS:
-            dim_score = max(0.0, min(1.0, _dimension_signal(str(name))))
-            dim_score = round(dim_score, 4)
+            dim_score = round(base_score, 4)
             dimension_scores[str(name)] = dim_score
             weighted_score += float(weight) * dim_score
 
         score = round(weighted_score, 4)
-
+{_indent(dataset_compare, 8)}
         result = {{
             "score": score,
             "objective": OBJECTIVE,
@@ -305,12 +278,13 @@ def _generate_command_evaluator(
             "dimension_scores": dimension_scores,
             "length": length,
             "length_similarity": round(length_similarity, 4),
+            "dataset_mode": {dataset},
+{dataset_diag}            "expected_overlap": round(expected_overlap, 4),
         }}
-        result.update(family_diag)
 
         print(json.dumps(result))
         PY
-    """)
+    """).lstrip()
 
 
 def _generate_http_evaluator(
@@ -320,19 +294,20 @@ def _generate_http_evaluator(
     template_family: str,
     rubric_summary: str,
     quality_dimensions: list[tuple[str, float]],
+    dataset: bool = False,
 ) -> str:
     """Generate a Python HTTP evaluator server."""
     seed_length = len(seed)
+    dataset_input = '{"candidate": "<text>", "example": {...}}' if dataset else '{"candidate": "<text>"}'
+    dataset_extract = _dataset_extract_snippet() if dataset else 'example = None\n        expected = ""\n'
     return textwrap.dedent(f"""\
         #!/usr/bin/env python3
         \"\"\"Auto-generated HTTP evaluator.
 
         Seed length: {seed_length} chars
-
-        Run: python evaluator.py
         Endpoint: POST http://localhost:8000/evaluate
-        Input:  {{"candidate": "<text>"}}
-        Output: {{"score": <float>, ...}}
+        Input:  {dataset_input}
+        Output: {{\"score\": <float>, ...}}
         \"\"\"
         import json
         from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -351,9 +326,7 @@ def _generate_http_evaluator(
                     self.send_response(404)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
-                    self.wfile.write(
-                        json.dumps({{"error": f"Use POST {{EVALUATE_PATH}}"}}).encode()
-                    )
+                    self.wfile.write(json.dumps({{"error": f"Use POST {{EVALUATE_PATH}}"}}).encode())
                     return
 
                 content_length = int(self.headers.get("Content-Length", 0))
@@ -364,115 +337,244 @@ def _generate_http_evaluator(
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
-                    self.wfile.write(
-                        json.dumps({{"score": 0.0, "error": "Input must be valid JSON"}}).encode()
-                    )
+                    self.wfile.write(json.dumps({{"score": 0.0, "error": "Input must be valid JSON"}}).encode())
                     return
 
-                candidate = data.get("candidate", "")
-                candidate_lower = str(candidate).lower()
-
+                candidate = str(data.get("candidate", ""))
+                candidate_lower = candidate.lower()
+{_indent(dataset_extract, 16)}
                 length = len(candidate)
                 if length == 0 or SEED_LENGTH == 0:
-                    length_similarity = 0.0
+                    score = 0.0
                 else:
-                    length_similarity = min(length, SEED_LENGTH) / max(length, SEED_LENGTH)
+                    score = min(length, SEED_LENGTH) / max(length, SEED_LENGTH)
 
-                family_signal = 0.0
-                family_diag = {{}}
-                if TEMPLATE_FAMILY == "instructional_content":
-                    heading_hits = candidate.count("\\n#") + (1 if candidate.lstrip().startswith("#") else 0)
-                    list_hits = candidate.count("\\n- ") + candidate.count("\\n* ")
-                    ordered_hits = candidate.count("\\n1. ") + candidate.count("\\n2. ")
-                    family_signal = min(1.0, (heading_hits + list_hits + ordered_hits) / 10.0)
-                    family_diag = {{
-                        "instructional_structure": round(family_signal, 4),
-                        "heading_hits": heading_hits,
-                    }}
-                elif TEMPLATE_FAMILY == "instruction_artifact":
-                    imperative_hits = sum(
-                        phrase in candidate_lower
-                        for phrase in ("use ", "run ", "click ", "set ", "add ", "remove ")
-                    )
-                    constraint_hits = sum(
-                        phrase in candidate_lower
-                        for phrase in ("must", "should", "required", "avoid", "do not")
-                    )
-                    family_signal = min(1.0, (imperative_hits + constraint_hits) / 6.0)
-                    family_diag = {{
-                        "instruction_precision": round(family_signal, 4),
-                        "imperative_hits": int(imperative_hits),
-                    }}
-                elif TEMPLATE_FAMILY == "executable_analytical":
-                    code_hits = candidate.count("```") + sum(
-                        token in candidate for token in ("def ", "SELECT ", "FROM ", "{{", "}}", "();")
-                    )
-                    reasoning_hits = sum(
-                        phrase in candidate_lower
-                        for phrase in ("because", "therefore", "assume", "result", "tradeoff")
-                    )
-                    family_signal = min(1.0, (code_hits + reasoning_hits) / 8.0)
-                    family_diag = {{
-                        "analysis_executable_balance": round(family_signal, 4),
-                        "code_hits": int(code_hits),
-                    }}
-                else:
-                    sentence_hits = candidate.count(".") + candidate.count("!") + candidate.count("?")
-                    paragraph_hits = candidate.count("\\n\\n")
-                    family_signal = min(1.0, (sentence_hits + paragraph_hits) / 20.0)
-                    family_diag = {{
-                        "general_coherence_signal": round(family_signal, 4),
-                        "sentence_hits": sentence_hits,
-                    }}
-
-                def _dimension_signal(name: str) -> float:
-                    name_lower = name.lower()
-                    if "clarity" in name_lower or "readab" in name_lower or "structure" in name_lower:
-                        return family_signal
-                    if "correct" in name_lower or "accuracy" in name_lower or "factual" in name_lower:
-                        return length_similarity
-                    if "concise" in name_lower or "brev" in name_lower or "length" in name_lower:
-                        if length == 0 and SEED_LENGTH == 0:
-                            return 1.0
-                        if length == 0 or SEED_LENGTH == 0:
-                            return 0.0
-                        return max(0.0, 1.0 - (abs(length - SEED_LENGTH) / max(length, SEED_LENGTH)))
-                    return (length_similarity + family_signal) / 2
-
-                dimension_scores = {{}}
-                weighted_score = 0.0
-                for name, weight in QUALITY_DIMENSIONS:
-                    dim_score = max(0.0, min(1.0, _dimension_signal(str(name))))
-                    dim_score = round(dim_score, 4)
-                    dimension_scores[str(name)] = dim_score
-                    weighted_score += float(weight) * dim_score
-
-                score = round(weighted_score, 4)
+                if expected:
+                    score = min(1.0, score + (0.2 if expected.lower() in candidate_lower else 0.0))
 
                 payload = {{
-                    "score": score,
-                    "length": length,
+                    "score": round(float(score), 4),
                     "objective": OBJECTIVE,
                     "template_family": TEMPLATE_FAMILY,
                     "rubric_summary": RUBRIC_SUMMARY,
                     "quality_dimensions": QUALITY_DIMENSIONS,
-                    "dimension_scores": dimension_scores,
-                    "length_similarity": round(length_similarity, 4),
+                    "dataset_mode": {dataset},
+                    "example_used": example is not None,
                 }}
-                payload.update(family_diag)
-                result = json.dumps(payload)
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(result.encode())
+                self.wfile.write(json.dumps(payload).encode())
 
             def log_message(self, format, *args):
-                pass  # Suppress default logging
+                pass
 
 
         if __name__ == "__main__":
             server = HTTPServer(("localhost", 8000), EvaluatorHandler)
             print("Evaluator server running on http://localhost:8000/evaluate")
             server.serve_forever()
-    """)
+    """).lstrip()
+
+
+def _generate_judge_evaluator(
+    seed: str,
+    objective: str,
+    *,
+    template_family: str,
+    rubric_summary: str,
+    quality_dimensions: list[tuple[str, float]],
+    model: str = "openai/gpt-4o-mini",
+    dataset: bool = False,
+) -> str:
+    """Generate a Python LLM-judge evaluator script using litellm."""
+    from optimize_anything.llm_judge import JUDGE_SYSTEM_PROMPT
+
+    return textwrap.dedent(f"""\
+        #!/usr/bin/env python3
+        import json
+        import os
+        import sys
+        from litellm import completion
+
+        MODEL = {model!r}
+        OBJECTIVE = {objective!r}
+        TEMPLATE_FAMILY = {template_family!r}
+        RUBRIC_SUMMARY = {rubric_summary!r}
+        QUALITY_DIMENSIONS = {quality_dimensions!r}
+        JUDGE_SYSTEM_PROMPT = {JUDGE_SYSTEM_PROMPT!r}
+
+        def _build_prompt(candidate: str, example: object | None) -> str:
+            dimensions_text = "\\n".join([f"- {{name}} (weight={{weight}})" for name, weight in QUALITY_DIMENSIONS])
+            example_text = json.dumps(example, ensure_ascii=False, indent=2) if example is not None else "(none)"
+            return f\"\"\"## Objective\n{{OBJECTIVE}}\n\n## Template Family\n{{TEMPLATE_FAMILY}}\n\n## Rubric Summary\n{{RUBRIC_SUMMARY}}\n\n## Quality Dimensions\n{{dimensions_text}}\n\n## Example Context (optional)\n{{example_text}}\n\n## Artifact to Evaluate\n```\n{{candidate}}\n```\n\nReturn JSON with keys: score, reasoning, and one key per quality dimension name. score must be in [0,1].\"\"\"
+
+        def _api_key_available() -> bool:
+            key_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
+            return any(os.environ.get(k) for k in key_vars)
+
+        def main() -> int:
+            try:
+                data = json.load(sys.stdin)
+            except json.JSONDecodeError:
+                print(json.dumps({{"score": 0.0, "reasoning": "Input must be valid JSON."}}))
+                return 0
+
+            candidate = str(data.get("candidate", ""))
+            example = data.get("example") if {dataset} else None
+
+            if not _api_key_available():
+                print(json.dumps({{
+                    "score": 0.0,
+                    "reasoning": "Missing API key. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY.",
+                    "error": "missing_api_key"
+                }}))
+                return 0
+
+            prompt = _build_prompt(candidate, example)
+            try:
+                response = completion(
+                    model=MODEL,
+                    messages=[
+                        {{"role": "system", "content": JUDGE_SYSTEM_PROMPT}},
+                        {{"role": "user", "content": prompt}},
+                    ],
+                    temperature=0.0,
+                    timeout=60.0,
+                    response_format={{"type": "json_object"}},
+                )
+                raw_content = response.choices[0].message.content
+                parsed = json.loads(raw_content) if raw_content else {{}}
+            except Exception as exc:
+                print(json.dumps({{"score": 0.0, "reasoning": f"LLM call failed: {{type(exc).__name__}}: {{exc}}"}}))
+                return 0
+
+            score = parsed.get("score", 0.0)
+            try:
+                score = float(score)
+            except (TypeError, ValueError):
+                score = 0.0
+            score = max(0.0, min(1.0, score))
+
+            result = {{
+                "score": score,
+                "reasoning": str(parsed.get("reasoning", "No reasoning provided.")),
+                "dimension_scores": {{name: parsed.get(name, 0.0) for name, _ in QUALITY_DIMENSIONS}},
+            }}
+            for name, _ in QUALITY_DIMENSIONS:
+                value = parsed.get(name, result["dimension_scores"][name])
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    value = 0.0
+                result[name] = max(0.0, min(1.0, value))
+
+            print(json.dumps(result))
+            return 0
+
+        if __name__ == "__main__":
+            raise SystemExit(main())
+    """).lstrip()
+
+
+def _generate_composite_evaluator(
+    seed: str,
+    objective: str,
+    *,
+    template_family: str,
+    rubric_summary: str,
+    quality_dimensions: list[tuple[str, float]],
+    model: str = "openai/gpt-4o-mini",
+    dataset: bool = False,
+) -> str:
+    """Generate composite evaluator with hard constraints + judge scoring."""
+    judge_script = _generate_judge_evaluator(
+        seed,
+        objective,
+        template_family=template_family,
+        rubric_summary=rubric_summary,
+        quality_dimensions=quality_dimensions,
+        model=model,
+        dataset=dataset,
+    )
+    return textwrap.dedent(f"""\
+        #!/usr/bin/env python3
+        import json
+        import re
+        import sys
+
+        # Composite evaluator: hard constraints first, then LLM judge.
+        def _constraint_non_empty(candidate: str) -> tuple[bool, str]:
+            if candidate.strip():
+                return True, ""
+            return False, "candidate must not be empty"
+
+        def _constraint_max_len(candidate: str, max_len: int = 12000) -> tuple[bool, str]:
+            if len(candidate) <= max_len:
+                return True, ""
+            return False, f"candidate exceeds max_len={{max_len}}"
+
+        def _constraint_no_placeholder(candidate: str) -> tuple[bool, str]:
+            if re.search(r"TODO|TBD|\\[FILL\\]", candidate):
+                return False, "candidate contains placeholder tokens"
+            return True, ""
+
+        JUDGE_SCRIPT = {judge_script!r}
+
+        def _run_judge(payload: dict[str, object]) -> dict[str, object]:
+            import subprocess
+            proc = subprocess.run(
+                [sys.executable, "-c", JUDGE_SCRIPT],
+                input=json.dumps(payload),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            if proc.returncode != 0:
+                return {{"score": 0.0, "reasoning": f"judge subprocess failed: {{proc.stderr.strip()}}"}}
+            try:
+                return json.loads(proc.stdout.strip() or "{{}}")
+            except json.JSONDecodeError:
+                return {{"score": 0.0, "reasoning": "judge returned invalid JSON"}}
+
+        def main() -> int:
+            try:
+                data = json.load(sys.stdin)
+            except json.JSONDecodeError:
+                print(json.dumps({{"score": 0.0, "reasoning": "Input must be valid JSON"}}))
+                return 0
+
+            candidate = str(data.get("candidate", ""))
+            checks = [_constraint_non_empty, _constraint_max_len, _constraint_no_placeholder]
+            failures = []
+            for check in checks:
+                ok, reason = check(candidate)
+                if not ok:
+                    failures.append(reason)
+
+            if failures:
+                print(json.dumps({{
+                    "score": 0.0,
+                    "reasoning": "Hard constraints failed",
+                    "hard_constraint_failures": failures,
+                    "hard_constraints_satisfied": False,
+                }}))
+                return 0
+
+            payload = {{"candidate": candidate}}
+            if {dataset}:
+                payload["example"] = data.get("example")
+            result = _run_judge(payload)
+            result["hard_constraints_satisfied"] = True
+            print(json.dumps(result))
+            return 0
+
+        if __name__ == "__main__":
+            raise SystemExit(main())
+    """).lstrip()
+
+
+def _indent(text: str, spaces: int) -> str:
+    pad = " " * spaces
+    return "\n".join(pad + line if line else line for line in text.splitlines())

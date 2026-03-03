@@ -220,6 +220,21 @@ class TestLlmJudgeEvaluatorUnit:
         assert score == 0.0
         assert "non-object JSON" in side_info["error"]
 
+
+    def test_task_model_appears_in_prompt(self):
+        response_content = json.dumps({"score": 0.6, "reasoning": "ok"})
+        evaluator = llm_judge_evaluator(
+            "maximize quality",
+            model="openai/gpt-4o-mini",
+            task_model="anthropic/claude-sonnet-4-6",
+        )
+        with patch("litellm.completion", return_value=self._make_mock_completion(response_content)) as mock_call:
+            evaluator("artifact")
+
+        prompt_sent = mock_call.call_args.kwargs["messages"][1]["content"]
+        assert "Task Model Context" in prompt_sent
+        assert "anthropic/claude-sonnet-4-6" in prompt_sent
+
     def test_quality_dimensions_appear_in_prompt(self):
         dims = [{"name": "originality", "weight": 1.0}]
         response_content = json.dumps({"score": 0.5, "reasoning": "ok", "originality": 0.5})

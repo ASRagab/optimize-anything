@@ -370,13 +370,13 @@ class TestCLI:
         assert payload["best_artifact"] == "candidate after preflight"
 
     def test_generate_evaluator_basic(self, tmp_path: Path, capsys, monkeypatch):
-        """generate-evaluator produces bash script with shebang by default."""
+        """generate-evaluator produces judge script with shebang by default."""
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("Hello world")
 
         monkeypatch.setattr(
             "optimize_anything.evaluator_generator.generate_evaluator_script",
-            lambda **kwargs: "#!/usr/bin/env bash\n# mock evaluator\n",
+            lambda **kwargs: "#!/usr/bin/env python3\n# mock judge evaluator\n",
         )
 
         result = main(
@@ -384,7 +384,7 @@ class TestCLI:
         )
         assert result == 0
         captured = capsys.readouterr()
-        assert captured.out.startswith("#!/usr/bin/env bash")
+        assert captured.out.startswith("#!/usr/bin/env python3")
 
     def test_generate_evaluator_http_type(self, tmp_path: Path, capsys, monkeypatch):
         """--evaluator-type http produces Python script."""
@@ -480,6 +480,75 @@ class TestCLI:
         )
         assert result == 0
         assert calls["evaluator_type"] == "command"
+
+    def test_generate_evaluator_default_type_is_judge(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+        calls: dict[str, object] = {}
+
+        def fake_generate(**kwargs):
+            calls.update(kwargs)
+            return "#!/usr/bin/env python3\n"
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluator_generator.generate_evaluator_script",
+            fake_generate,
+        )
+
+        result = main(["generate-evaluator", str(seed_file), "--objective", "maximize clarity"])
+        assert result == 0
+        assert calls["evaluator_type"] == "judge"
+
+    def test_generate_evaluator_composite_type(self, tmp_path: Path, monkeypatch, capsys):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+
+        calls: dict[str, object] = {}
+
+        def fake_generate(**kwargs):
+            calls.update(kwargs)
+            return "#!/usr/bin/env python3\n# mock composite evaluator\n"
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluator_generator.generate_evaluator_script",
+            fake_generate,
+        )
+
+        result = main([
+            "generate-evaluator",
+            str(seed_file),
+            "--objective",
+            "maximize clarity",
+            "--evaluator-type",
+            "composite",
+        ])
+        assert result == 0
+        assert calls["evaluator_type"] == "composite"
+        assert "python3" in capsys.readouterr().out
+
+    def test_generate_evaluator_dataset_flag_forwarded(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("Hello world")
+        calls: dict[str, object] = {}
+
+        def fake_generate(**kwargs):
+            calls.update(kwargs)
+            return "#!/usr/bin/env python3\n"
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluator_generator.generate_evaluator_script",
+            fake_generate,
+        )
+
+        result = main([
+            "generate-evaluator",
+            str(seed_file),
+            "--objective",
+            "maximize clarity",
+            "--dataset",
+        ])
+        assert result == 0
+        assert calls["dataset"] is True
 
     def test_generate_evaluator_invalid_intake(self, tmp_path: Path, capsys):
         """Bad intake returns exit 1."""
@@ -620,7 +689,7 @@ class TestCLI:
 
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -637,6 +706,35 @@ class TestCLI:
             "--budget", "1",
         ])
         assert result == 0
+
+
+    def test_optimize_task_model_is_forwarded_to_command_evaluator(
+        self, tmp_path: Path, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured: dict[str, object] = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_command_evaluator(command, cwd=None, task_model=None, **kwargs):
+            captured["task_model"] = task_model
+            return lambda c, example=None: (0.5, {})
+
+        monkeypatch.setattr("optimize_anything.evaluators.command_evaluator", fake_command_evaluator)
+        monkeypatch.setattr("optimize_anything.cli._preflight_command_evaluator", lambda command, cwd=None: None)
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", lambda **kwargs: DummyResult())
+
+        rc = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--task-model", "openai/gpt-4o-mini",
+            "--budget", "1",
+        ])
+        assert rc == 0
+        assert captured["task_model"] == "openai/gpt-4o-mini"
 
     def test_optimize_model_flag_passes_through_to_gepa(
         self, tmp_path: Path, capsys, monkeypatch
@@ -655,7 +753,7 @@ class TestCLI:
 
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -693,7 +791,7 @@ class TestCLI:
 
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -726,7 +824,7 @@ class TestCLI:
 
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -793,7 +891,7 @@ class TestCLI:
 
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "optimize_anything.cli._preflight_command_evaluator",
@@ -823,7 +921,7 @@ class TestCLI:
 
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "optimize_anything.cli._preflight_command_evaluator",
@@ -1162,7 +1260,7 @@ class TestCLI:
         )
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.7, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.7, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -1199,7 +1297,7 @@ class TestCLI:
         )
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -1232,7 +1330,7 @@ class TestCLI:
         )
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.7, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.7, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -1247,6 +1345,140 @@ class TestCLI:
         captured = capsys.readouterr()
         assert "--- seed" not in captured.err
         assert "+++ optimized" not in captured.err
+
+
+class TestSeedlessAndScoreRange:
+    def test_seedless_requires_objective_and_model(self, capsys):
+        result = main([
+            "optimize",
+            "--no-seed",
+            "--evaluator-command",
+            "bash",
+            "eval.sh",
+        ])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert (
+            "Error: seedless mode (--no-seed) requires both --objective and --model"
+            in captured.err
+        )
+
+    def test_seedless_with_objective_and_model_passes_none_seed_candidate(
+        self, capsys, monkeypatch
+    ):
+        captured_kwargs = {}
+
+        class DummyResult:
+            best_candidate = "generated"
+            total_metric_calls = 1
+
+        def fake_optimize_anything(**kwargs):
+            captured_kwargs.update(kwargs)
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c, e=None: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            fake_optimize_anything,
+        )
+
+        result = main([
+            "optimize",
+            "--no-seed",
+            "--objective",
+            "improve quality",
+            "--model",
+            "openai/gpt-4o-mini",
+            "--evaluator-command",
+            "bash",
+            "eval.sh",
+            "--budget",
+            "1",
+        ])
+        assert result == 0
+        assert "seed_candidate" in captured_kwargs
+        assert captured_kwargs["seed_candidate"] is None
+
+    def test_seed_file_still_works_normally(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("seed artifact")
+        captured_kwargs = {}
+
+        class DummyResult:
+            best_candidate = "generated"
+            total_metric_calls = 1
+
+        def fake_optimize_anything(**kwargs):
+            captured_kwargs.update(kwargs)
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c, e=None: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            fake_optimize_anything,
+        )
+
+        result = main([
+            "optimize",
+            str(seed_file),
+            "--evaluator-command",
+            "bash",
+            "eval.sh",
+            "--budget",
+            "1",
+        ])
+        assert result == 0
+        assert captured_kwargs["seed_candidate"] == "seed artifact"
+
+    def test_preflight_command_respects_score_range_modes(self, tmp_path: Path):
+        from optimize_anything.cli import _preflight_command_evaluator
+
+        script = tmp_path / "eval.sh"
+        script.write_text('#!/usr/bin/env bash\necho \'{"score": 1.5}\'\n')
+        script.chmod(0o755)
+
+        err_unit = _preflight_command_evaluator([str(script)], cwd=None)
+        assert err_unit is not None
+        assert "between 0.0 and 1.0" in err_unit
+
+        err_any = _preflight_command_evaluator([str(script)], cwd=None, score_range="any")
+        assert err_any is None
+
+    def test_preflight_http_respects_score_range_modes(self, monkeypatch):
+        from optimize_anything.cli import _preflight_http_evaluator
+
+        class FakeResponse:
+            status_code = 200
+            text = '{"score": 1.5}'
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"score": 1.5}
+
+        monkeypatch.setattr("httpx.post", lambda *args, **kwargs: FakeResponse())
+
+        err_unit = _preflight_http_evaluator("http://localhost:8000/eval")
+        assert err_unit is not None
+        assert "between 0.0 and 1.0" in err_unit
+
+        err_any = _preflight_http_evaluator("http://localhost:8000/eval", score_range="any")
+        assert err_any is None
 
 
 class TestBudgetPrecedence:
@@ -1283,6 +1515,173 @@ class TestBudgetPrecedence:
         assert config.engine.max_metric_calls == 100
 
 
+class TestEngineConfigWiring:
+    def test_parallel_flag_sets_engine_parallel(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--parallel",
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert captured["config"].engine.parallel is True
+
+    def test_workers_sets_max_workers(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--workers", "4",
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert captured["config"].engine.max_workers == 4
+
+    def test_workers_auto_enables_parallel(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--workers", "4",
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert captured["config"].engine.parallel is True
+
+    def test_cache_flag_sets_cache_evaluation(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--cache",
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert captured["config"].engine.cache_evaluation is True
+
+    def test_run_dir_passes_through_to_engine_config(self, tmp_path: Path, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        run_dir = tmp_path / "runs"
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+        monkeypatch.setattr(
+            "optimize_anything.cli._timestamped_run_dir",
+            lambda base: str(Path(base) / "run-20260303-150000"),
+        )
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--run-dir", str(run_dir),
+            "--budget", "1",
+        ])
+        assert result == 0
+        assert captured["config"].engine.run_dir.endswith("run-20260303-150000")
+
+
 class TestRunDir:
     def test_run_dir_creates_directory_with_expected_files(
         self, tmp_path: Path, capsys, monkeypatch
@@ -1301,7 +1700,7 @@ class TestRunDir:
         )
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.7, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.7, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -1342,7 +1741,7 @@ class TestRunDir:
         )
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -1378,7 +1777,7 @@ class TestRunDir:
         )
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.5, {}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
         )
         monkeypatch.setattr(
             "gepa.optimize_anything.optimize_anything",
@@ -1595,7 +1994,7 @@ class TestScoreCommand:
         )
         monkeypatch.setattr(
             "optimize_anything.evaluators.command_evaluator",
-            lambda command, cwd=None: lambda c: (0.75, {"feedback": "looks good"}),
+            lambda command, cwd=None, **kwargs: lambda c: (0.75, {"feedback": "looks good"}),
         )
 
         result = main([

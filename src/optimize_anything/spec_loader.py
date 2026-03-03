@@ -43,11 +43,15 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         "background": None,
         "budget": None,
         "output": None,
+        "parallel": None,
+        "workers": None,
+        "cache": None,
         "evaluator_command": None,
         "evaluator_url": None,
         "evaluator_cwd": None,
         "judge_model": None,
         "proposer_model": None,
+        "task_model": None,
         "intake": None,
     }
 
@@ -57,7 +61,7 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
             raise SpecLoadError("optimization.seed_file must be a string")
         result["seed_file"] = str(_resolve_path(seed_raw, base=spec_dir))
 
-    for str_key in ("objective", "background", "output"):
+    for str_key in ("objective", "background", "output", "task_model"):
         if str_key in opt:
             value = opt[str_key]
             if not isinstance(value, str):
@@ -69,6 +73,24 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         if not isinstance(budget_raw, int) or budget_raw <= 0:
             raise SpecLoadError("optimization.budget must be a positive integer")
         result["budget"] = budget_raw
+
+    if "parallel" in opt:
+        parallel_raw = opt["parallel"]
+        if not isinstance(parallel_raw, bool):
+            raise SpecLoadError("optimization.parallel must be a boolean")
+        result["parallel"] = parallel_raw
+
+    if "workers" in opt:
+        workers_raw = opt["workers"]
+        if not isinstance(workers_raw, int) or workers_raw <= 0:
+            raise SpecLoadError("optimization.workers must be a positive integer")
+        result["workers"] = workers_raw
+
+    if "cache" in opt:
+        cache_raw = opt["cache"]
+        if not isinstance(cache_raw, bool):
+            raise SpecLoadError("optimization.cache must be a boolean")
+        result["cache"] = cache_raw
 
     if "command" in evaluator:
         cmd = evaluator["command"]

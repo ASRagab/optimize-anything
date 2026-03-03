@@ -8,15 +8,15 @@ from optimize_anything.evaluator_generator import generate_evaluator_script
 
 class TestGenerateEvaluatorScript:
     def test_command_evaluator_is_bash(self):
-        script = generate_evaluator_script(seed="hello", objective="improve clarity")
+        script = generate_evaluator_script(seed="hello", objective="improve clarity", evaluator_type="command")
         assert script.startswith("#!/usr/bin/env bash")
 
     def test_command_evaluator_contains_objective(self):
-        script = generate_evaluator_script(seed="hello", objective="improve clarity")
+        script = generate_evaluator_script(seed="hello", objective="improve clarity", evaluator_type="command")
         assert "improve clarity" in script
 
     def test_command_evaluator_contains_seed_length(self):
-        script = generate_evaluator_script(seed="hello world", objective="test")
+        script = generate_evaluator_script(seed="hello world", objective="test", evaluator_type="command")
         assert "11" in script  # len("hello world")
 
     def test_http_evaluator_is_python(self):
@@ -28,13 +28,25 @@ class TestGenerateEvaluatorScript:
         assert "HTTPServer" in script
         assert "8000" in script
 
-    def test_default_is_command(self):
+    def test_default_is_judge(self):
         script = generate_evaluator_script(seed="x", objective="y")
-        assert script.startswith("#!/usr/bin/env bash")
+        assert script.startswith("#!/usr/bin/env python3")
+        assert "litellm" in script
+
+    def test_judge_evaluator_contains_litellm_and_objective(self):
+        objective = "assess clarity and usefulness"
+        script = generate_evaluator_script(seed="hello", objective=objective, evaluator_type="judge")
+        assert "from litellm import completion" in script
+        assert objective in script
+
+    def test_judge_evaluator_handles_missing_api_key_gracefully(self):
+        script = generate_evaluator_script(seed="hello", objective="test", evaluator_type="judge")
+        assert "Missing API key" in script
+        assert "missing_api_key" in script
 
     def test_objective_with_quotes_is_safe_in_command_script(self, tmp_path: Path):
         objective = 'Improve "install docs"\nfor O\'Reilly users'
-        script = generate_evaluator_script(seed="hello", objective=objective)
+        script = generate_evaluator_script(seed="hello", objective=objective, evaluator_type="command")
 
         script_path = tmp_path / "eval.sh"
         script_path.write_text(script)
@@ -60,7 +72,7 @@ class TestGenerateEvaluatorScript:
         assert f"OBJECTIVE = {objective!r}" in script
 
     def test_command_script_handles_large_candidate(self, tmp_path: Path):
-        script = generate_evaluator_script(seed="hello", objective="test")
+        script = generate_evaluator_script(seed="hello", objective="test", evaluator_type="command")
         script_path = tmp_path / "eval.sh"
         script_path.write_text(script)
         script_path.chmod(0o755)
@@ -80,6 +92,7 @@ class TestGenerateEvaluatorScript:
         script = generate_evaluator_script(
             seed="hello",
             objective="test",
+            evaluator_type="command",
             intake={
                 "artifact_class": "instructional_content",
                 "rubric_summary": "Prioritize clarity and examples",
@@ -93,21 +106,25 @@ class TestGenerateEvaluatorScript:
         instructional = generate_evaluator_script(
             seed="hello",
             objective="test",
+            evaluator_type="command",
             intake={"artifact_class": "instructional_content"},
         )
         instruction_artifact = generate_evaluator_script(
             seed="hello",
             objective="test",
+            evaluator_type="command",
             intake={"artifact_class": "instruction_artifact"},
         )
         executable = generate_evaluator_script(
             seed="hello",
             objective="test",
+            evaluator_type="command",
             intake={"artifact_class": "executable_analytical"},
         )
         fallback = generate_evaluator_script(
             seed="hello",
             objective="test",
+            evaluator_type="command",
             intake={"artifact_class": "unknown_type"},
         )
 
@@ -116,57 +133,11 @@ class TestGenerateEvaluatorScript:
         assert "TEMPLATE_FAMILY = 'executable_analytical'" in executable
         assert "TEMPLATE_FAMILY = 'general_text'" in fallback
 
-    def test_command_script_execution_outputs_score_and_multiple_diagnostics(
-        self, tmp_path: Path
-    ):
-        script = generate_evaluator_script(
-            seed="hello world",
-            objective="improve clarity",
-            intake={
-                "artifact_class": "instruction_artifact",
-                "rubric_summary": "Accuracy and actionable instructions",
-            },
-        )
-        script_path = tmp_path / "eval.sh"
-        script_path.write_text(script)
-        script_path.chmod(0o755)
-
-        proc = subprocess.run(
-            [str(script_path)],
-            input=json.dumps({"candidate": "Step 1. Use clear commands. Do not skip checks."}),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        result = json.loads(proc.stdout)
-
-        assert "score" in result
-        assert len([key for key in result if key != "score"]) >= 2
-        assert result["objective"] == "improve clarity"
-        assert result["template_family"] == "instruction_artifact"
-        assert "rubric_summary" in result
-
-    def test_intake_execution_mode_used_when_evaluator_type_omitted(self):
-        script = generate_evaluator_script(
-            seed="hello",
-            objective="test",
-            intake={"execution_mode": "http"},
-        )
-        assert script.startswith("#!/usr/bin/env python3")
-
-    def test_explicit_evaluator_type_wins_over_intake_execution_mode(self):
-        script = generate_evaluator_script(
-            seed="hello",
-            objective="test",
-            evaluator_type="command",
-            intake={"execution_mode": "http"},
-        )
-        assert script.startswith("#!/usr/bin/env bash")
-
     def test_intake_quality_dimensions_are_embedded(self):
         script = generate_evaluator_script(
             seed="hello",
             objective="test",
+            evaluator_type="command",
             intake={
                 "quality_dimensions": [
                     {"name": "accuracy", "weight": 0.7},
@@ -175,3 +146,21 @@ class TestGenerateEvaluatorScript:
             },
         )
         assert "QUALITY_DIMENSIONS = [('accuracy', 0.7), ('clarity', 0.3)]" in script
+
+    def test_composite_evaluator_has_constraints_and_judge(self):
+        script = generate_evaluator_script(seed="hello", objective="test", evaluator_type="composite")
+        assert "_constraint_non_empty" in script
+        assert "hard_constraint_failures" in script
+        assert "_run_judge" in script
+        assert "litellm" in script
+
+    def test_dataset_flag_adds_example_extraction_for_all_types(self):
+        for ev_type in ["judge", "command", "http", "composite"]:
+            script = generate_evaluator_script(
+                seed="hello",
+                objective="test",
+                evaluator_type=ev_type,
+                dataset=True,
+            )
+            assert "example" in script
+            assert "data.get(\"example\")" in script

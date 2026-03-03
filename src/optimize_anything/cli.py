@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
-import math
 import os
 from pathlib import Path
 import shlex
@@ -23,7 +22,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # optimize subcommand
     opt_parser = subparsers.add_parser("optimize", help="Run optimization")
-    opt_parser.add_argument("seed_file", help="Path to seed artifact file")
+    opt_parser.add_argument("seed_file", nargs="?", help="Path to seed artifact file")
+    opt_parser.add_argument(
+        "--no-seed",
+        action="store_true",
+        default=False,
+        help="Run without a seed file; GEPA bootstraps from --objective.",
+    )
     opt_parser.add_argument(
         "--evaluator-command", nargs="+", help="Shell command for evaluation"
     )
@@ -40,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     opt_parser.add_argument("--objective", help="Natural language objective")
     opt_parser.add_argument("--background", help="Domain context")
+    opt_parser.add_argument("--dataset", help="Path to training dataset JSONL file")
+    opt_parser.add_argument("--valset", help="Path to validation dataset JSONL file")
     opt_parser.add_argument(
         "--budget", type=int, default=None, help="Max evaluator calls (default: 100)"
     )
@@ -85,8 +92,36 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     opt_parser.add_argument(
+        "--parallel",
+        action="store_true",
+        default=False,
+        help="Enable parallel evaluator calls.",
+    )
+    opt_parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Maximum worker count for parallel evaluation.",
+    )
+    opt_parser.add_argument(
+        "--cache",
+        action="store_true",
+        default=False,
+        help="Enable evaluator result caching.",
+    )
+    opt_parser.add_argument(
         "--spec-file",
         help="Path to a TOML spec file for repeatable optimization runs.",
+    )
+    opt_parser.add_argument(
+        "--task-model",
+        help="Optional task model metadata to forward to evaluators.",
+    )
+    opt_parser.add_argument(
+        "--score-range",
+        choices=["unit", "any"],
+        default="unit",
+        help="Score validation mode for command/http evaluators: unit (0..1) or any finite float.",
     )
 
     # generate-evaluator subcommand
@@ -99,8 +134,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen_parser.add_argument(
         "--evaluator-type",
-        choices=["command", "http"],
-        help="Script type: 'command' (bash) or 'http' (Python server)",
+        choices=["judge", "command", "http", "composite"],
+        default="judge",
+        help="Script type: 'judge' (Python litellm), 'command' (bash), 'http' (Python server), or 'composite'",
+    )
+    gen_parser.add_argument(
+        "--model",
+        default="openai/gpt-4o-mini",
+        help="LiteLLM model to hardcode in generated judge/composite evaluators",
+    )
+    gen_parser.add_argument(
+        "--dataset",
+        action="store_true",
+        default=False,
+        help="Generate dataset-aware template (expects {'candidate': '...', 'example': {...}} input).",
     )
     gen_parser.add_argument(
         "--intake-json", help="Evaluator intake spec as an inline JSON string"
@@ -183,6 +230,16 @@ def main(argv: list[str] | None = None) -> int:
     score_parser.add_argument(
         "--intake-file", help="Path to evaluator intake specification JSON file"
     )
+    score_parser.add_argument(
+        "--task-model",
+        help="Optional task model metadata to forward to evaluators.",
+    )
+    score_parser.add_argument(
+        "--score-range",
+        choices=["unit", "any"],
+        default="unit",
+        help="Score validation mode for command/http evaluators: unit (0..1) or any finite float.",
+    )
 
     # analyze subcommand
     analyze_parser = subparsers.add_parser(
@@ -238,6 +295,28 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
+def _call_factory_with_compat(factory: object, *args: object, **kwargs: object) -> object:
+    """Call factory with kwargs, retrying without unknown kwargs for compatibility."""
+    try:
+        return factory(*args, **kwargs)
+    except TypeError as exc:
+        message = str(exc)
+        if "unexpected keyword argument" not in message:
+            raise
+
+        filtered_kwargs = dict(kwargs)
+        dropped = False
+        for key in ("task_model", "score_range"):
+            if key in filtered_kwargs:
+                filtered_kwargs.pop(key)
+                dropped = True
+
+        if not dropped:
+            raise
+
+        return factory(*args, **filtered_kwargs)
+
+
 def _resolve_evaluator(
     *,
     evaluator_command: list[str] | None,
@@ -249,6 +328,8 @@ def _resolve_evaluator(
     intake_spec: dict[str, object] | None,
     allow_intake_fallback: bool = False,
     api_base: str | None = None,
+    task_model: str | None = None,
+    score_range: str = "unit",
 ) -> tuple[object | None, str]:
     """Resolve evaluator from command, URL, judge model, or intake spec.
 
@@ -279,19 +360,51 @@ def _resolve_evaluator(
         return (None, "Error: provide --evaluator-command, --evaluator-url, or --judge-model")
 
     if evaluator_command:
-        preflight_error = _preflight_command_evaluator(
-            evaluator_command,
-            cwd=command_cwd,
-        )
+        if score_range == "any":
+            preflight_error = _preflight_command_evaluator(
+                evaluator_command,
+                cwd=command_cwd,
+                score_range=score_range,
+            )
+            eval_fn = _call_factory_with_compat(
+                command_evaluator,
+                evaluator_command,
+                cwd=command_cwd,
+                task_model=task_model,
+                score_range=score_range,
+            )
+        else:
+            preflight_error = _preflight_command_evaluator(
+                evaluator_command,
+                cwd=command_cwd,
+            )
+            eval_fn = _call_factory_with_compat(
+                command_evaluator,
+                evaluator_command,
+                cwd=command_cwd,
+                task_model=task_model,
+            )
         if preflight_error is not None:
             return (None, preflight_error)
-        eval_fn = command_evaluator(evaluator_command, cwd=command_cwd)
         evaluator_label = shlex.join(evaluator_command)
     elif evaluator_url:
-        preflight_error = _preflight_http_evaluator(evaluator_url)
+        if score_range == "any":
+            preflight_error = _preflight_http_evaluator(evaluator_url, score_range=score_range)
+            eval_fn = _call_factory_with_compat(
+                http_evaluator,
+                evaluator_url,
+                task_model=task_model,
+                score_range=score_range,
+            )
+        else:
+            preflight_error = _preflight_http_evaluator(evaluator_url)
+            eval_fn = _call_factory_with_compat(
+                http_evaluator,
+                evaluator_url,
+                task_model=task_model,
+            )
         if preflight_error is not None:
             return (None, preflight_error)
-        eval_fn = http_evaluator(evaluator_url)
         evaluator_label = evaluator_url
     else:  # judge_model
         judge_obj = judge_objective or objective
@@ -303,12 +416,14 @@ def _resolve_evaluator(
         if intake_spec is not None:
             quality_dimensions = intake_spec.get("quality_dimensions")
             hard_constraints = intake_spec.get("hard_constraints") or None
-        eval_fn = llm_judge_evaluator(
+        eval_fn = _call_factory_with_compat(
+            llm_judge_evaluator,
             judge_obj,
             model=judge_model,
             quality_dimensions=quality_dimensions,
             hard_constraints=hard_constraints,
             api_base=api_base,
+            task_model=task_model,
         )
         evaluator_label = f"LLM judge ({judge_model})"
 
@@ -324,15 +439,51 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         if spec is not None:
             args = _apply_spec_to_args(args, spec)
 
-    seed = _read_seed(args.seed_file)
-    if seed is None:
-        return 1
+    seed: str | None = None
+    if args.seed_file is not None:
+        seed = _read_seed(args.seed_file)
+        if seed is None:
+            return 1
+    else:
+        if not args.no_seed:
+            print("Error: provide seed_file or pass --no-seed", file=sys.stderr)
+            return 1
+        if not args.objective or not args.model:
+            print(
+                "Error: seedless mode (--no-seed) requires both --objective and --model",
+                file=sys.stderr,
+            )
+            return 1
 
     if args.budget is None:
         args.budget = 100
     if args.budget < 1:
         print("Error: --budget must be at least 1", file=sys.stderr)
         return 1
+
+    if args.valset and not args.dataset:
+        print("Error: --valset requires --dataset", file=sys.stderr)
+        return 1
+
+    dataset = None
+    valset = None
+    if args.dataset:
+        from optimize_anything.dataset import load_dataset
+
+        try:
+            dataset = load_dataset(args.dataset)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
+    if args.valset:
+        from optimize_anything.dataset import load_dataset
+
+        try:
+            valset = load_dataset(args.valset)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
 
     intake_spec = _load_and_normalize_intake_spec(
         intake_json=args.intake_json,
@@ -359,6 +510,8 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         intake_spec=intake_spec,
         allow_intake_fallback=True,
         api_base=args.api_base,
+        task_model=args.task_model,
+        score_range=args.score_range,
     )
     if eval_fn is None:
         print(evaluator_label, file=sys.stderr)
@@ -377,17 +530,32 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     )
 
     model = args.model or os.environ.get("OPTIMIZE_ANYTHING_MODEL")
+    gepa_run_dir = None
+    if getattr(args, "run_dir", None):
+        gepa_run_dir = _timestamped_run_dir(args.run_dir)
+
+    parallel_enabled = args.parallel or (args.workers is not None)
+    engine = EngineConfig(
+        max_metric_calls=args.budget,
+        run_dir=gepa_run_dir,
+        parallel=parallel_enabled,
+        max_workers=args.workers,
+        cache_evaluation=args.cache,
+    )
+
     if model:
         config = GEPAConfig(
-            engine=EngineConfig(max_metric_calls=args.budget),
+            engine=engine,
             reflection=ReflectionConfig(reflection_lm=model),
         )
     else:
-        config = GEPAConfig(engine=EngineConfig(max_metric_calls=args.budget))
+        config = GEPAConfig(engine=engine)
     try:
         result = optimize_anything(
             seed_candidate=seed,
             evaluator=eval_fn,
+            dataset=dataset,
+            valset=valset,
             objective=args.objective,
             background=args.background,
             config=config,
@@ -416,10 +584,10 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             return 1
         summary["output_file"] = args.output
 
-    if getattr(args, "run_dir", None):
+    if gepa_run_dir:
         saved_dir = _save_run_dir(
-            run_dir=args.run_dir,
-            seed=seed,
+            run_dir=gepa_run_dir,
+            seed=seed or "",
             best_artifact=best,
             summary=summary,
         )
@@ -427,19 +595,22 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             summary["run_dir"] = saved_dir
 
     if args.diff:
-        seed_lines = seed.splitlines(keepends=True)
-        best_str = best if isinstance(best, str) else json.dumps(best)
-        best_lines = best_str.splitlines(keepends=True)
-        diff_output = difflib.unified_diff(
-            seed_lines, best_lines, fromfile="seed", tofile="optimized",
-        )
-        diff_text = "".join(diff_output)
-        if diff_text:
-            print("\n--- diff: seed vs optimized ---", file=sys.stderr)
-            print(diff_text, end="", file=sys.stderr)
-            print("--- end diff ---", file=sys.stderr)
+        if seed is None:
+            print("(no diff: seedless mode has no seed artifact)", file=sys.stderr)
         else:
-            print("(no diff: seed and optimized artifact are identical)", file=sys.stderr)
+            seed_lines = seed.splitlines(keepends=True)
+            best_str = best if isinstance(best, str) else json.dumps(best)
+            best_lines = best_str.splitlines(keepends=True)
+            diff_output = difflib.unified_diff(
+                seed_lines, best_lines, fromfile="seed", tofile="optimized",
+            )
+            diff_text = "".join(diff_output)
+            if diff_text:
+                print("\n--- diff: seed vs optimized ---", file=sys.stderr)
+                print(diff_text, end="", file=sys.stderr)
+                print("--- end diff ---", file=sys.stderr)
+            else:
+                print("(no diff: seed and optimized artifact are identical)", file=sys.stderr)
 
     # Judge-specific plateau advisory
     if summary.get("plateau_detected") and args.judge_model:
@@ -528,6 +699,8 @@ def _cmd_generate_evaluator(args: argparse.Namespace) -> int:
         objective=args.objective,
         evaluator_type=args.evaluator_type,
         intake=intake_spec,
+        model=args.model,
+        dataset=args.dataset,
     )
     print(script, end="")
     return 0
@@ -593,6 +766,8 @@ def _cmd_score(args: argparse.Namespace) -> int:
         intake_spec=intake_spec,
         allow_intake_fallback=False,
         api_base=args.api_base,
+        task_model=args.task_model,
+        score_range=args.score_range,
     )
     if eval_fn is None:
         print(error, file=sys.stderr)
@@ -744,7 +919,12 @@ def _validate_output_path(output_path: str | None) -> str | None:
     return None
 
 
-def _preflight_command_evaluator(command: list[str], *, cwd: str | None) -> str | None:
+def _preflight_command_evaluator(
+    command: list[str],
+    *,
+    cwd: str | None,
+    score_range: str = "unit",
+) -> str | None:
     cwd_path: Path | None = None
     if cwd is not None:
         cwd_path = _resolve_path(cwd, base=Path.cwd())
@@ -784,7 +964,7 @@ def _preflight_command_evaluator(command: list[str], *, cwd: str | None) -> str 
                 detail=f"script path is a directory: {script_arg}",
             )
 
-    payload = json.dumps({"candidate": "__optimize_anything_preflight__"})
+    payload = json.dumps({"_protocol_version": 2, "candidate": "__optimize_anything_preflight__"})
     run_cwd = str(cwd_path) if cwd_path is not None else None
     try:
         proc = subprocess.run(
@@ -826,17 +1006,22 @@ def _preflight_command_evaluator(command: list[str], *, cwd: str | None) -> str 
             detail=f"stdout is not valid JSON: {e.msg}; stdout: {snippet}",
         )
 
-    payload_error = _validate_evaluator_payload(result)
+    payload_error = _validate_evaluator_payload(result, score_range=score_range)
     if payload_error is not None:
         return _format_preflight_error(command=command, cwd=cwd, detail=payload_error)
 
     return None
 
 
-def _preflight_http_evaluator(url: str, *, timeout: float = 10.0) -> str | None:
+def _preflight_http_evaluator(
+    url: str,
+    *,
+    timeout: float = 10.0,
+    score_range: str = "unit",
+) -> str | None:
     import httpx
 
-    payload = {"candidate": "__optimize_anything_preflight__"}
+    payload = {"_protocol_version": 2, "candidate": "__optimize_anything_preflight__"}
     try:
         resp = httpx.post(url, json=payload, timeout=timeout)
         resp.raise_for_status()
@@ -867,7 +1052,7 @@ def _preflight_http_evaluator(url: str, *, timeout: float = 10.0) -> str | None:
             f"(url: {url}): {snippet}"
         )
 
-    payload_error = _validate_evaluator_payload(result)
+    payload_error = _validate_evaluator_payload(result, score_range=score_range)
     if payload_error is not None:
         return f"Error: HTTP evaluator preflight response invalid (url: {url}): {payload_error}"
 
@@ -900,7 +1085,7 @@ def _apply_spec_to_args(
 
     args = copy.copy(args)
 
-    for key in ("objective", "background", "output", "evaluator_url", "evaluator_cwd"):
+    for key in ("seed_file", "objective", "background", "output", "evaluator_url", "evaluator_cwd", "task_model"):
         if getattr(args, key, None) is None and spec.get(key) is not None:
             setattr(args, key, spec[key])
 
@@ -917,6 +1102,15 @@ def _apply_spec_to_args(
     if getattr(args, "model", None) is None and spec.get("proposer_model") is not None:
         args.model = spec["proposer_model"]
 
+    if getattr(args, "workers", None) is None and spec.get("workers") is not None:
+        args.workers = spec["workers"]
+
+    if not getattr(args, "parallel", False) and spec.get("parallel") is True:
+        args.parallel = True
+
+    if not getattr(args, "cache", False) and spec.get("cache") is True:
+        args.cache = True
+
     # Intake: apply only if neither --intake-json nor --intake-file was provided
     if (
         getattr(args, "intake_json", None) is None
@@ -928,6 +1122,15 @@ def _apply_spec_to_args(
     return args
 
 
+def _timestamped_run_dir(run_dir: str) -> str:
+    """Build a timestamped run directory path under the user-provided base path."""
+    from datetime import datetime, timezone
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return str(Path(run_dir).expanduser() / f"run-{timestamp}")
+
+
+
 def _save_run_dir(
     *,
     run_dir: str,
@@ -935,14 +1138,11 @@ def _save_run_dir(
     best_artifact: str | object,
     summary: dict,
 ) -> str | None:
-    """Save run artifacts to <run_dir>/run-<timestamp>/.
+    """Save supplementary run artifacts to an already-resolved run directory.
 
     Returns the created directory path, or None if writing failed.
     """
-    from datetime import datetime, timezone
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    out = Path(run_dir).expanduser() / f"run-{timestamp}"
+    out = Path(run_dir).expanduser()
     try:
         out.mkdir(parents=True, exist_ok=True)
         (out / "seed.txt").write_text(seed)
@@ -981,9 +1181,9 @@ def _maybe_script_path_arg(command: list[str]) -> str | None:
     return None
 
 
-def _validate_evaluator_payload(result: object) -> str | None:
+def _validate_evaluator_payload(result: object, score_range: str = "unit") -> str | None:
     from optimize_anything.evaluators import validate_evaluator_payload
-    return validate_evaluator_payload(result)
+    return validate_evaluator_payload(result, score_range=score_range)
 
 
 def _resolve_path(path: str, *, base: Path) -> Path:

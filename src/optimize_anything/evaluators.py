@@ -1,13 +1,14 @@
 """Evaluator factories for external processes and HTTP services.
 
 These bridge external scoring systems to gepa's evaluator protocol:
-    evaluator(candidate: str) -> float | tuple[float, dict]
+    evaluator(candidate: str, example: object | None = None) -> float | tuple[float, dict]
 """
 
 from __future__ import annotations
 
 import json
 import math
+import os
 import subprocess
 from typing import Any, Callable
 
@@ -19,11 +20,25 @@ def command_evaluator(
     *,
     timeout: float = 30.0,
     cwd: str | None = None,
-) -> Callable[[str], tuple[float, dict[str, Any]]]:
+    score_range: str = "unit",
+    task_model: str | None = None,
+) -> Callable[[str, Any | None], tuple[float, dict[str, Any]]]:
     """Create an evaluator that runs a shell command."""
 
-    def evaluate(candidate: str) -> tuple[float, dict[str, Any]]:
-        payload = json.dumps({"candidate": candidate})
+    def evaluate(candidate: str, example: Any | None = None) -> tuple[float, dict[str, Any]]:
+        payload_data: dict[str, Any] = {
+            "_protocol_version": 2,
+            "candidate": candidate,
+        }
+        if example is not None:
+            payload_data["example"] = example
+        if task_model is not None:
+            payload_data["task_model"] = task_model
+        payload = json.dumps(payload_data)
+        env = None
+        if task_model is not None:
+            env = os.environ.copy()
+            env["OPTIMIZE_ANYTHING_TASK_MODEL"] = task_model
         try:
             proc = subprocess.run(
                 command,
@@ -32,6 +47,7 @@ def command_evaluator(
                 text=True,
                 timeout=timeout,
                 cwd=cwd,
+                env=env,
             )
         except FileNotFoundError:
             return 0.0, {"error": f"Command executable not found: {command[0]}"}
@@ -54,7 +70,7 @@ def command_evaluator(
                 "stdout": proc.stdout.strip(),
             }
 
-        return _parse_evaluator_result(result)
+        return _parse_evaluator_result(result, score_range=score_range)
 
     return evaluate
 
@@ -64,11 +80,20 @@ def http_evaluator(
     *,
     timeout: float = 30.0,
     headers: dict[str, str] | None = None,
-) -> Callable[[str], tuple[float, dict[str, Any]]]:
+    score_range: str = "unit",
+    task_model: str | None = None,
+) -> Callable[[str, Any | None], tuple[float, dict[str, Any]]]:
     """Create an evaluator that calls an HTTP endpoint."""
 
-    def evaluate(candidate: str) -> tuple[float, dict[str, Any]]:
-        payload = {"candidate": candidate}
+    def evaluate(candidate: str, example: Any | None = None) -> tuple[float, dict[str, Any]]:
+        payload: dict[str, Any] = {
+            "_protocol_version": 2,
+            "candidate": candidate,
+        }
+        if example is not None:
+            payload["example"] = example
+        if task_model is not None:
+            payload["task_model"] = task_model
         try:
             resp = httpx.post(
                 url,
@@ -92,12 +117,12 @@ def http_evaluator(
                 "body": resp.text[:500],
             }
 
-        return _parse_evaluator_result(result)
+        return _parse_evaluator_result(result, score_range=score_range)
 
     return evaluate
 
 
-def validate_evaluator_payload(result: Any) -> str | None:
+def validate_evaluator_payload(result: Any, score_range: str = "unit") -> str | None:
     """Return None if valid, or a human-readable error string."""
     if not isinstance(result, dict):
         return "evaluator output must be a JSON object"
@@ -110,12 +135,12 @@ def validate_evaluator_payload(result: Any) -> str | None:
         return "evaluator output 'score' must be numeric"
     if not math.isfinite(score):
         return "evaluator output 'score' must be finite"
-    if score < 0.0 or score > 1.0:
+    if score_range == "unit" and (score < 0.0 or score > 1.0):
         return "evaluator output 'score' must be between 0.0 and 1.0"
     return None
 
 
-def _parse_evaluator_result(result: Any) -> tuple[float, dict[str, Any]]:
+def _parse_evaluator_result(result: Any, score_range: str = "unit") -> tuple[float, dict[str, Any]]:
     """Validate evaluator JSON payload and extract score + side information."""
     if not isinstance(result, dict):
         return 0.0, {
@@ -141,7 +166,7 @@ def _parse_evaluator_result(result: Any) -> tuple[float, dict[str, Any]]:
         side_info["score"] = raw_score
         return 0.0, side_info
 
-    if score < 0.0 or score > 1.0:
+    if score_range == "unit" and (score < 0.0 or score > 1.0):
         side_info["error"] = "Evaluator 'score' must be between 0.0 and 1.0"
         side_info["score"] = raw_score
         return 0.0, side_info
