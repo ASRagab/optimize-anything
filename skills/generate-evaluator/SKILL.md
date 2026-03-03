@@ -46,9 +46,40 @@ Generate an evaluator that scores candidate artifacts for optimization with gepa
 - `--dataset`: generate dataset-aware templates that read `example` and show how to use it in scoring.
 - `--intake-json` / `--intake-file`: embed rubric/quality dimensions.
 
+## Quick Start
+
+Generate a judge evaluator and test it:
+
+```bash
+# Generate
+optimize-anything generate-evaluator seed.txt \
+  --objective "Score clarity and specificity" \
+  --model openai/gpt-4o-mini > eval_judge.py
+
+# Test it
+echo '{"candidate":"Your artifact text here"}' | python3 eval_judge.py
+```
+
+This returns JSON like:
+
+```json
+{"score": 0.82, "reasoning": "Clear structure but lacks examples", "clarity": 0.9, "specificity": 0.7}
+```
+
+For dataset-aware evaluators:
+
+```bash
+optimize-anything generate-evaluator seed.txt \
+  --objective "Score correctness" \
+  --dataset examples.jsonl > eval_dataset.py
+
+echo '{"candidate":"text","example":{"input":"q","expected":"a"}}' | python3 eval_dataset.py
+```
+
 ## Workflow
 1. Clarify artifact + objective + hard constraints.
 2. Pick evaluator pattern (judge default, composite for safety gates).
 3. Run generator to scaffold.
 4. Customize scoring logic and side-info fields.
-5. Test with stdin payloads (with and without `example` when dataset mode is enabled).
+5. Test with stdin payloads. You should see JSON with `score` plus diagnostic fields.
+6. Validate score range: a good seed should score between 0.3-0.7. If above 0.85, the evaluator lacks discrimination.
