@@ -414,6 +414,15 @@ def _generate_judge_evaluator(
             key_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
             return any(os.environ.get(k) for k in key_vars)
 
+        def _strip_code_fences(text: str) -> str:
+            cleaned = text.strip()
+            if cleaned.startswith("```"):
+                first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+                cleaned = cleaned[first_newline + 1:]
+                if cleaned.rstrip().endswith("```"):
+                    cleaned = cleaned.rstrip()[:-len("```")].rstrip()
+            return cleaned
+
         def main() -> int:
             try:
                 data = json.load(sys.stdin)
@@ -445,7 +454,8 @@ def _generate_judge_evaluator(
                     response_format={{"type": "json_object"}},
                 )
                 raw_content = response.choices[0].message.content
-                parsed = json.loads(raw_content) if raw_content else {{}}
+                cleaned_content = _strip_code_fences(raw_content) if raw_content else ""
+                parsed = json.loads(cleaned_content) if cleaned_content else {{}}
             except Exception as exc:
                 print(json.dumps({{"score": 0.0, "reasoning": f"LLM call failed: {{type(exc).__name__}}: {{exc}}"}}))
                 return 0
@@ -522,6 +532,15 @@ def _generate_composite_evaluator(
 
         JUDGE_SCRIPT = {judge_script!r}
 
+        def _strip_code_fences(text: str) -> str:
+            cleaned = text.strip()
+            if cleaned.startswith("```"):
+                first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+                cleaned = cleaned[first_newline + 1:]
+                if cleaned.rstrip().endswith("```"):
+                    cleaned = cleaned.rstrip()[:-len("```")].rstrip()
+            return cleaned
+
         def _run_judge(payload: dict[str, object]) -> dict[str, object]:
             import subprocess
             proc = subprocess.run(
@@ -534,7 +553,9 @@ def _generate_composite_evaluator(
             if proc.returncode != 0:
                 return {{"score": 0.0, "reasoning": f"judge subprocess failed: {{proc.stderr.strip()}}"}}
             try:
-                return json.loads(proc.stdout.strip() or "{{}}")
+                raw_output = proc.stdout.strip()
+                cleaned_output = _strip_code_fences(raw_output) if raw_output else ""
+                return json.loads(cleaned_output or "{{}}")
             except json.JSONDecodeError:
                 return {{"score": 0.0, "reasoning": "judge returned invalid JSON"}}
 

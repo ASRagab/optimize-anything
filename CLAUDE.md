@@ -43,7 +43,8 @@ evaluator(candidate: str) -> tuple[float, dict]
 ```
 
 Input/output contract for external evaluators:
-- Input: `{"candidate": "<text>"}` (stdin for command mode, POST JSON for http mode)
+- Input: `{"_protocol_version": 2, "candidate": "<text>", "example": {...}, "task_model": "..."}` (stdin for command mode, POST JSON for http mode)
+  - `example` and `task_model` are optional.
 - Output: JSON object with required numeric `score` and optional diagnostic keys
 
 ## Delivery Surfaces

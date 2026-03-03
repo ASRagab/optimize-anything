@@ -38,8 +38,8 @@ result = optimize_anything(
 result = optimize_anything(
     seed_candidate="...",
     evaluator=eval_fn,
-    dataset=`train_examples`,
-    valset=`val_examples`,
+    dataset=train_examples,
+    valset=val_examples,
 )
 ```
 

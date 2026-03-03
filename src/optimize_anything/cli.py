@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -296,25 +297,28 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _call_factory_with_compat(factory: object, *args: object, **kwargs: object) -> object:
-    """Call factory with kwargs, retrying without unknown kwargs for compatibility."""
-    try:
+    """Call a factory, explicitly dropping unsupported kwargs with warnings."""
+    signature = inspect.signature(factory)
+    parameters = signature.parameters
+    accepts_var_kwargs = any(
+        param.kind == inspect.Parameter.VAR_KEYWORD
+        for param in parameters.values()
+    )
+
+    if accepts_var_kwargs:
         return factory(*args, **kwargs)
-    except TypeError as exc:
-        message = str(exc)
-        if "unexpected keyword argument" not in message:
-            raise
 
-        filtered_kwargs = dict(kwargs)
-        dropped = False
-        for key in ("task_model", "score_range"):
-            if key in filtered_kwargs:
-                filtered_kwargs.pop(key)
-                dropped = True
+    filtered_kwargs: dict[str, object] = {}
+    for key, value in kwargs.items():
+        if key in parameters:
+            filtered_kwargs[key] = value
+        else:
+            print(
+                f"Warning: evaluator factory does not accept '{key}', skipping",
+                file=sys.stderr,
+            )
 
-        if not dropped:
-            raise
-
-        return factory(*args, **filtered_kwargs)
+    return factory(*args, **filtered_kwargs)
 
 
 def _resolve_evaluator(
