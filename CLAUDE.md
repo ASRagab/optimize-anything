@@ -13,6 +13,7 @@ uv run optimize-anything --help                   # CLI entry point
 uv run optimize-anything score FILE --evaluator-command bash eval.sh  # Score one artifact
 uv run optimize-anything score FILE --judge-model openai/gpt-4o-mini --objective "Score clarity"  # LLM judge scoring
 uv run optimize-anything analyze FILE --judge-model openai/gpt-4o-mini --objective "Quality"    # Discover quality dimensions
+uv run optimize-anything validate FILE --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 --objective "Quality"  # Multi-provider judge validation
 uv run python scripts/check.py                    # Unified gate: pytest + smoke + score_check
 uv run python scripts/check.py --skip-smoke       # Unified gate without smoke (offline)
 uv run python scripts/smoke_harness.py --budget 1 # CLI smoke check
@@ -50,7 +51,7 @@ Input/output contract for external evaluators:
 ## Delivery Surfaces
 
 - `src/optimize_anything/cli.py`
-  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `analyze`
+  - Subcommands: `optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `validate`, `analyze`
   - Three mutually exclusive evaluator sources: `--evaluator-command`, `--evaluator-url`, `--judge-model`
   - Multi-provider flags: `--model` (proposer LLM), `--judge-model` (judge LLM), `--api-base`
   - `--judge-objective` overrides `--objective` for the judge; falls back to `--objective`
@@ -58,6 +59,11 @@ Input/output contract for external evaluators:
   - Supports intake flags (`--intake-json`, `--intake-file`) and `--evaluator-cwd`
   - Early stopping controls: `--early-stop`, `--early-stop-window`, `--early-stop-threshold`
   - Cache controls: `--cache` plus cache warm-start via `--cache-from <run-dir>` (copies prior `fitness_cache`)
+  - Data/generalization flags: `--dataset`, `--valset`
+  - Parallelism flags: `--parallel`, `--workers`
+  - Seed handling: `--no-seed` (requires `--objective` and `--model`)
+  - Proposer/evaluator metadata: `--task-model`
+  - Score validation mode: `--score-range unit|any`
 
 - `src/optimize_anything/evaluators.py`
   - `command_evaluator(...)`, `http_evaluator(...)`, strict score validation
@@ -106,6 +112,35 @@ Do not conflate these in docs or implementation.
 commands/optimize.md
 skills/generate-evaluator/
 skills/optimization-guide/
+```
+
+## Common CLI Workflows
+
+### Dataset / Valset optimization
+
+```bash
+# Multi-task optimization (train set only)
+uv run optimize-anything optimize prompt.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Improve quality across use cases" \
+  --dataset data/train.jsonl \
+  --budget 120 --parallel --workers 4 --cache --run-dir runs --diff --early-stop
+
+# Generalization optimization (train + validation)
+uv run optimize-anything optimize prompt.txt \
+  --judge-model openai/gpt-4o-mini \
+  --objective "Generalize to unseen examples" \
+  --dataset data/train.jsonl --valset data/val.jsonl \
+  --budget 150 --cache --cache-from runs/run-20260303-120000 --run-dir runs --diff --early-stop
+```
+
+### Multi-provider validation
+
+```bash
+uv run optimize-anything validate result.txt \
+  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --objective "Score for clarity, constraint adherence, and robustness" \
+  --intake-file intake.json
 ```
 
 ## Testing Notes

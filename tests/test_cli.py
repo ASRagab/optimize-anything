@@ -2452,6 +2452,110 @@ class TestScoreJudgeModel:
             captured_kwargs.get("base_url") == "http://localhost:11434/v1"
 
 
+class TestValidateCommand:
+    def test_validate_help(self, capsys):
+        try:
+            main(["validate", "--help"])
+        except SystemExit as e:
+            assert e.code == 0
+        captured = capsys.readouterr()
+        assert "--providers" in captured.out
+        assert "--objective" in captured.out
+
+    def test_validate_requires_objective(self, tmp_path: Path):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main([
+                "validate",
+                str(artifact),
+                "--providers",
+                "openai/gpt-4o-mini",
+                "anthropic/claude-sonnet-4-5",
+            ])
+        assert exc_info.value.code == 2
+
+    def test_validate_providers_requires_at_least_two_models(self, tmp_path: Path, capsys):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-4o-mini",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 1
+        assert "at least 2" in capsys.readouterr().err
+
+    def test_validate_calls_llm_judge_for_each_provider(self, tmp_path: Path, monkeypatch):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        calls: list[tuple[str, str]] = []
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            def _eval(candidate):
+                calls.append((objective, model))
+                return 0.8, {"reasoning": f"ok-{model}"}
+            return _eval
+
+        monkeypatch.setattr("optimize_anything.llm_judge.llm_judge_evaluator", fake_llm_judge)
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-4o-mini",
+            "anthropic/claude-sonnet-4-5",
+            "google/gemini-2.0-flash",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 0
+        assert calls == [
+            ("Score quality", "openai/gpt-4o-mini"),
+            ("Score quality", "anthropic/claude-sonnet-4-5"),
+            ("Score quality", "google/gemini-2.0-flash"),
+        ]
+
+    def test_validate_outputs_aggregates(self, tmp_path: Path, capsys, monkeypatch):
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        by_model = {
+            "openai/gpt-4o-mini": 0.6,
+            "anthropic/claude-sonnet-4-5": 0.8,
+        }
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            def _eval(candidate):
+                return by_model[model], {"reasoning": f"r-{model}"}
+            return _eval
+
+        monkeypatch.setattr("optimize_anything.llm_judge.llm_judge_evaluator", fake_llm_judge)
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-4o-mini",
+            "anthropic/claude-sonnet-4-5",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert len(payload["providers"]) == 2
+        assert payload["mean"] == pytest.approx(0.7)
+        assert payload["stddev"] == pytest.approx(0.1414213562)
+        assert payload["min"] == pytest.approx(0.6)
+        assert payload["max"] == pytest.approx(0.8)
+
+
 class TestAnalyzeCommand:
     """Tests for the analyze subcommand."""
 

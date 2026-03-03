@@ -102,6 +102,14 @@ def test_removed_server_artifacts_not_referenced_in_active_docs():
         assert term not in docs_text, f"active docs still reference removed artifact: {term}"
 
 
+def test_validate_subcommand_is_documented_and_in_runtime():
+    docs_text = _combined_docs_text()
+    _assert_contains_terms(text=docs_text, terms=["validate"], label="docs")
+
+    cli_source = _read_text(Path("src/optimize_anything/cli.py"))
+    _assert_contains_terms(text=cli_source, terms=["validate_parser", "_cmd_validate"], label="src/optimize_anything/cli.py")
+
+
 # --- Plugin manifest tests ---
 
 
@@ -121,7 +129,7 @@ class TestPluginManifest:
         commands_dir = REPO_ROOT / "commands"
         assert commands_dir.is_dir(), "commands/ directory missing"
         command_files = {p.stem for p in commands_dir.glob("*.md")}
-        expected = {"optimize", "intake", "explain", "budget", "score", "analyze"}
+        expected = {"optimize", "intake", "explain", "budget", "score", "analyze", "quick", "validate", "compare"}
         assert expected.issubset(command_files), (
             f"Missing command files: {expected - command_files}"
         )

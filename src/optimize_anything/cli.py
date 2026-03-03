@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import statistics
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -267,6 +268,34 @@ def main(argv: list[str] | None = None) -> int:
         help="Score validation mode for command/http evaluators: unit (0..1) or any finite float.",
     )
 
+    # validate subcommand
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Cross-validate an artifact with multiple LLM judge providers",
+    )
+    validate_parser.add_argument("artifact_file", help="Path to artifact file to validate")
+    validate_parser.add_argument(
+        "--providers",
+        nargs="+",
+        required=True,
+        help="Two or more LiteLLM provider model strings (e.g. openai/gpt-4o-mini anthropic/claude-sonnet-4-5)",
+    )
+    validate_parser.add_argument(
+        "--objective",
+        required=True,
+        help="Objective for LLM judge scoring.",
+    )
+    validate_parser.add_argument(
+        "--intake-json", help="Evaluator intake spec as an inline JSON string"
+    )
+    validate_parser.add_argument(
+        "--intake-file", help="Path to evaluator intake specification JSON file"
+    )
+    validate_parser.add_argument(
+        "--api-base",
+        help="Override API base URL for litellm calls.",
+    )
+
     # analyze subcommand
     analyze_parser = subparsers.add_parser(
         "analyze",
@@ -316,6 +345,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_budget(args)
     elif args.command == "score":
         return _cmd_score(args)
+    elif args.command == "validate":
+        return _cmd_validate(args)
     elif args.command == "analyze":
         return _cmd_analyze(args)
     return 1
@@ -856,6 +887,60 @@ def _cmd_score(args: argparse.Namespace) -> int:
 
     result = {"score": score, **side_info}
     print(json.dumps(result, indent=2, default=str))
+    return 0
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    artifact = _read_seed(args.artifact_file)
+    if artifact is None:
+        return 1
+
+    if len(args.providers) < 2:
+        print("Error: --providers requires at least 2 model strings", file=sys.stderr)
+        return 1
+
+    intake_spec = _load_and_normalize_intake_spec(
+        intake_json=args.intake_json,
+        intake_file=args.intake_file,
+    )
+    intake_requested = args.intake_json is not None or args.intake_file is not None
+    if intake_requested and intake_spec is None:
+        return 1
+
+    from optimize_anything.llm_judge import llm_judge_evaluator
+
+    quality_dimensions = intake_spec.get("quality_dimensions") if intake_spec else None
+    hard_constraints = intake_spec.get("hard_constraints") if intake_spec else None
+
+    provider_results: list[dict[str, object]] = []
+    for provider in args.providers:
+        evaluator = llm_judge_evaluator(
+            args.objective,
+            model=provider,
+            quality_dimensions=quality_dimensions,
+            hard_constraints=hard_constraints,
+            api_base=args.api_base,
+        )
+        score, side_info = evaluator(artifact)
+        provider_results.append(
+            {
+                "provider": provider,
+                "score": score,
+                **side_info,
+            }
+        )
+
+    scores = [float(item["score"]) for item in provider_results]
+    summary = {
+        "artifact_file": args.artifact_file,
+        "objective": args.objective,
+        "providers": provider_results,
+        "mean": statistics.mean(scores),
+        "stddev": statistics.stdev(scores),
+        "min": min(scores),
+        "max": max(scores),
+    }
+    print(json.dumps(summary, indent=2, default=str))
     return 0
 
 
