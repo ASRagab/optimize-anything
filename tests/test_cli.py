@@ -2631,12 +2631,11 @@ class TestValidateCommand:
 
         by_model = {
             "openai/gpt-4o-mini": 0.2,
-            "anthropic/claude-sonnet-4-5": 0.4,
-            "google/gemini-2.0-flash": 0.6,
+            "anthropic/claude-sonnet-4-5": 0.6,
         }
 
         def fake_llm_judge(objective, *, model, **kwargs):
-            if model == "meta/llama-3.3-70b-instruct":
+            if model == "google/gemini-2.0-flash":
                 raise RuntimeError("timeout")
 
             def _eval(candidate):
@@ -2653,16 +2652,15 @@ class TestValidateCommand:
             "openai/gpt-4o-mini",
             "anthropic/claude-sonnet-4-5",
             "google/gemini-2.0-flash",
-            "meta/llama-3.3-70b-instruct",
             "--objective",
             "Score quality",
         ])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
-        assert payload["summary"]["successful"] == 3
+        assert payload["summary"]["successful"] == 2
         assert payload["summary"]["failed"] == 1
         assert payload["mean"] == pytest.approx(0.4)
-        assert payload["stddev"] == pytest.approx(0.2)
+        assert payload["stddev"] == pytest.approx(0.282842712474619)
         assert payload["min"] == pytest.approx(0.2)
         assert payload["max"] == pytest.approx(0.6)
 
