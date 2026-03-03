@@ -2,8 +2,19 @@ from optimize_anything.stop import plateau_stop_callback
 
 
 class DummyState:
-    def __init__(self, scores):
-        self.program_full_scores_val_set = scores
+    """Minimal state shim matching GEPAState score surface."""
+
+    def __init__(self, per_program_scores):
+        self.prog_candidate_val_subscores = [
+            {idx: score} for idx, score in enumerate(per_program_scores)
+        ]
+
+    @property
+    def program_full_scores_val_set(self):
+        return [
+            sum(scores.values()) / len(scores)
+            for scores in self.prog_candidate_val_subscores
+        ]
 
 
 def test_plateau_callback_triggers_after_flat_window():

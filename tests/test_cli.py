@@ -1788,6 +1788,50 @@ class TestEngineConfigWiring:
         assert rc == 1
         assert "requires --cache" in capsys.readouterr().err
 
+    def test_cache_from_rejects_missing_source_directory(self, tmp_path: Path, capsys, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        run_dir = tmp_path / "runs"
+        missing_source = tmp_path / "does-not-exist"
+
+        monkeypatch.setattr("optimize_anything.cli._preflight_command_evaluator", lambda command, cwd=None: None)
+
+        rc = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--cache",
+            "--cache-from", str(missing_source),
+            "--run-dir", str(run_dir),
+            "--budget", "10",
+        ])
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert f"Error: --cache-from directory does not exist: {missing_source}" in err
+
+    def test_cache_from_rejects_missing_fitness_cache_subdir(self, tmp_path: Path, capsys, monkeypatch):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        run_dir = tmp_path / "runs"
+        source_run = tmp_path / "source-run"
+        source_run.mkdir()
+
+        monkeypatch.setattr("optimize_anything.cli._preflight_command_evaluator", lambda command, cwd=None: None)
+
+        rc = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--cache",
+            "--cache-from", str(source_run),
+            "--run-dir", str(run_dir),
+            "--budget", "10",
+        ])
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert (
+            f"Error: no fitness_cache found in --cache-from directory: {source_run / 'fitness_cache'}"
+            in err
+        )
+
     def test_early_stop_not_auto_enabled_when_budget_30_or_less(self, tmp_path: Path, monkeypatch):
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("test")

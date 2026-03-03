@@ -586,7 +586,9 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
             return 1
 
     parallel_enabled = args.parallel or (args.workers is not None)
-    early_stop_active = bool(args.early_stop or args.budget > 30)
+    early_stop_active = bool(
+        args.early_stop or (args.budget is not None and args.budget > 30)
+    )
     stop_callbacks = None
     if early_stop_active:
         stop_callbacks = [
@@ -1249,11 +1251,11 @@ def _copy_cache_from_run(source_run_dir: str, target_run_dir: str) -> str | None
     """Copy fitness cache files from an existing run into a new run dir."""
     source = Path(source_run_dir).expanduser()
     if not source.exists() or not source.is_dir():
-        return f"--cache-from directory not found: {source_run_dir}"
+        return f"--cache-from directory does not exist: {source}"
 
     source_cache = source / "fitness_cache"
     if not source_cache.exists() or not source_cache.is_dir():
-        return f"no fitness_cache directory found in --cache-from path: {source_run_dir}"
+        return f"no fitness_cache found in --cache-from directory: {source_cache}"
 
     destination_cache = Path(target_run_dir).expanduser() / "fitness_cache"
     try:
