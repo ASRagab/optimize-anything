@@ -28,47 +28,26 @@ optimize-anything optimize seed.txt \
   --output result.txt
 ```
 
-CLI stdout returns a JSON summary using the current result contract:
-- `best_artifact`
-- `total_metric_calls`
-- `score_summary` (`initial`, `latest`, `best`, deltas, `num_candidates`)
-- `top_diagnostics` (**list** of `{name, value}`)
-- `plateau_detected`, `plateau_guidance`
-- optional `evaluator_failure_signal`
-- optional `early_stopped`, `stopped_at_iteration`
+CLI stdout returns a JSON summary — see [Result Contract](#result-contract) for the full shape.
 
-## Evaluator Contract (Protocol v2)
+## How It Works
 
-Evaluator input payload (stdin JSON for command mode, POST JSON for HTTP mode):
+optimize-anything runs a GEPA (Guided Evolutionary Prompt Algorithm) loop: propose → evaluate → reflect, repeating until budget is exhausted or early stopping kicks in.
 
-```json
-{"_protocol_version": 2, "candidate": "...", "example": {...}, "task_model": "..."}
+```
+seed.txt ──► [Propose] ──► candidates
+                 ▲               │
+                 │           [Evaluate]
+             [Reflect] ◄──── scores + diagnostics
 ```
 
-- `candidate` is required
-- `_protocol_version`, `example`, and `task_model` are optional/additive
-- legacy evaluators that only read `candidate` remain compatible
+1. **Propose** — The optimizer generates candidate artifacts from your seed (or from scratch in seedless mode).
+2. **Evaluate** — Each candidate is scored by your evaluator. Three evaluator types are supported: a **command evaluator** (any executable that reads JSON on stdin and writes a score on stdout), an **HTTP evaluator** (a service that accepts POST requests), or a built-in **LLM judge** (no evaluator script required — just pass `--judge-model`).
+3. **Reflect** — Scores and diagnostics feed back into the next proposal round. The loop continues, progressively improving the artifact toward your objective.
 
-Evaluator output payload:
+The evaluator is the only thing you bring. Everything else — proposal strategy, reflection, early stopping, caching, parallelism — is handled by the optimizer.
 
-```json
-{"score": 0.75, "notes": "optional diagnostics"}
-```
-
-- `score` is required
-- additional keys are treated as side-info
-
-## v2 Runtime Modes
-
-### Intake schema keys
-
-`optimize-anything intake` normalizes these keys:
-- `artifact_class`
-- `quality_dimensions`
-- `hard_constraints`
-- `evaluation_pattern`
-- `execution_mode`
-- `evaluator_cwd`
+## Runtime Modes
 
 ### Dataset / Valset modes
 
@@ -147,41 +126,6 @@ optimize-anything optimize seed.txt \
 - `analyze`
 - `validate`
 
-## `optimize` flags (complete)
-
-Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-url` OR `--judge-model`.
-
-| Flag | Description | Default |
-|---|---|---|
-| `--no-seed` | Run without seed file; bootstrap from objective | `false` |
-| `--evaluator-command <cmd...>` | Command evaluator (stdin/stdout JSON) | -- |
-| `--evaluator-url <url>` | HTTP evaluator endpoint | -- |
-| `--intake-json <json>` | Inline intake spec | -- |
-| `--intake-file <path>` | Intake spec file | -- |
-| `--evaluator-cwd <path>` | Working dir for command evaluator | -- |
-| `--objective <text>` | Optimization objective | -- |
-| `--background <text>` | Extra domain context | -- |
-| `--dataset <train.jsonl>` | Training dataset JSONL | -- |
-| `--valset <val.jsonl>` | Validation dataset JSONL (requires `--dataset`) | -- |
-| `--budget <int>` | Max evaluator calls | `100` |
-| `--output, -o <file>` | Write best artifact to file | -- |
-| `--model <model>` | Proposer model (or env fallback) | `OPTIMIZE_ANYTHING_MODEL` |
-| `--judge-model <model>` | Built-in LLM judge evaluator model | -- |
-| `--judge-objective <text>` | Judge objective override | falls back to `--objective` |
-| `--api-base <url>` | Override LiteLLM API base | -- |
-| `--diff` | Print unified diff (seed vs best) to stderr | `false` |
-| `--run-dir <path>` | Save run artifacts in timestamped run dir | -- |
-| `--parallel` | Enable parallel evaluator calls | `false` |
-| `--workers <int>` | Max workers for parallel evaluation | -- |
-| `--cache` | Enable evaluator cache | `false` |
-| `--cache-from <run-dir>` | Copy prior `fitness_cache` into new run | -- |
-| `--early-stop` | Enable plateau early stop | auto on when budget > 30 |
-| `--early-stop-window <int>` | Plateau window size | `10` |
-| `--early-stop-threshold <float>` | Min improvement required over window | `0.005` |
-| `--spec-file <path>` | Load TOML spec defaults | -- |
-| `--task-model <model>` | Optional metadata forwarded to evaluators | -- |
-| `--score-range unit|any` | Score validation mode for cmd/http | `unit` |
-
 ## Claude Code Plugin
 
 optimize-anything is also a Claude Code plugin with guided slash commands and skills.
@@ -235,6 +179,105 @@ The plugin includes three skills that Claude Code can invoke automatically:
 /optimize-anything:validate result.txt --providers openai/gpt-4o anthropic/claude-sonnet-4-5
   → cross-checks the result with multiple judges
 ```
+
+## Reference
+
+### Result Contract
+
+CLI stdout returns a JSON summary with these fields:
+
+- `best_artifact`
+- `total_metric_calls`
+- `score_summary` (`initial`, `latest`, `best`, deltas, `num_candidates`)
+- `top_diagnostics` (**list** of `{name, value}`)
+- `plateau_detected`, `plateau_guidance`
+- optional `evaluator_failure_signal`
+- optional `early_stopped`, `stopped_at_iteration`
+
+### Evaluator Protocol (v2)
+
+Evaluator input payload (stdin JSON for command mode, POST JSON for HTTP mode):
+
+```json
+{"_protocol_version": 2, "candidate": "...", "example": {...}, "task_model": "..."}
+```
+
+- `candidate` is required
+- `_protocol_version`, `example`, and `task_model` are optional/additive
+- legacy evaluators that only read `candidate` remain compatible
+
+Evaluator output payload:
+
+```json
+{"score": 0.75, "notes": "optional diagnostics"}
+```
+
+- `score` is required
+- additional keys are treated as side-info
+
+### Intake
+
+Intake is optional structured guidance you pass to the optimizer to shape how evaluation works. Instead of relying solely on an `--objective` string, intake lets you declare quality dimensions, hard constraints, evaluation patterns, and execution preferences — giving you finer control over what "better" means for your artifact.
+
+Use intake when your evaluation criteria are multi-dimensional, when you need to enforce hard constraints, or when you want consistent evaluation behavior across runs.
+
+Pass it inline or from a file:
+
+```bash
+# Inline
+optimize-anything optimize seed.txt \
+  --intake-json '{"quality_dimensions": ["clarity", "specificity"], "hard_constraints": ["max 100 words"]}' \
+  --judge-model openai/gpt-4o-mini
+
+# From file
+optimize-anything optimize seed.txt \
+  --intake-file intake.json \
+  --judge-model openai/gpt-4o-mini
+```
+
+`optimize-anything intake` normalizes and validates these keys:
+
+- `artifact_class`
+- `quality_dimensions`
+- `hard_constraints`
+- `evaluation_pattern`
+- `execution_mode`
+- `evaluator_cwd`
+
+### `optimize` flags (complete)
+
+Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-url` OR `--judge-model`.
+
+| Flag | Description | Default |
+|---|---|---|
+| `--no-seed` | Run without seed file; bootstrap from objective | `false` |
+| `--evaluator-command <cmd...>` | Command evaluator (stdin/stdout JSON) | -- |
+| `--evaluator-url <url>` | HTTP evaluator endpoint | -- |
+| `--intake-json <json>` | Inline intake spec | -- |
+| `--intake-file <path>` | Intake spec file | -- |
+| `--evaluator-cwd <path>` | Working dir for command evaluator | -- |
+| `--objective <text>` | Optimization objective | -- |
+| `--background <text>` | Extra domain context | -- |
+| `--dataset <train.jsonl>` | Training dataset JSONL | -- |
+| `--valset <val.jsonl>` | Validation dataset JSONL (requires `--dataset`) | -- |
+| `--budget <int>` | Max evaluator calls | `100` |
+| `--output, -o <file>` | Write best artifact to file | -- |
+| `--model <model>` | Proposer model (or env fallback) | `OPTIMIZE_ANYTHING_MODEL` |
+| `--judge-model <model>` | Built-in LLM judge evaluator model | -- |
+| `--judge-objective <text>` | Judge objective override | falls back to `--objective` |
+| `--api-base <url>` | Override LiteLLM API base | -- |
+| `--diff` | Print unified diff (seed vs best) to stderr | `false` |
+| `--run-dir <path>` | Save run artifacts in timestamped run dir | -- |
+| `--parallel` | Enable parallel evaluator calls | `false` |
+| `--workers <int>` | Max workers for parallel evaluation | -- |
+| `--cache` | Enable evaluator cache | `false` |
+| `--cache-from <run-dir>` | Copy prior `fitness_cache` into new run | -- |
+| `--early-stop` | Enable plateau early stop | auto on when budget > 30 |
+| `--early-stop-window <int>` | Plateau window size | `10` |
+| `--early-stop-threshold <float>` | Min improvement required over window | `0.005` |
+| `--spec-file <path>` | Load TOML spec defaults | -- |
+| `--task-model <model>` | Optional metadata forwarded to evaluators | -- |
+| `--score-range unit|any` | Score validation mode for cmd/http | `unit` |
 
 ## Learn More
 
