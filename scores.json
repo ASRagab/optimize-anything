@@ -4,7 +4,7 @@
     "baseline": 0.8503,
     "current": 0.8503,
     "target": 0.9,
-    "last_run": "2026-02-26",
+    "last_run": "2026-03-04",
     "history": [
       {
         "score": 0.8728,
@@ -20,29 +20,39 @@
         "score": 0.8503,
         "date": "2026-03-03",
         "run_id": "v0.3.0"
+      },
+      {
+        "score": 0.8503,
+        "date": "2026-03-04",
+        "run_id": "docs-v2-update"
       }
     ]
   },
   "evaluator-cookbook.md": {
     "evaluator": "evaluators/cookbook_clarity.sh",
-    "baseline": 0.9002,
-    "current": 0.9002,
+    "baseline": 0.9088,
+    "current": 0.9088,
     "target": 0.9,
-    "last_run": "2026-02-27",
+    "last_run": "2026-03-04",
     "history": [
       {
         "score": 0.9002,
         "date": "2026-02-27",
         "run_id": null
+      },
+      {
+        "score": 0.9088,
+        "date": "2026-03-04",
+        "run_id": "docs-v2-update"
       }
     ]
   },
   "skills/optimization-guide/SKILL.md": {
     "evaluator": "evaluators/skill_clarity.sh",
-    "baseline": 0.8985,
-    "current": 0.8985,
+    "baseline": 0.9138,
+    "current": 0.9138,
     "target": 0.88,
-    "last_run": "2026-02-26",
+    "last_run": "2026-03-04",
     "history": [
       {
         "score": 0.8984,
@@ -53,6 +63,11 @@
         "score": 0.8985,
         "date": "2026-02-26",
         "run_id": null
+      },
+      {
+        "score": 0.9138,
+        "date": "2026-03-04",
+        "run_id": "docs-v2-update"
       }
     ]
   }

@@ -214,7 +214,7 @@ specificity = sum(specificity_signals) / len(specificity_signals)
 
 # ---------------------------------------------------------------------------
 # 4. Conciseness (weight 0.30)
-#    Cookbook sweet spot: 800-10000 chars (wider than SKILL.md's 800-6000)
+#    Cookbook sweet spot: 800-18000 chars (wider for v2 protocol coverage)
 # ---------------------------------------------------------------------------
 conciseness_signals = []
 
@@ -224,17 +224,17 @@ if length < 200:
     feedback.append("Content is too short; expand with more actionable detail")
 elif length <= 800:
     len_score = 0.6 + 0.4 * ((length - 200) / 600.0)
-elif length <= 10000:
+elif length <= 18000:
     len_score = 1.0
-elif length <= 14000:
-    len_score = max(0.3, 1.0 - (length - 10000) / 6000.0)
-    feedback.append("Content is getting long; trim or restructure to stay under 10K chars")
-elif length <= 20000:
-    len_score = max(0.05, 0.3 - (length - 14000) / 12000.0)
+elif length <= 24000:
+    len_score = max(0.3, 1.0 - (length - 18000) / 10000.0)
+    feedback.append("Content is getting long; trim or restructure to stay under 18K chars")
+elif length <= 30000:
+    len_score = max(0.05, 0.3 - (length - 24000) / 12000.0)
     feedback.append("Content is excessively long; aggressively cut or restructure")
 else:
     len_score = 0.0
-    feedback.append("HARD LIMIT: content exceeds 20K chars; must be drastically shortened")
+    feedback.append("HARD LIMIT: content exceeds 30K chars; must be drastically shortened")
 conciseness_signals.append(len_score)
 
 heading_texts = [h.strip().lstrip("#").strip().lower() for h in headings]

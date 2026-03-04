@@ -231,33 +231,19 @@ This recipe scores whether a candidate prompt **correctly handles a user intent*
 
 ```python
 #!/usr/bin/env python3
-"""evaluators/intent_match.py
-Scores a candidate prompt by simulating it on a dataset example and checking
-whether the output satisfies the expected intent.
-
-Dataset record format (JSONL):
-  {"input": "user message", "expected_intent": "book_flight", "expected_keywords": ["flight", "airline"]}
-"""
-import json
-import os
-import sys
-
+"""evaluators/intent_match.py — scores candidate against a dataset example."""
+import json, os, sys
 from litellm import completion
 
+def clamp01(x): return max(0.0, min(1.0, x))
 
-def clamp01(x: float) -> float:
-    return max(0.0, min(1.0, x))
-
-
-def main() -> int:
+def main():
     payload = json.load(sys.stdin)
     candidate = str(payload.get("candidate", ""))
     example = payload.get("example", {})
 
     if not example:
-        # No dataset mode: score as a generic prompt quality check
-        result = {"score": 0.5, "note": "no_example_provided"}
-        print(json.dumps(result, separators=(",", ":")))
+        print(json.dumps({"score": 0.5, "note": "no_example_provided"}))
         return 0
 
     user_input = example.get("input", "")
@@ -265,47 +251,29 @@ def main() -> int:
     expected_keywords = example.get("expected_keywords", [])
 
     if not user_input:
-        print(json.dumps({"score": 0.0, "error": "example missing input field"}, separators=(",", ":")))
+        print(json.dumps({"score": 0.0, "error": "example missing input field"}))
         return 0
 
-    # Simulate running the candidate prompt against this example's input
     model = os.getenv("JUDGE_MODEL", "openai/gpt-4o-mini")
     try:
-        resp = completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": candidate},
-                {"role": "user", "content": user_input},
-            ],
-            temperature=0,
-            max_tokens=256,
-        )
-        output = resp.choices[0].message.content or ""
+        resp = completion(model=model, messages=[
+            {"role": "system", "content": candidate},
+            {"role": "user", "content": user_input},
+        ], temperature=0, max_tokens=256)
+        output = (resp.choices[0].message.content or "").lower()
     except Exception as exc:
-        print(json.dumps({"score": 0.0, "error": f"llm_call_failed: {exc}"}, separators=(",", ":")))
+        print(json.dumps({"score": 0.0, "error": f"llm_call_failed: {exc}"}))
         return 0
 
-    # Score 1: keyword coverage
-    output_lower = output.lower()
-    hits = sum(1 for kw in expected_keywords if kw.lower() in output_lower)
-    keyword_score = clamp01(hits / len(expected_keywords)) if expected_keywords else 0.5
+    hits = sum(1 for kw in expected_keywords if kw.lower() in output)
+    kw_score = clamp01(hits / len(expected_keywords)) if expected_keywords else 0.5
+    intent_score = 1.0 if expected_intent.lower() in output else 0.3
+    score = clamp01(0.6 * kw_score + 0.4 * intent_score)
 
-    # Score 2: intent signal (simple heuristic — replace with your logic)
-    intent_score = clamp01(1.0 if expected_intent.lower() in output_lower else 0.3)
-
-    score = clamp01(0.6 * keyword_score + 0.4 * intent_score)
-
-    result = {
-        "score": score,
-        "keyword_score": keyword_score,
-        "intent_score": intent_score,
-        "keywords_hit": hits,
-        "keywords_total": len(expected_keywords),
-        "expected_intent": expected_intent,
-    }
-    print(json.dumps(result, separators=(",", ":")))
+    print(json.dumps({"score": score, "keyword_score": kw_score,
+        "intent_score": intent_score, "keywords_hit": hits,
+        "keywords_total": len(expected_keywords)}))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
@@ -313,8 +281,8 @@ if __name__ == "__main__":
 
 **Dataset file (`dataset.jsonl`):**
 ```jsonl
-{"input": "I need to fly from NYC to London next week", "expected_intent": "book_flight", "expected_keywords": ["flight", "airline", "departure", "destination"]}
-{"input": "What hotels are near the Eiffel Tower?", "expected_intent": "find_hotel", "expected_keywords": ["hotel", "accommodation", "Paris", "nearby"]}
+{"input": "I need to fly from NYC to London next week", "expected_intent": "book_flight", "expected_keywords": ["flight", "airline", "departure"]}
+{"input": "What hotels are near the Eiffel Tower?", "expected_intent": "find_hotel", "expected_keywords": ["hotel", "Paris", "nearby"]}
 ```
 
 **Run it:**
@@ -322,19 +290,17 @@ if __name__ == "__main__":
 uv run optimize-anything optimize seed-prompt.txt \
   --evaluator-command python3 evaluators/intent_match.py \
   --dataset dataset.jsonl \
-  --objective "Optimize a travel assistant prompt that correctly handles user intents" \
+  --objective "Handle user intents correctly" \
   --budget 20
 ```
 
 **Test it independently (with example):**
 ```bash
-echo '{
-  "candidate": "You are a helpful travel assistant. Identify the user intent and respond accordingly.",
-  "example": {"input": "Book me a flight to Paris", "expected_intent": "book_flight", "expected_keywords": ["flight", "airline"]}
-}' | python3 evaluators/intent_match.py
+echo '{"candidate":"You are a travel assistant.","example":{"input":"Book a flight to Paris","expected_intent":"book_flight","expected_keywords":["flight","airline"]}}' \
+  | python3 evaluators/intent_match.py
 ```
 
-Outcome: Each evaluator call scores the candidate prompt against one dataset example. The optimizer improves the prompt's ability to handle all intents in the dataset, not just the average case.
+Outcome: Each evaluator call scores the candidate against one dataset example. The optimizer improves the prompt across all intents, not just the average case.
 
 ---
 
@@ -346,126 +312,50 @@ The pattern: run cheap checks first, short-circuit on clear failures, call the L
 
 ```python
 #!/usr/bin/env python3
-"""evaluators/composite_eval.py
-Combines heuristic checks with an LLM judge.
-
-Strategy:
-  - 40%: length and structural heuristics (fast, no LLM)
-  - 60%: LLM rubric judge (semantic quality)
-
-Short-circuits: if heuristics score < 0.2, skip the LLM call entirely.
+"""evaluators/composite_eval.py — heuristics + LLM judge blend.
+40% structural heuristics (fast), 60% LLM rubric (semantic).
+Short-circuits: if heuristics < 0.2, skip the LLM call entirely.
 """
-import json
-import os
-import re
-import sys
-
+import json, os, re, sys
 from litellm import completion
 
+def clamp01(x): return max(0.0, min(1.0, x))
 
-def clamp01(x: float) -> float:
-    return max(0.0, min(1.0, x))
-
-
-# ── Heuristic scorer ───────────────────────────────────────────────────────────
-
-def heuristic_score(candidate: str) -> tuple[float, dict]:
-    """Fast structural checks. Returns (score, side_info)."""
-    text = candidate.strip()
-    side: dict = {}
-
-    # Word count: penalize < 20 or > 500 words
+def heuristic_score(text):
     words = re.findall(r"\w+", text)
     wc = len(words)
-    if wc < 20:
-        length_score = wc / 20.0
-    elif wc > 500:
-        length_score = max(0.0, 1.0 - (wc - 500) / 500.0)
-    else:
-        length_score = 1.0
-    side["word_count"] = wc
-    side["length_score"] = round(length_score, 4)
+    length_s = wc / 20 if wc < 20 else (max(0, 1 - (wc-500)/500) if wc > 500 else 1.0)
+    struct_s = sum([
+        bool(re.search(r"^#{1,3}\s+", text, re.MULTILINE)),
+        bool(re.search(r"^\s*[-*]\s+", text, re.MULTILINE)),
+        "```" in text,
+    ]) / 3
+    return clamp01(0.6 * length_s + 0.4 * struct_s), {"word_count": wc}
 
-    # Structure: headings, bullets, code blocks
-    has_heading = bool(re.search(r"^#{1,3}\s+", text, re.MULTILINE))
-    has_bullets = bool(re.search(r"^\s*[-*]\s+", text, re.MULTILINE))
-    has_code = "```" in text
-    structure_score = (int(has_heading) + int(has_bullets) + int(has_code)) / 3.0
-    side["has_heading"] = has_heading
-    side["has_bullets"] = has_bullets
-    side["has_code"] = has_code
-    side["structure_score"] = round(structure_score, 4)
-
-    score = clamp01(0.6 * length_score + 0.4 * structure_score)
-    return score, side
-
-
-# ── LLM judge ─────────────────────────────────────────────────────────────────
-
-def llm_judge_score(candidate: str, model: str) -> tuple[float, dict]:
-    """Rubric-based LLM score. Returns (score, side_info)."""
-    system = (
-        "You are a strict evaluator. Return ONLY valid JSON with keys: "
-        "score (0-1), clarity (0-1), completeness (0-1), reasoning (string)."
-    )
-    user = f"""Rate this text on clarity and completeness.
-
-Text:
-{candidate}
-
-Return JSON:
-{{"score": 0.0, "clarity": 0.0, "completeness": 0.0, "reasoning": "brief"}}"""
-
+def llm_judge(candidate, model):
     try:
-        resp = completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            temperature=0,
-            response_format={"type": "json_object"},
-        )
-        parsed = json.loads(resp.choices[0].message.content or "{}")
-    except Exception as exc:
-        return 0.0, {"llm_error": str(exc)}
+        resp = completion(model=model, messages=[
+            {"role": "system", "content": "Return JSON: {score, clarity, completeness, reasoning} all 0-1."},
+            {"role": "user", "content": f"Rate clarity and completeness:\n\n{candidate}"},
+        ], temperature=0, response_format={"type": "json_object"})
+        p = json.loads(resp.choices[0].message.content or "{}")
+        return clamp01(float(p.get("score", 0))), p
+    except Exception as e:
+        return 0.0, {"llm_error": str(e)}
 
-    llm_score = clamp01(float(parsed.get("score", 0.0)))
-    return llm_score, {
-        "llm_score": llm_score,
-        "clarity": clamp01(float(parsed.get("clarity", 0.0))),
-        "completeness": clamp01(float(parsed.get("completeness", 0.0))),
-        "reasoning": str(parsed.get("reasoning", "")),
-    }
-
-
-# ── Main ───────────────────────────────────────────────────────────────────────
-
-def main() -> int:
+def main():
     payload = json.load(sys.stdin)
     candidate = str(payload.get("candidate", ""))
     model = os.getenv("JUDGE_MODEL", "openai/gpt-4o-mini")
 
-    h_score, h_side = heuristic_score(candidate)
-    side: dict = {"heuristic_score": round(h_score, 4), **h_side}
-
-    # Short-circuit: skip LLM on clear structural failures
-    if h_score < 0.2:
-        final = clamp01(0.4 * h_score)
-        side["llm_skipped"] = True
-        side["skip_reason"] = "heuristic_below_threshold"
-        print(json.dumps({"score": round(final, 4), **side}, separators=(",", ":")))
+    h_score, h_side = heuristic_score(candidate.strip())
+    if h_score < 0.2:  # short-circuit: skip LLM
+        print(json.dumps({"score": round(0.4*h_score, 4), "llm_skipped": True, **h_side}))
         return 0
-
-    l_score, l_side = llm_judge_score(candidate, model)
-    side.update(l_side)
-    side["llm_skipped"] = False
-
-    # Blend: 40% heuristics, 60% LLM
+    l_score, l_side = llm_judge(candidate, model)
     final = clamp01(0.4 * h_score + 0.6 * l_score)
-    print(json.dumps({"score": round(final, 4), **side}, separators=(",", ":")))
+    print(json.dumps({"score": round(final, 4), "llm_skipped": False, **h_side, **l_side}))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
@@ -481,16 +371,11 @@ uv run optimize-anything optimize seed.md \
 
 **Test it independently:**
 ```bash
-echo '{"candidate":"# Overview\nThis guide explains how to set up the project.\n- Install deps\n- Run tests\n\n```bash\nnpm install\n```"}' \
+echo '{"candidate":"# Overview\nSetup guide.\n- Install deps\n- Run tests\n```bash\nnpm install\n```"}' \
   | python3 evaluators/composite_eval.py
 ```
 
-Outcome: Structurally poor candidates (< 0.2 heuristic score) are penalized immediately without burning LLM calls. Good candidates get full semantic scoring. The blend rewards both structure and quality.
-
-**Adapt the weights to your task:**
-- High-volume runs → increase heuristic weight (cheaper)
-- Subtle quality tasks → increase LLM weight (more accurate)
-- Add more heuristic dimensions: vocabulary diversity, prohibited patterns, required phrases
+Outcome: Structurally poor candidates get penalized without burning LLM calls. Adjust the 40/60 blend to your needs — more heuristic weight for high-volume runs, more LLM weight for subtle quality tasks.
 
 ---
 
@@ -540,20 +425,13 @@ Outcome: Call `cmd_eval(candidate_text)` or `http_eval(candidate_text)` to recei
 
 ## 9. Score Range
 
-By default, `optimize-anything` expects scores in `[0.0, 1.0]`. If your evaluator naturally produces values outside this range, use `--score-range any`.
+By default, scores must be in `[0.0, 1.0]`. Use `--score-range any` when your evaluator naturally produces values outside this range (reward functions, penalty scores, raw test counts).
 
-| Mode                    | Valid score values           | When to use                                                   |
-|-------------------------|------------------------------|---------------------------------------------------------------|
-| `--score-range unit`    | `[0.0, 1.0]` (default)       | Most evaluators: probabilities, ratios, rubric averages       |
-| `--score-range any`     | Any finite float             | Reward functions, penalty scores, raw test counts, custom metrics |
+| Mode                    | Valid scores           | Use case                                              |
+|-------------------------|------------------------|-------------------------------------------------------|
+| `--score-range unit`    | `[0.0, 1.0]` (default) | Probabilities, ratios, rubric averages               |
+| `--score-range any`     | Any finite float       | Reward models, negative penalties, raw counts         |
 
-**Examples of `any`-range evaluators:**
-- A test runner returning raw pass count (e.g., `42` out of 100)
-- A penalty function that returns negative scores for violations
-- A reward model returning logit-scaled outputs (e.g., `-2.3` to `+4.7`)
-- A business metric like revenue delta (could be negative)
-
-**Run with `--score-range any`:**
 ```bash
 uv run optimize-anything optimize seed.txt \
   --evaluator-command python3 evaluators/reward_fn.py \
@@ -562,52 +440,34 @@ uv run optimize-anything optimize seed.txt \
   --budget 20
 ```
 
-> **Note:** In `any` mode, `NaN` and `±Inf` are still invalid and treated as errors. The score just isn't clamped to `[0,1]`. LLM judge scores are always clamped to `[0,1]` regardless of `--score-range`.
+> `NaN` and `±Inf` are always invalid. LLM judge scores are always clamped to `[0,1]` regardless of `--score-range`.
 
 ---
 
 ## 10. Task-Model Awareness
 
-The `--task-model` flag identifies the model your prompt will ultimately run on. Evaluators can read this to **adapt scoring logic** based on the target model — useful when different models have different strengths, context limits, or quirks.
+The `--task-model` flag identifies the model your prompt will run on. Evaluators can read it to adapt scoring — e.g., stricter length limits for smaller models.
 
-**How to access `task_model` in your evaluator:**
-
-In Python (reads from v2 payload):
+**Access it in your evaluator:**
 ```python
-payload = json.load(sys.stdin)
-task_model = payload.get("task_model", "")   # e.g. "openai/gpt-4o-mini"
-```
+task_model = payload.get("task_model", "")        # from v2 payload
+# or in bash: task_model="${OPTIMIZE_ANYTHING_TASK_MODEL:-}"
 
-In Bash (reads from environment variable):
-```bash
-task_model="${OPTIMIZE_ANYTHING_TASK_MODEL:-}"
-```
-
-**Example: adjusting length target per model:**
-```python
-payload = json.load(sys.stdin)
-candidate = payload.get("candidate", "")
-task_model = payload.get("task_model", "")
-
-# Smaller models benefit from shorter, more explicit prompts
 if "mini" in task_model or "flash" in task_model:
-    target_words = 80
+    target_words = 80  # shorter prompts for smaller models
 else:
     target_words = 150
-
-# ... score based on target_words ...
 ```
 
-**Pass `--task-model` at runtime:**
 ```bash
 uv run optimize-anything optimize prompt.txt \
-  --evaluator-command python3 evaluators/my_eval.py \
+  --evaluator-command python3 eval.py \
   --task-model openai/gpt-4o-mini \
   --objective "Optimize for the target model" \
   --budget 15
 ```
 
-> `task_model` is informational metadata — it doesn't control which model runs the optimization. That's still determined by `--propose-model` and `--reflect-model`. Use `task_model` purely to steer your evaluator's scoring logic.
+> `task_model` is metadata only — it doesn't control which model runs the optimization. Use it purely to steer your evaluator's scoring logic.
 
 ---
 
