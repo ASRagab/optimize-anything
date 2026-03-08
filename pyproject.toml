@@ -21,7 +21,12 @@ Repository = "https://github.com/ASRagab/optimize-anything"
 optimize-anything = "optimize_anything.cli:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "mypy>=1.19.1",
+    "pytest",
+    "pytest-cov>=7.0.0",
+    "radon>=6.0.1",
+]
 
 [build-system]
 requires = ["hatchling"]

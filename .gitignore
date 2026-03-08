@@ -25,3 +25,5 @@ integration_runs/
 dogfood_runs/
 .entire/
 PROMPT.md
+.coverage
+run.log
