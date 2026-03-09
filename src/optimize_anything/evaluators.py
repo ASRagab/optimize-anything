@@ -157,17 +157,25 @@ def _parse_evaluator_result(result: Any, score_range: str = "unit") -> tuple[flo
     try:
         score = float(raw_score)
     except (TypeError, ValueError):
-        side_info["error"] = "Evaluator 'score' must be numeric"
-        side_info["score"] = raw_score
-        return 0.0, side_info
+        return _evaluator_score_error(side_info, raw_score, "Evaluator 'score' must be numeric")
 
     if not math.isfinite(score):
-        side_info["error"] = "Evaluator 'score' must be finite"
-        side_info["score"] = raw_score
-        return 0.0, side_info
+        return _evaluator_score_error(side_info, raw_score, "Evaluator 'score' must be finite")
 
     if score_range == "unit" and (score < 0.0 or score > 1.0):
-        side_info["error"] = "Evaluator 'score' must be between 0.0 and 1.0"
-        side_info["score"] = raw_score
-        return 0.0, side_info
+        return _evaluator_score_error(
+            side_info,
+            raw_score,
+            "Evaluator 'score' must be between 0.0 and 1.0",
+        )
     return score, side_info
+
+
+def _evaluator_score_error(
+    side_info: dict[str, Any],
+    raw_score: Any,
+    message: str,
+) -> tuple[float, dict[str, Any]]:
+    side_info["error"] = message
+    side_info["score"] = raw_score
+    return 0.0, side_info

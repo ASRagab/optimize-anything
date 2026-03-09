@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import textwrap
 from collections.abc import Mapping
+from numbers import Real
 from typing import Any
 
 
@@ -104,33 +105,24 @@ def _extract_rubric_summary(intake: Mapping[str, Any] | None) -> str:
     if not intake:
         return "No rubric summary provided."
 
-    quality_dimensions = intake.get("quality_dimensions")
-    if isinstance(quality_dimensions, list) and quality_dimensions:
-        fragments: list[str] = []
-        for item in quality_dimensions:
-            if not isinstance(item, Mapping):
-                continue
-            name = str(item.get("name", "")).strip()
-            weight = item.get("weight")
-            if not name:
-                continue
-            try:
-                fragments.append(f"{name}:{float(weight):.2f}")
-            except (TypeError, ValueError):
-                continue
-        if fragments:
-            return f"quality_dimensions={', '.join(fragments)}"
+    quality_dimension_summary = _format_quality_dimension_summary(
+        intake.get("quality_dimensions")
+    )
+    if quality_dimension_summary is not None:
+        return quality_dimension_summary
 
     for key in ("rubric_summary", "rubric_brief", "rubric"):
         value = intake.get(key)
         if value not in (None, ""):
             return _compact_text(value, max_length=240)
 
-    fragments = []
-    for key in ("criteria", "rubric_dimensions", "dimensions", "focus"):
-        value = intake.get(key)
-        if value not in (None, ""):
-            fragments.append(f"{key}={_compact_text(value, max_length=96)}")
+    fragments = _collect_rubric_fragments(
+        intake,
+        "criteria",
+        "rubric_dimensions",
+        "dimensions",
+        "focus",
+    )
 
     if fragments:
         joined = "; ".join(fragments)
@@ -139,6 +131,40 @@ def _extract_rubric_summary(intake: Mapping[str, Any] | None) -> str:
         return f"{joined[:237]}..."
 
     return "No rubric summary provided."
+
+
+def _format_quality_dimension_summary(value: Any) -> str | None:
+    if not isinstance(value, list) or not value:
+        return None
+
+    fragments: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        name = str(item.get("name", "")).strip()
+        weight = item.get("weight")
+        if not name or not isinstance(weight, (Real, str)):
+            continue
+        try:
+            fragments.append(f"{name}:{float(weight):.2f}")
+        except (TypeError, ValueError):
+            continue
+
+    if not fragments:
+        return None
+    return f"quality_dimensions={', '.join(fragments)}"
+
+
+def _collect_rubric_fragments(
+    intake: Mapping[str, Any],
+    *keys: str,
+) -> list[str]:
+    fragments: list[str] = []
+    for key in keys:
+        value = intake.get(key)
+        if value not in (None, ""):
+            fragments.append(f"{key}={_compact_text(value, max_length=96)}")
+    return fragments
 
 
 def _default_quality_dimensions() -> list[tuple[str, float]]:
@@ -164,8 +190,11 @@ def _extract_quality_dimensions(
         name = str(item.get("name", "")).strip()
         if not name:
             continue
+        weight = item.get("weight")
+        if not isinstance(weight, (Real, str)):
+            continue
         try:
-            weight = float(item.get("weight"))
+            weight = float(weight)
         except (TypeError, ValueError):
             continue
         dimensions.append((name, weight))

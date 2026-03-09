@@ -221,14 +221,14 @@ def _parse_judge_response(
         score = _compute_weighted_score(parsed, quality_dimensions)
     else:
         raw_score = parsed.get("score")
-        try:
-            score = float(raw_score)
-        except (TypeError, ValueError):
+        coerced_score = _coerce_float(raw_score)
+        if coerced_score is None:
             return 0.0, {
                 "error": "LLM 'score' field is not numeric",
                 "raw_response": raw_content[:500],
                 **side_info,
             }
+        score = coerced_score
 
     if not math.isfinite(score):
         return 0.0, {"error": "LLM score is not finite", **side_info}
@@ -248,13 +248,19 @@ def _compute_weighted_score(
     for dim in quality_dimensions:
         dim_name = dim["name"]
         raw_value = parsed.get(dim_name)
-        try:
-            value = float(raw_value)
-        except (TypeError, ValueError):
+        value = _coerce_float(raw_value)
+        if value is None:
             value = 0.0
         value = max(0.0, min(1.0, value))
         weighted_sum += value * dim["weight"]
     return weighted_sum / total_weight
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 ANALYZE_SYSTEM_PROMPT = """\
@@ -434,34 +440,39 @@ def _parse_dimensions_response(raw_content: str | None) -> list[dict[str, Any]]:
         )
 
     validated: list[dict[str, Any]] = []
-    for i, d in enumerate(raw_dims):
-        if not isinstance(d, dict):
-            continue
-        name = d.get("name")
-        if not isinstance(name, str) or not name.strip():
-            continue
-        try:
-            weight = float(d.get("weight", 0))
-        except (TypeError, ValueError):
-            weight = 0.0
-        weight = max(0.0, min(1.0, weight))
-        try:
-            dim_score = float(d.get("score", 0))
-        except (TypeError, ValueError):
-            dim_score = 0.0
-        dim_score = max(0.0, min(1.0, dim_score))
-        description = d.get("description", "")
-        if not isinstance(description, str):
-            description = str(description)
-
-        validated.append({
-            "name": name.strip(),
-            "weight": weight,
-            "score": dim_score,
-            "description": description,
-        })
+    for raw_dimension in raw_dims:
+        normalized = _normalize_dimension_entry(raw_dimension)
+        if normalized is not None:
+            validated.append(normalized)
 
     if not validated:
         raise RuntimeError("No valid dimensions found in LLM response")
 
     return validated
+
+
+def _normalize_dimension_entry(raw_dimension: Any) -> dict[str, Any] | None:
+    if not isinstance(raw_dimension, dict):
+        return None
+
+    name = raw_dimension.get("name")
+    if not isinstance(name, str):
+        return None
+    normalized_name = name.strip()
+    if not normalized_name:
+        return None
+
+    description = raw_dimension.get("description", "")
+    return {
+        "name": normalized_name,
+        "weight": _clamp_dimension_value(raw_dimension.get("weight", 0)),
+        "score": _clamp_dimension_value(raw_dimension.get("score", 0)),
+        "description": description if isinstance(description, str) else str(description),
+    }
+
+
+def _clamp_dimension_value(value: Any) -> float:
+    coerced = _coerce_float(value)
+    if coerced is None:
+        return 0.0
+    return max(0.0, min(1.0, coerced))

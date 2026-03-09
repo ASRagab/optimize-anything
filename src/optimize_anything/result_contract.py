@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
+
+
+class DiagnosticEntry(TypedDict):
+    name: str
+    value: float
+
+
+class FailureMetricEntry(TypedDict):
+    name: str
+    latest: float
+    max: float
 
 
 def build_optimize_summary(
@@ -79,7 +90,7 @@ def _extract_top_diagnostics(
     result: Any,
     best_idx: int | None,
     best_score: float | None,
-) -> list[dict[str, float]]:
+) -> list[DiagnosticEntry]:
     raw = getattr(result, "val_aggregate_subscores", None)
     if (
         isinstance(raw, list)
@@ -151,40 +162,21 @@ def _extract_failure_metric_signal(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, list):
         return None
 
-    failure_tokens = ("error", "fail", "timeout", "invalid", "exception")
     max_by_metric: dict[str, float] = {}
     latest_by_metric: dict[str, float] = {}
+    latest_index = len(raw) - 1
 
-    for idx, item in enumerate(raw):
-        if not isinstance(item, dict):
-            continue
-        for key, value in item.items():
-            metric_name = str(key)
-            lower_name = metric_name.lower()
-            if not any(token in lower_name for token in failure_tokens):
-                continue
-            try:
-                numeric = float(value)
-            except (TypeError, ValueError):
-                continue
-            previous_max = max_by_metric.get(metric_name)
-            if previous_max is None or numeric > previous_max:
-                max_by_metric[metric_name] = numeric
-            if idx == len(raw) - 1:
-                latest_by_metric[metric_name] = numeric
+    for idx, metric_name, numeric in _iter_failure_metric_values(raw):
+        previous_max = max_by_metric.get(metric_name)
+        if previous_max is None or numeric > previous_max:
+            max_by_metric[metric_name] = numeric
+        if idx == latest_index:
+            latest_by_metric[metric_name] = numeric
 
     if not max_by_metric:
         return None
 
-    active_metrics = [
-        {
-            "name": name,
-            "latest": round(latest_by_metric.get(name, 0.0), 6),
-            "max": round(max_value, 6),
-        }
-        for name, max_value in max_by_metric.items()
-        if max_value > 0.0
-    ]
+    active_metrics = _build_failure_metric_entries(max_by_metric, latest_by_metric)
     if not active_metrics:
         return None
 
@@ -197,6 +189,43 @@ def _extract_failure_metric_signal(raw: Any) -> dict[str, Any] | None:
         ),
         "metrics": active_metrics[:3],
     }
+
+
+def _iter_failure_metric_values(
+    raw: list[Any],
+) -> list[tuple[int, str, float]]:
+    failure_tokens = ("error", "fail", "timeout", "invalid", "exception")
+    values: list[tuple[int, str, float]] = []
+
+    for idx, item in enumerate(raw):
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            metric_name = str(key)
+            if not any(token in metric_name.lower() for token in failure_tokens):
+                continue
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            values.append((idx, metric_name, numeric))
+
+    return values
+
+
+def _build_failure_metric_entries(
+    max_by_metric: dict[str, float],
+    latest_by_metric: dict[str, float],
+) -> list[FailureMetricEntry]:
+    return [
+        {
+            "name": name,
+            "latest": round(latest_by_metric.get(name, 0.0), 6),
+            "max": round(max_value, 6),
+        }
+        for name, max_value in max_by_metric.items()
+        if max_value > 0.0
+    ]
 
 
 def _resolve_early_stop(

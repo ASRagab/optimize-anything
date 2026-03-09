@@ -107,38 +107,9 @@ def _normalize_quality_dimensions(value: Any) -> list[dict[str, Any]]:
     weights: list[float] = []
 
     for idx, item in enumerate(value):
-        if not isinstance(item, Mapping):
-            raise ValueError(
-                f"quality_dimensions[{idx}] must be an object with 'name' and 'weight'"
-            )
-        if "name" not in item:
-            raise ValueError(f"quality_dimensions[{idx}] missing required field 'name'")
-        if "weight" not in item:
-            raise ValueError(f"quality_dimensions[{idx}] missing required field 'weight'")
-
-        name = item["name"]
-        if not isinstance(name, str):
-            raise ValueError(f"quality_dimensions[{idx}].name must be a string")
-        normalized_name = name.strip()
-        if not normalized_name:
-            raise ValueError(
-                f"quality_dimensions[{idx}].name must be a non-empty string"
-            )
-
-        raw_weight = item["weight"]
-        if isinstance(raw_weight, bool) or not isinstance(raw_weight, Real):
-            raise ValueError(f"quality_dimensions[{idx}].weight must be numeric")
-
-        weight = float(raw_weight)
-        if not isfinite(weight):
-            raise ValueError(f"quality_dimensions[{idx}].weight must be finite")
-        if weight <= 0:
-            raise ValueError(f"quality_dimensions[{idx}].weight must be > 0")
-
+        normalized_name, weight = _normalize_quality_dimension_item(item, idx)
         if normalized_name in seen_names:
-            raise ValueError(
-                f"Duplicate quality dimension name: '{normalized_name}'"
-            )
+            raise ValueError(f"Duplicate quality dimension name: '{normalized_name}'")
         seen_names.add(normalized_name)
         names.append(normalized_name)
         weights.append(weight)
@@ -148,6 +119,39 @@ def _normalize_quality_dimensions(value: Any) -> list[dict[str, Any]]:
         {"name": name, "weight": normalized_weights[idx]}
         for idx, name in enumerate(names)
     ]
+
+
+def _normalize_quality_dimension_item(
+    item: Any,
+    idx: int,
+) -> tuple[str, float]:
+    if not isinstance(item, Mapping):
+        raise ValueError(
+            f"quality_dimensions[{idx}] must be an object with 'name' and 'weight'"
+        )
+    if "name" not in item:
+        raise ValueError(f"quality_dimensions[{idx}] missing required field 'name'")
+    if "weight" not in item:
+        raise ValueError(f"quality_dimensions[{idx}] missing required field 'weight'")
+
+    name = item["name"]
+    if not isinstance(name, str):
+        raise ValueError(f"quality_dimensions[{idx}].name must be a string")
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise ValueError(f"quality_dimensions[{idx}].name must be a non-empty string")
+
+    raw_weight = item["weight"]
+    if isinstance(raw_weight, bool) or not isinstance(raw_weight, Real):
+        raise ValueError(f"quality_dimensions[{idx}].weight must be numeric")
+
+    weight = float(raw_weight)
+    if not isfinite(weight):
+        raise ValueError(f"quality_dimensions[{idx}].weight must be finite")
+    if weight <= 0:
+        raise ValueError(f"quality_dimensions[{idx}].weight must be > 0")
+
+    return normalized_name, weight
 
 
 def _normalize_weights(weights: list[float]) -> list[float]:

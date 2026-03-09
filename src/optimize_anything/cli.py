@@ -13,6 +13,18 @@ import shutil
 import subprocess
 import sys
 import statistics
+from typing import Any, Callable, TextIO, cast
+
+
+EvaluatorFn = Callable[..., tuple[float, dict[str, Any]]]
+EvaluatorFactory = Callable[..., EvaluatorFn]
+OptimizeInputs = tuple[
+    argparse.Namespace,
+    str | None,
+    list[dict] | None,
+    list[dict] | None,
+    dict[str, Any] | None,
+]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -352,7 +364,11 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
-def _call_factory_with_compat(factory: object, *args: object, **kwargs: object) -> object:
+def _call_factory_with_compat(
+    factory: EvaluatorFactory,
+    *args: object,
+    **kwargs: object,
+) -> EvaluatorFn:
     """Call a factory, explicitly dropping unsupported kwargs with warnings."""
     signature = inspect.signature(factory)
     parameters = signature.parameters
@@ -385,12 +401,12 @@ def _resolve_evaluator(
     judge_objective: str | None,
     objective: str | None,
     evaluator_cwd: str | None,
-    intake_spec: dict[str, object] | None,
+    intake_spec: dict[str, Any] | None,
     allow_intake_fallback: bool = False,
     api_base: str | None = None,
     task_model: str | None = None,
     score_range: str = "unit",
-) -> tuple[object | None, str]:
+) -> tuple[EvaluatorFn | None, str]:
     """Resolve evaluator from command, URL, judge model, or intake spec.
 
     Returns (eval_fn, evaluator_label) on success, or (None, error_message) on failure.
@@ -420,158 +436,131 @@ def _resolve_evaluator(
         return (None, "Error: provide --evaluator-command, --evaluator-url, or --judge-model")
 
     if evaluator_command:
-        if score_range == "any":
-            preflight_error = _preflight_command_evaluator(
-                evaluator_command,
-                cwd=command_cwd,
-                score_range=score_range,
-            )
-            eval_fn = _call_factory_with_compat(
-                command_evaluator,
-                evaluator_command,
-                cwd=command_cwd,
-                task_model=task_model,
-                score_range=score_range,
-            )
-        else:
-            preflight_error = _preflight_command_evaluator(
-                evaluator_command,
-                cwd=command_cwd,
-            )
-            eval_fn = _call_factory_with_compat(
-                command_evaluator,
-                evaluator_command,
-                cwd=command_cwd,
-                task_model=task_model,
-            )
-        if preflight_error is not None:
-            return (None, preflight_error)
-        evaluator_label = shlex.join(evaluator_command)
-    elif evaluator_url:
-        if score_range == "any":
-            preflight_error = _preflight_http_evaluator(evaluator_url, score_range=score_range)
-            eval_fn = _call_factory_with_compat(
-                http_evaluator,
-                evaluator_url,
-                task_model=task_model,
-                score_range=score_range,
-            )
-        else:
-            preflight_error = _preflight_http_evaluator(evaluator_url)
-            eval_fn = _call_factory_with_compat(
-                http_evaluator,
-                evaluator_url,
-                task_model=task_model,
-            )
-        if preflight_error is not None:
-            return (None, preflight_error)
-        evaluator_label = evaluator_url
-    else:  # judge_model
-        judge_obj = judge_objective or objective
-        if not judge_obj:
-            return (None, "Error: --judge-model requires --objective or --judge-objective")
-
-        quality_dimensions = None
-        hard_constraints = None
-        if intake_spec is not None:
-            quality_dimensions = intake_spec.get("quality_dimensions")
-            hard_constraints = intake_spec.get("hard_constraints") or None
-        eval_fn = _call_factory_with_compat(
-            llm_judge_evaluator,
-            judge_obj,
-            model=judge_model,
-            quality_dimensions=quality_dimensions,
-            hard_constraints=hard_constraints,
-            api_base=api_base,
+        return _resolve_command_evaluator_source(
+            command_evaluator=command_evaluator,
+            evaluator_command=evaluator_command,
+            evaluator_cwd=command_cwd,
             task_model=task_model,
+            score_range=score_range,
         )
-        evaluator_label = f"LLM judge ({judge_model})"
+    if evaluator_url:
+        return _resolve_http_evaluator_source(
+            http_evaluator=http_evaluator,
+            evaluator_url=evaluator_url,
+            task_model=task_model,
+            score_range=score_range,
+        )
 
-    return (eval_fn, evaluator_label)
+    return _resolve_judge_evaluator_source(
+        llm_judge_evaluator=llm_judge_evaluator,
+        judge_model=judge_model,
+        judge_objective=judge_objective,
+        objective=objective,
+        intake_spec=intake_spec,
+        api_base=api_base,
+        task_model=task_model,
+    )
+
+
+def _resolve_command_evaluator_source(
+    *,
+    command_evaluator: EvaluatorFactory,
+    evaluator_command: list[str],
+    evaluator_cwd: str | None,
+    task_model: str | None,
+    score_range: str,
+) -> tuple[EvaluatorFn | None, str]:
+    preflight_kwargs: dict[str, Any] = {"cwd": evaluator_cwd}
+    factory_kwargs: dict[str, Any] = {
+        "cwd": evaluator_cwd,
+        "task_model": task_model,
+    }
+    if score_range == "any":
+        preflight_kwargs["score_range"] = score_range
+        factory_kwargs["score_range"] = score_range
+
+    preflight_error = _preflight_command_evaluator(
+        evaluator_command,
+        **preflight_kwargs,
+    )
+    if preflight_error is not None:
+        return None, preflight_error
+
+    eval_fn = _call_factory_with_compat(
+        command_evaluator,
+        evaluator_command,
+        **factory_kwargs,
+    )
+    return eval_fn, shlex.join(evaluator_command)
+
+
+def _resolve_http_evaluator_source(
+    *,
+    http_evaluator: EvaluatorFactory,
+    evaluator_url: str,
+    task_model: str | None,
+    score_range: str,
+) -> tuple[EvaluatorFn | None, str]:
+    preflight_kwargs: dict[str, Any] = {}
+    factory_kwargs: dict[str, Any] = {"task_model": task_model}
+    if score_range == "any":
+        preflight_kwargs["score_range"] = score_range
+        factory_kwargs["score_range"] = score_range
+
+    preflight_error = _preflight_http_evaluator(
+        evaluator_url,
+        **preflight_kwargs,
+    )
+    if preflight_error is not None:
+        return None, preflight_error
+
+    eval_fn = _call_factory_with_compat(
+        http_evaluator,
+        evaluator_url,
+        **factory_kwargs,
+    )
+    return eval_fn, evaluator_url
+
+
+def _resolve_judge_evaluator_source(
+    *,
+    llm_judge_evaluator: EvaluatorFactory,
+    judge_model: str | None,
+    judge_objective: str | None,
+    objective: str | None,
+    intake_spec: dict[str, Any] | None,
+    api_base: str | None,
+    task_model: str | None,
+) -> tuple[EvaluatorFn | None, str]:
+    judge_obj = judge_objective or objective
+    if not judge_obj:
+        return (None, "Error: --judge-model requires --objective or --judge-objective")
+
+    quality_dimensions = None
+    hard_constraints = None
+    if intake_spec is not None:
+        quality_dimensions = intake_spec.get("quality_dimensions")
+        hard_constraints = intake_spec.get("hard_constraints") or None
+    eval_fn = _call_factory_with_compat(
+        llm_judge_evaluator,
+        judge_obj,
+        model=judge_model,
+        quality_dimensions=quality_dimensions,
+        hard_constraints=hard_constraints,
+        api_base=api_base,
+        task_model=task_model,
+    )
+    return eval_fn, f"LLM judge ({judge_model})"
 
 
 def _cmd_optimize(args: argparse.Namespace) -> int:
-    # Apply spec file defaults (lower precedence than CLI flags)
-    if getattr(args, "spec_file", None):
-        spec = _load_spec_if_provided(args.spec_file)
-        if spec is False:
-            return 1  # error already printed
-        if spec is not None:
-            args = _apply_spec_to_args(args, spec)
-
-    seed: str | None = None
-    if args.seed_file is not None:
-        seed = _read_seed(args.seed_file)
-        if seed is None:
-            return 1
-    else:
-        if not args.no_seed:
-            print("Error: provide seed_file or pass --no-seed", file=sys.stderr)
-            return 1
-        if not args.objective or not args.model:
-            print(
-                "Error: seedless mode (--no-seed) requires both --objective and --model",
-                file=sys.stderr,
-            )
-            return 1
-
-    if args.budget is None:
-        args.budget = 100
-    if args.budget < 1:
-        print("Error: --budget must be at least 1", file=sys.stderr)
+    prepared = _prepare_optimize_inputs(args)
+    if prepared is None:
         return 1
+    args, seed, dataset, valset, intake_spec = prepared
 
-    if args.early_stop_window < 1:
-        print("Error: --early-stop-window must be at least 1", file=sys.stderr)
-        return 1
-
-    if args.early_stop_threshold < 0:
-        print("Error: --early-stop-threshold must be non-negative", file=sys.stderr)
-        return 1
-
-    if args.cache_from and not args.cache:
-        print("Error: --cache-from requires --cache", file=sys.stderr)
-        return 1
-
-    if args.valset and not args.dataset:
-        print("Error: --valset requires --dataset", file=sys.stderr)
-        return 1
-
-    dataset = None
-    valset = None
-    if args.dataset:
-        from optimize_anything.dataset import load_dataset
-
-        try:
-            dataset = load_dataset(args.dataset)
-        except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
-
-    if args.valset:
-        from optimize_anything.dataset import load_dataset
-
-        try:
-            valset = load_dataset(args.valset)
-        except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
-
-    intake_spec = _load_and_normalize_intake_spec(
-        intake_json=args.intake_json,
-        intake_file=args.intake_file,
-    )
-    intake_requested = args.intake_json is not None or args.intake_file is not None
-    if intake_requested and intake_spec is None:
-        return 1
-
-    output_error = _validate_output_path(args.output)
-    if output_error is not None:
-        print(output_error, file=sys.stderr)
-        return 1
     from optimize_anything.result_contract import build_optimize_summary
-    from optimize_anything.stop import plateau_stop_callback
-    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from gepa.optimize_anything import optimize_anything
 
     eval_fn, evaluator_label = _resolve_evaluator(
         evaluator_command=args.evaluator_command,
@@ -603,48 +592,14 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     )
 
     model = args.model or os.environ.get("OPTIMIZE_ANYTHING_MODEL")
-    gepa_run_dir = None
-    if getattr(args, "run_dir", None):
-        gepa_run_dir = _timestamped_run_dir(args.run_dir)
-
-    if args.cache_from:
-        if gepa_run_dir is None:
-            print("Error: --cache-from requires --run-dir so cache can be copied into a new run", file=sys.stderr)
-            return 1
-        cache_copy_error = _copy_cache_from_run(args.cache_from, gepa_run_dir)
-        if cache_copy_error is not None:
-            print(f"Error: {cache_copy_error}", file=sys.stderr)
-            return 1
-
-    parallel_enabled = args.parallel or (args.workers is not None)
-    early_stop_active = bool(
-        args.early_stop or (args.budget is not None and args.budget > 30)
+    config, gepa_run_dir, early_stop_active, runtime_error = _build_optimize_runtime(
+        args,
+        model=model,
     )
-    stop_callbacks = None
-    if early_stop_active:
-        stop_callbacks = [
-            plateau_stop_callback(
-                window=args.early_stop_window,
-                threshold=args.early_stop_threshold,
-            )
-        ]
+    if runtime_error is not None:
+        print(runtime_error, file=sys.stderr)
+        return 1
 
-    engine = EngineConfig(
-        max_metric_calls=args.budget,
-        run_dir=gepa_run_dir,
-        parallel=parallel_enabled,
-        max_workers=args.workers,
-        cache_evaluation=args.cache,
-    )
-
-    if model:
-        config = GEPAConfig(
-            engine=engine,
-            reflection=ReflectionConfig(reflection_lm=model),
-            stop_callbacks=stop_callbacks,
-        )
-    else:
-        config = GEPAConfig(engine=engine, stop_callbacks=stop_callbacks)
     try:
         result = optimize_anything(
             seed_candidate=seed,
@@ -674,42 +629,19 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         early_stop_active=early_stop_active,
     )
     best = summary["best_artifact"]
-    if args.output:
-        try:
-            with open(args.output, "w") as f:
-                f.write(best if isinstance(best, str) else json.dumps(best))
-        except OSError as e:
-            print(f"Error writing output file '{args.output}': {e}", file=sys.stderr)
-            return 1
-        summary["output_file"] = args.output
-
-    if gepa_run_dir:
-        saved_dir = _save_run_dir(
-            run_dir=gepa_run_dir,
-            seed=seed or "",
-            best_artifact=best,
-            summary=summary,
-        )
-        if saved_dir:
-            summary["run_dir"] = saved_dir
+    persist_error = _persist_optimize_outputs(
+        args=args,
+        seed=seed,
+        best_artifact=best,
+        summary=summary,
+        gepa_run_dir=gepa_run_dir,
+    )
+    if persist_error is not None:
+        print(persist_error, file=sys.stderr)
+        return 1
 
     if args.diff:
-        if seed is None:
-            print("(no diff: seedless mode has no seed artifact)", file=sys.stderr)
-        else:
-            seed_lines = seed.splitlines(keepends=True)
-            best_str = best if isinstance(best, str) else json.dumps(best)
-            best_lines = best_str.splitlines(keepends=True)
-            diff_output = difflib.unified_diff(
-                seed_lines, best_lines, fromfile="seed", tofile="optimized",
-            )
-            diff_text = "".join(diff_output)
-            if diff_text:
-                print("\n--- diff: seed vs optimized ---", file=sys.stderr)
-                print(diff_text, end="", file=sys.stderr)
-                print("--- end diff ---", file=sys.stderr)
-            else:
-                print("(no diff: seed and optimized artifact are identical)", file=sys.stderr)
+        _print_optimize_diff(seed, best, file=sys.stderr)
 
     # Judge-specific plateau advisory
     if summary.get("plateau_detected") and args.judge_model:
@@ -722,6 +654,131 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
 
     print(json.dumps(summary, indent=2, default=str))
     return 0
+
+
+def _build_optimize_runtime(
+    args: argparse.Namespace,
+    *,
+    model: str | None,
+) -> tuple[Any, str | None, bool, str | None]:
+    """Build GEPA runtime config plus run-dir state for optimize."""
+    from optimize_anything.stop import plateau_stop_callback
+    from gepa.optimize_anything import GEPAConfig, EngineConfig, ReflectionConfig
+
+    gepa_run_dir = _timestamped_run_dir(args.run_dir) if getattr(args, "run_dir", None) else None
+
+    if args.cache_from:
+        if gepa_run_dir is None:
+            return None, None, False, (
+                "Error: --cache-from requires --run-dir so cache can be copied into a new run"
+            )
+        cache_copy_error = _copy_cache_from_run(args.cache_from, gepa_run_dir)
+        if cache_copy_error is not None:
+            return None, gepa_run_dir, False, f"Error: {cache_copy_error}"
+
+    early_stop_active = bool(
+        args.early_stop or (args.budget is not None and args.budget > 30)
+    )
+    stop_callbacks = None
+    if early_stop_active:
+        stop_callbacks = [
+            plateau_stop_callback(
+                window=args.early_stop_window,
+                threshold=args.early_stop_threshold,
+            )
+        ]
+
+    engine = EngineConfig(
+        max_metric_calls=args.budget,
+        run_dir=gepa_run_dir,
+        parallel=args.parallel or (args.workers is not None),
+        max_workers=args.workers,
+        cache_evaluation=args.cache,
+    )
+    if model:
+        config = GEPAConfig(
+            engine=engine,
+            reflection=ReflectionConfig(reflection_lm=model),
+            stop_callbacks=stop_callbacks,
+        )
+    else:
+        config = GEPAConfig(engine=engine, stop_callbacks=stop_callbacks)
+
+    return config, gepa_run_dir, early_stop_active, None
+
+
+def _persist_optimize_outputs(
+    *,
+    args: argparse.Namespace,
+    seed: str | None,
+    best_artifact: Any,
+    summary: dict[str, Any],
+    gepa_run_dir: str | None,
+) -> str | None:
+    """Persist optimize outputs and attach any saved paths to the summary."""
+    if args.output:
+        try:
+            with open(args.output, "w") as f:
+                f.write(
+                    best_artifact if isinstance(best_artifact, str) else json.dumps(best_artifact)
+                )
+        except OSError as exc:
+            return f"Error writing output file '{args.output}': {exc}"
+        summary["output_file"] = args.output
+
+    if not gepa_run_dir:
+        return None
+
+    saved_dir = _save_run_dir(
+        run_dir=gepa_run_dir,
+        seed=seed or "",
+        best_artifact=best_artifact,
+        summary=summary,
+    )
+    if saved_dir:
+        summary["run_dir"] = saved_dir
+    return None
+
+
+def _prepare_optimize_inputs(args: argparse.Namespace) -> OptimizeInputs | None:
+    # Apply spec file defaults (lower precedence than CLI flags)
+    if getattr(args, "spec_file", None):
+        spec = _load_spec_if_provided(args.spec_file)
+        if spec is None:
+            return None  # error already printed
+        args = _apply_spec_to_args(args, spec)
+
+    seed_ok, seed = _resolve_optimize_seed(args)
+    if not seed_ok:
+        return None
+
+    argument_error = _validate_optimize_args(args)
+    if argument_error is not None:
+        print(argument_error, file=sys.stderr)
+        return None
+
+    dataset = _load_dataset_arg(args.dataset)
+    if args.dataset and dataset is None:
+        return None
+
+    valset = _load_dataset_arg(args.valset)
+    if args.valset and valset is None:
+        return None
+
+    intake_spec = _load_and_normalize_intake_spec(
+        intake_json=args.intake_json,
+        intake_file=args.intake_file,
+    )
+    intake_requested = args.intake_json is not None or args.intake_file is not None
+    if intake_requested and intake_spec is None:
+        return None
+
+    output_error = _validate_output_path(args.output)
+    if output_error is not None:
+        print(output_error, file=sys.stderr)
+        return None
+
+    return args, seed, dataset, valset, intake_spec
 
 
 def _cmd_intake(args: argparse.Namespace) -> int:
@@ -907,42 +964,23 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     if intake_requested and intake_spec is None:
         return 1
 
-    from optimize_anything.llm_judge import llm_judge_evaluator
-
     quality_dimensions = intake_spec.get("quality_dimensions") if intake_spec else None
     hard_constraints = intake_spec.get("hard_constraints") if intake_spec else None
 
     provider_results: list[dict[str, object]] = []
     successful_scores: list[float] = []
     for provider in args.providers:
-        try:
-            evaluator = llm_judge_evaluator(
-                args.objective,
-                model=provider,
-                quality_dimensions=quality_dimensions,
-                hard_constraints=hard_constraints,
-                api_base=args.api_base,
-            )
-            score, side_info = evaluator(artifact)
-            numeric_score = float(score)
-        except Exception as exc:
-            provider_results.append(
-                {
-                    "provider": provider,
-                    "score": None,
-                    "error": str(exc),
-                }
-            )
-            continue
-
-        result: dict[str, object] = {
-            "provider": provider,
-            "score": numeric_score,
-        }
-        if isinstance(side_info, dict):
-            result.update(side_info)
+        result, numeric_score = _validate_provider(
+            artifact=artifact,
+            provider=provider,
+            objective=args.objective,
+            quality_dimensions=quality_dimensions,
+            hard_constraints=hard_constraints,
+            api_base=args.api_base,
+        )
         provider_results.append(result)
-        successful_scores.append(numeric_score)
+        if numeric_score is not None:
+            successful_scores.append(numeric_score)
 
     successful_count = len(successful_scores)
     failed_count = len(provider_results) - successful_count
@@ -1010,12 +1048,52 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def _validate_provider(
+    *,
+    artifact: str,
+    provider: str,
+    objective: str,
+    quality_dimensions: Any,
+    hard_constraints: Any,
+    api_base: str | None,
+) -> tuple[dict[str, object], float | None]:
+    from optimize_anything.llm_judge import llm_judge_evaluator
+
+    try:
+        evaluator = cast(
+            EvaluatorFn,
+            llm_judge_evaluator(
+                objective,
+                model=provider,
+                quality_dimensions=quality_dimensions,
+                hard_constraints=hard_constraints,
+                api_base=api_base,
+            ),
+        )
+        score, side_info = evaluator(artifact)
+        numeric_score = float(score)
+    except Exception as exc:
+        return {
+            "provider": provider,
+            "score": None,
+            "error": str(exc),
+        }, None
+
+    result: dict[str, object] = {
+        "provider": provider,
+        "score": numeric_score,
+    }
+    if isinstance(side_info, dict):
+        result.update(side_info)
+    return result, numeric_score
+
+
 def _print_judge_plateau_advisory(
     *,
     judge_model: str,
     proposer_model: str | None,
     has_intake: bool,
-    file: object = None,
+    file: TextIO | None = None,
 ) -> None:
     """Print actionable suggestions when LLM judge optimization plateaus."""
     lines = [
@@ -1037,6 +1115,34 @@ def _print_judge_plateau_advisory(
         print(line, file=file)
 
 
+def _print_optimize_diff(
+    seed: str | None,
+    best_artifact: Any,
+    *,
+    file: TextIO | None = None,
+) -> None:
+    if seed is None:
+        print("(no diff: seedless mode has no seed artifact)", file=file)
+        return
+
+    seed_lines = seed.splitlines(keepends=True)
+    best_str = best_artifact if isinstance(best_artifact, str) else json.dumps(best_artifact)
+    best_lines = best_str.splitlines(keepends=True)
+    diff_output = difflib.unified_diff(
+        seed_lines,
+        best_lines,
+        fromfile="seed",
+        tofile="optimized",
+    )
+    diff_text = "".join(diff_output)
+    if diff_text:
+        print("\n--- diff: seed vs optimized ---", file=file)
+        print(diff_text, end="", file=file)
+        print("--- end diff ---", file=file)
+    else:
+        print("(no diff: seed and optimized artifact are identical)", file=file)
+
+
 def _read_seed(path: str) -> str | None:
     try:
         with open(path) as f:
@@ -1049,11 +1155,56 @@ def _read_seed(path: str) -> str | None:
         return None
 
 
+def _resolve_optimize_seed(args: argparse.Namespace) -> tuple[bool, str | None]:
+    if args.seed_file is not None:
+        seed = _read_seed(args.seed_file)
+        return (seed is not None, seed)
+    if not args.no_seed:
+        print("Error: provide seed_file or pass --no-seed", file=sys.stderr)
+        return False, None
+    if not args.objective or not args.model:
+        print(
+            "Error: seedless mode (--no-seed) requires both --objective and --model",
+            file=sys.stderr,
+        )
+        return False, None
+    return True, None
+
+
+def _validate_optimize_args(args: argparse.Namespace) -> str | None:
+    if args.budget is None:
+        args.budget = 100
+    if args.budget < 1:
+        return "Error: --budget must be at least 1"
+    if args.early_stop_window < 1:
+        return "Error: --early-stop-window must be at least 1"
+    if args.early_stop_threshold < 0:
+        return "Error: --early-stop-threshold must be non-negative"
+    if args.cache_from and not args.cache:
+        return "Error: --cache-from requires --cache"
+    if args.valset and not args.dataset:
+        return "Error: --valset requires --dataset"
+    return None
+
+
+def _load_dataset_arg(path: str | None) -> list[dict] | None:
+    if path is None:
+        return None
+
+    from optimize_anything.dataset import load_dataset
+
+    try:
+        return load_dataset(path)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return None
+
+
 def _load_and_normalize_intake_spec(
     *,
     intake_json: str | None,
     intake_file: str | None,
-) -> dict[str, object] | None:
+) -> dict[str, Any] | None:
     from optimize_anything.intake import normalize_intake_spec
 
     if intake_json is not None and intake_file is not None:
@@ -1066,7 +1217,7 @@ def _load_and_normalize_intake_spec(
     if intake_json is None and intake_file is None:
         return None
 
-    raw_data: object
+    raw_data: Any
     if intake_json is not None:
         try:
             raw_data = json.loads(intake_json)
@@ -1077,6 +1228,7 @@ def _load_and_normalize_intake_spec(
             )
             return None
     else:
+        assert intake_file is not None
         try:
             with open(intake_file) as f:
                 raw_data = json.load(f)
@@ -1115,17 +1267,39 @@ def _preflight_command_evaluator(
     cwd: str | None,
     score_range: str = "unit",
 ) -> str | None:
+    cwd_path, path_error = _validate_command_preflight_paths(command=command, cwd=cwd)
+    if path_error is not None:
+        return path_error
+
+    proc, run_error = _run_command_preflight(command=command, cwd=cwd, cwd_path=cwd_path)
+    if run_error is not None:
+        return run_error
+
+    assert proc is not None
+    return _validate_command_preflight_result(
+        command=command,
+        cwd=cwd,
+        proc=proc,
+        score_range=score_range,
+    )
+
+
+def _validate_command_preflight_paths(
+    *,
+    command: list[str],
+    cwd: str | None,
+) -> tuple[Path | None, str | None]:
     cwd_path: Path | None = None
     if cwd is not None:
         cwd_path = _resolve_path(cwd, base=Path.cwd())
         if not cwd_path.exists():
-            return _format_preflight_error(
+            return None, _format_preflight_error(
                 command=command,
                 cwd=cwd,
                 detail=f"evaluator cwd does not exist: {cwd}",
             )
         if not cwd_path.is_dir():
-            return _format_preflight_error(
+            return None, _format_preflight_error(
                 command=command,
                 cwd=cwd,
                 detail=f"evaluator cwd is not a directory: {cwd}",
@@ -1133,27 +1307,37 @@ def _preflight_command_evaluator(
 
     executable_error = _validate_command_executable(command[0], cwd_path)
     if executable_error is not None:
-        return _format_preflight_error(command=command, cwd=cwd, detail=executable_error)
+        return None, _format_preflight_error(command=command, cwd=cwd, detail=executable_error)
 
     script_arg = _maybe_script_path_arg(command)
-    if script_arg is not None:
-        script_path = _resolve_path(script_arg, base=cwd_path or Path.cwd())
-        if not script_path.exists():
-            return _format_preflight_error(
-                command=command,
-                cwd=cwd,
-                detail=(
-                    f"script path not found: {script_arg}. "
-                    "Use a correct relative path or set --evaluator-cwd."
-                ),
-            )
-        if script_path.is_dir():
-            return _format_preflight_error(
-                command=command,
-                cwd=cwd,
-                detail=f"script path is a directory: {script_arg}",
-            )
+    if script_arg is None:
+        return cwd_path, None
 
+    script_path = _resolve_path(script_arg, base=cwd_path or Path.cwd())
+    if not script_path.exists():
+        return None, _format_preflight_error(
+            command=command,
+            cwd=cwd,
+            detail=(
+                f"script path not found: {script_arg}. "
+                "Use a correct relative path or set --evaluator-cwd."
+            ),
+        )
+    if script_path.is_dir():
+        return None, _format_preflight_error(
+            command=command,
+            cwd=cwd,
+            detail=f"script path is a directory: {script_arg}",
+        )
+    return cwd_path, None
+
+
+def _run_command_preflight(
+    *,
+    command: list[str],
+    cwd: str | None,
+    cwd_path: Path | None,
+) -> tuple[subprocess.CompletedProcess[str] | None, str | None]:
     payload = json.dumps({"_protocol_version": 2, "candidate": "__optimize_anything_preflight__"})
     run_cwd = str(cwd_path) if cwd_path is not None else None
     try:
@@ -1166,21 +1350,30 @@ def _preflight_command_evaluator(
             cwd=run_cwd,
         )
     except FileNotFoundError:
-        return _format_preflight_error(
+        return None, _format_preflight_error(
             command=command,
             cwd=cwd,
             detail=f"command executable not found: {command[0]}",
         )
     except subprocess.TimeoutExpired:
-        return _format_preflight_error(
+        return None, _format_preflight_error(
             command=command,
             cwd=cwd,
             detail="command timed out during preflight after 10.0s",
         )
+    return proc, None
 
+
+def _validate_command_preflight_result(
+    *,
+    command: list[str],
+    cwd: str | None,
+    proc: subprocess.CompletedProcess[str],
+    score_range: str,
+) -> str | None:
     if proc.returncode != 0:
-        stderr = proc.stderr.strip()
         detail = f"command exited with code {proc.returncode}"
+        stderr = proc.stderr.strip()
         if stderr:
             detail = f"{detail}; stderr: {stderr[:300]}"
         return _format_preflight_error(command=command, cwd=cwd, detail=detail)
@@ -1188,18 +1381,17 @@ def _preflight_command_evaluator(
     stdout = proc.stdout.strip()
     try:
         result = json.loads(stdout)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError as exc:
         snippet = stdout[:300] if stdout else "<empty stdout>"
         return _format_preflight_error(
             command=command,
             cwd=cwd,
-            detail=f"stdout is not valid JSON: {e.msg}; stdout: {snippet}",
+            detail=f"stdout is not valid JSON: {exc.msg}; stdout: {snippet}",
         )
 
     payload_error = _validate_evaluator_payload(result, score_range=score_range)
     if payload_error is not None:
         return _format_preflight_error(command=command, cwd=cwd, detail=payload_error)
-
     return None
 
 
@@ -1249,21 +1441,15 @@ def _preflight_http_evaluator(
     return None
 
 
-def _load_spec_if_provided(spec_file: str) -> dict | None | bool:
-    """Load spec file if provided.
-
-    Returns:
-        dict: loaded spec
-        None: no spec file (not an error)
-        False: load failed (error already printed)
-    """
+def _load_spec_if_provided(spec_file: str) -> dict[str, Any] | None:
+    """Load a provided spec file, returning None when loading fails."""
     from optimize_anything.spec_loader import SpecLoadError, load_spec
 
     try:
         return load_spec(spec_file)
     except SpecLoadError as exc:
         print(f"Error loading spec file: {exc}", file=sys.stderr)
-        return False
+        return None
 
 
 def _apply_spec_to_args(
@@ -1275,7 +1461,9 @@ def _apply_spec_to_args(
 
     args = copy.copy(args)
 
-    for key in (
+    _apply_spec_values_if_missing(
+        args,
+        spec,
         "seed_file",
         "objective",
         "background",
@@ -1284,46 +1472,15 @@ def _apply_spec_to_args(
         "evaluator_cwd",
         "task_model",
         "cache_from",
-    ):
-        if getattr(args, key, None) is None and spec.get(key) is not None:
-            setattr(args, key, spec[key])
-
-    if getattr(args, "evaluator_command", None) is None and spec.get("evaluator_command"):
-        args.evaluator_command = spec["evaluator_command"]
-
-    # budget: spec overrides only if CLI user didn't explicitly set it
-    if args.budget is None and spec.get("budget") is not None:
-        args.budget = spec["budget"]
-
-    if getattr(args, "judge_model", None) is None and spec.get("judge_model") is not None:
-        args.judge_model = spec["judge_model"]
-
-    if getattr(args, "model", None) is None and spec.get("proposer_model") is not None:
-        args.model = spec["proposer_model"]
-
-    if getattr(args, "workers", None) is None and spec.get("workers") is not None:
-        args.workers = spec["workers"]
-
-    if not getattr(args, "parallel", False) and spec.get("parallel") is True:
-        args.parallel = True
-
-    if not getattr(args, "cache", False) and spec.get("cache") is True:
-        args.cache = True
-
-    if not getattr(args, "early_stop", False) and spec.get("early_stop") is True:
-        args.early_stop = True
-
-    if (
-        getattr(args, "early_stop_window", None) == 10
-        and spec.get("early_stop_window") is not None
-    ):
-        args.early_stop_window = spec["early_stop_window"]
-
-    if (
-        getattr(args, "early_stop_threshold", None) == 0.005
-        and spec.get("early_stop_threshold") is not None
-    ):
-        args.early_stop_threshold = spec["early_stop_threshold"]
+        "evaluator_command",
+        "budget",
+        "judge_model",
+        "workers",
+    )
+    _apply_spec_alias_if_missing(args, spec, arg_key="model", spec_key="proposer_model")
+    _apply_true_flags_from_spec(args, spec, "parallel", "cache", "early_stop")
+    _apply_spec_value_if_default(args, spec, "early_stop_window", default=10)
+    _apply_spec_value_if_default(args, spec, "early_stop_threshold", default=0.005)
 
     # Intake: apply only if neither --intake-json nor --intake-file was provided
     if (
@@ -1334,6 +1491,48 @@ def _apply_spec_to_args(
         args.intake_json = json.dumps(spec["intake"])
 
     return args
+
+
+def _apply_spec_values_if_missing(
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+    *keys: str,
+) -> None:
+    for key in keys:
+        if getattr(args, key, None) is None and spec.get(key) is not None:
+            setattr(args, key, spec[key])
+
+
+def _apply_spec_alias_if_missing(
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+    *,
+    arg_key: str,
+    spec_key: str,
+) -> None:
+    if getattr(args, arg_key, None) is None and spec.get(spec_key) is not None:
+        setattr(args, arg_key, spec[spec_key])
+
+
+def _apply_true_flags_from_spec(
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+    *keys: str,
+) -> None:
+    for key in keys:
+        if not getattr(args, key, False) and spec.get(key) is True:
+            setattr(args, key, True)
+
+
+def _apply_spec_value_if_default(
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+    key: str,
+    *,
+    default: object,
+) -> None:
+    if getattr(args, key, None) == default and spec.get(key) is not None:
+        setattr(args, key, spec[key])
 
 
 def _timestamped_run_dir(run_dir: str) -> str:

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from gepa.core.state import GEPAState
+from gepa.utils.stop_condition import StopperProtocol
 
 
-def plateau_stop_callback(window: int = 10, threshold: float = 0.005) -> Callable[[Any], bool]:
+def plateau_stop_callback(
+    window: int = 10,
+    threshold: float = 0.005,
+) -> StopperProtocol:
     """Return a stop callback that triggers when best score plateaus.
 
     GEPA stop callbacks receive the current GEPA state and must return ``True``
@@ -19,7 +22,7 @@ def plateau_stop_callback(window: int = 10, threshold: float = 0.005) -> Callabl
 
     history: list[float] = []
 
-    def _stop(gepa_state: Any) -> bool:
+    def _stop(gepa_state: GEPAState) -> bool:
         try:
             scores = getattr(gepa_state, "program_full_scores_val_set", None)
             if not scores:

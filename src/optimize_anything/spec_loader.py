@@ -59,103 +59,132 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         "intake": None,
     }
 
-    if "seed_file" in opt:
-        seed_raw = opt["seed_file"]
-        if not isinstance(seed_raw, str):
-            raise SpecLoadError("optimization.seed_file must be a string")
-        result["seed_file"] = str(_resolve_path(seed_raw, base=spec_dir))
-
-    for str_key in ("objective", "background", "output", "task_model"):
-        if str_key in opt:
-            value = opt[str_key]
-            if not isinstance(value, str):
-                raise SpecLoadError(f"optimization.{str_key} must be a string")
-            result[str_key] = value
-
-    if "budget" in opt:
-        budget_raw = opt["budget"]
-        if not isinstance(budget_raw, int) or budget_raw <= 0:
-            raise SpecLoadError("optimization.budget must be a positive integer")
-        result["budget"] = budget_raw
-
-    if "parallel" in opt:
-        parallel_raw = opt["parallel"]
-        if not isinstance(parallel_raw, bool):
-            raise SpecLoadError("optimization.parallel must be a boolean")
-        result["parallel"] = parallel_raw
-
-    if "workers" in opt:
-        workers_raw = opt["workers"]
-        if not isinstance(workers_raw, int) or workers_raw <= 0:
-            raise SpecLoadError("optimization.workers must be a positive integer")
-        result["workers"] = workers_raw
-
-    if "cache" in opt:
-        cache_raw = opt["cache"]
-        if not isinstance(cache_raw, bool):
-            raise SpecLoadError("optimization.cache must be a boolean")
-        result["cache"] = cache_raw
-
-    if "cache_from" in opt:
-        cache_from_raw = opt["cache_from"]
-        if not isinstance(cache_from_raw, str):
-            raise SpecLoadError("optimization.cache_from must be a string")
-        result["cache_from"] = str(_resolve_path(cache_from_raw, base=spec_dir))
-
-    if "early_stop" in opt:
-        early_stop_raw = opt["early_stop"]
-        if not isinstance(early_stop_raw, bool):
-            raise SpecLoadError("optimization.early_stop must be a boolean")
-        result["early_stop"] = early_stop_raw
-
-    if "early_stop_window" in opt:
-        window_raw = opt["early_stop_window"]
-        if not isinstance(window_raw, int) or window_raw <= 0:
-            raise SpecLoadError("optimization.early_stop_window must be a positive integer")
-        result["early_stop_window"] = window_raw
-
-    if "early_stop_threshold" in opt:
-        threshold_raw = opt["early_stop_threshold"]
-        if not isinstance(threshold_raw, (int, float)) or threshold_raw < 0:
-            raise SpecLoadError("optimization.early_stop_threshold must be a non-negative number")
-        result["early_stop_threshold"] = float(threshold_raw)
-
-    if "command" in evaluator:
-        cmd = evaluator["command"]
-        if not isinstance(cmd, list) or not cmd:
-            raise SpecLoadError("evaluator.command must be a non-empty list of strings")
-        if not all(isinstance(c, str) for c in cmd):
-            raise SpecLoadError("evaluator.command must be a list of strings")
-        result["evaluator_command"] = cmd
-
-    if "url" in evaluator:
-        url = evaluator["url"]
-        if not isinstance(url, str):
-            raise SpecLoadError("evaluator.url must be a string")
-        result["evaluator_url"] = url
-
-    if "cwd" in evaluator:
-        cwd_raw = evaluator["cwd"]
-        if not isinstance(cwd_raw, str):
-            raise SpecLoadError("evaluator.cwd must be a string")
-        result["evaluator_cwd"] = str(_resolve_path(cwd_raw, base=spec_dir))
-
-    if "judge" in model:
-        judge = model["judge"]
-        if not isinstance(judge, str):
-            raise SpecLoadError("model.judge must be a string")
-        result["judge_model"] = judge
-
-    if "proposer" in model:
-        proposer = model["proposer"]
-        if not isinstance(proposer, str):
-            raise SpecLoadError("model.proposer must be a string")
-        result["proposer_model"] = proposer
+    result.update(_normalize_optimization_section(opt, spec_dir=spec_dir))
+    result.update(_normalize_evaluator_section(evaluator, spec_dir=spec_dir))
+    result.update(_normalize_model_section(model))
 
     if intake_section:
         result["intake"] = dict(intake_section)
 
     return result
+
+
+def _normalize_optimization_section(
+    opt: dict[str, Any],
+    *,
+    spec_dir: Path,
+) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+
+    if "seed_file" in opt:
+        normalized["seed_file"] = str(
+            _resolve_path(_require_string(opt, "seed_file", "optimization"), base=spec_dir)
+        )
+
+    for key in ("objective", "background", "output", "task_model"):
+        if key in opt:
+            normalized[key] = _require_string(opt, key, "optimization")
+
+    for key in ("budget", "workers", "early_stop_window"):
+        if key in opt:
+            normalized[key] = _require_positive_int(opt, key, "optimization")
+
+    for key in ("parallel", "cache", "early_stop"):
+        if key in opt:
+            normalized[key] = _require_bool(opt, key, "optimization")
+
+    if "cache_from" in opt:
+        normalized["cache_from"] = str(
+            _resolve_path(_require_string(opt, "cache_from", "optimization"), base=spec_dir)
+        )
+
+    if "early_stop_threshold" in opt:
+        normalized["early_stop_threshold"] = _require_non_negative_number(
+            opt,
+            "early_stop_threshold",
+            "optimization",
+        )
+
+    return normalized
+
+
+def _normalize_evaluator_section(
+    evaluator: dict[str, Any],
+    *,
+    spec_dir: Path,
+) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+
+    if "command" in evaluator:
+        normalized["evaluator_command"] = _require_string_list(
+            evaluator,
+            "command",
+            "evaluator",
+        )
+    if "url" in evaluator:
+        normalized["evaluator_url"] = _require_string(evaluator, "url", "evaluator")
+    if "cwd" in evaluator:
+        normalized["evaluator_cwd"] = str(
+            _resolve_path(_require_string(evaluator, "cwd", "evaluator"), base=spec_dir)
+        )
+
+    return normalized
+
+
+def _normalize_model_section(model: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+
+    if "judge" in model:
+        normalized["judge_model"] = _require_string(model, "judge", "model")
+    if "proposer" in model:
+        normalized["proposer_model"] = _require_string(model, "proposer", "model")
+
+    return normalized
+
+
+def _require_string(section: dict[str, Any], key: str, section_name: str) -> str:
+    value = section[key]
+    if not isinstance(value, str):
+        raise SpecLoadError(f"{section_name}.{key} must be a string")
+    return value
+
+
+def _require_positive_int(section: dict[str, Any], key: str, section_name: str) -> int:
+    value = section[key]
+    if not isinstance(value, int) or value <= 0:
+        raise SpecLoadError(f"{section_name}.{key} must be a positive integer")
+    return value
+
+
+def _require_bool(section: dict[str, Any], key: str, section_name: str) -> bool:
+    value = section[key]
+    if not isinstance(value, bool):
+        raise SpecLoadError(f"{section_name}.{key} must be a boolean")
+    return value
+
+
+def _require_non_negative_number(
+    section: dict[str, Any],
+    key: str,
+    section_name: str,
+) -> float:
+    value = section[key]
+    if not isinstance(value, (int, float)) or value < 0:
+        raise SpecLoadError(f"{section_name}.{key} must be a non-negative number")
+    return float(value)
+
+
+def _require_string_list(
+    section: dict[str, Any],
+    key: str,
+    section_name: str,
+) -> list[str]:
+    value = section[key]
+    if not isinstance(value, list) or not value:
+        raise SpecLoadError(f"{section_name}.{key} must be a non-empty list of strings")
+    if not all(isinstance(item, str) for item in value):
+        raise SpecLoadError(f"{section_name}.{key} must be a list of strings")
+    return value
 
 
 def _resolve_path(path_str: str, *, base: Path) -> Path:
