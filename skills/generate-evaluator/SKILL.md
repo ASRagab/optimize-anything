@@ -14,6 +14,13 @@ Generate an evaluator that scores candidate artifacts for optimization with gepa
 - Default payload: `{"candidate": "<text>"}`
 - Dataset-aware payload (`--dataset`): `{"candidate": "<text>", "example": {...}}`
 - Output JSON must include `score` (float, usually in `[0,1]`), plus optional side-info fields.
+- **Preflight detection** (command evaluators only): The CLI sends `"__optimize_anything_preflight__"` as the candidate text before optimization starts. Your evaluator should detect this and return immediately:
+  ```python
+  if candidate == "__optimize_anything_preflight__":
+      print(json.dumps({"score": 0.5}))
+      sys.exit(0)
+  ```
+  This avoids the 10-second preflight timeout for evaluators that make slow API calls.
 
 ## Choose an Evaluator Pattern
 
@@ -83,3 +90,4 @@ echo '{"candidate":"text","example":{"input":"q","expected":"a"}}' | python3 eva
 4. Customize scoring logic and side-info fields.
 5. Test with stdin payloads. You should see JSON with `score` plus diagnostic fields.
 6. Validate score range: a good seed should score between 0.3-0.7. If above 0.85, the evaluator lacks discrimination.
+7. Test preflight: `echo '{"candidate":"__optimize_anything_preflight__"}' | python3 your_evaluator.py` — should return `{"score": 0.5}` instantly.
