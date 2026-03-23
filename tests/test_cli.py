@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import json
 from pathlib import Path
 
@@ -1488,7 +1489,7 @@ class TestSeedlessAndScoreRange:
         assert captured_kwargs["seed_candidate"] == "seed artifact"
 
     def test_preflight_command_respects_score_range_modes(self, tmp_path: Path):
-        from optimize_anything.cli import _preflight_command_evaluator
+        from optimize_anything.preflight import _preflight_command_evaluator
 
         script = tmp_path / "eval.sh"
         script.write_text('#!/usr/bin/env bash\necho \'{"score": 1.5}\'\n')
@@ -1502,7 +1503,7 @@ class TestSeedlessAndScoreRange:
         assert err_any is None
 
     def test_preflight_http_respects_score_range_modes(self, monkeypatch):
-        from optimize_anything.cli import _preflight_http_evaluator
+        from optimize_anything.preflight import _preflight_http_evaluator
 
         class FakeResponse:
             status_code = 200
@@ -1711,7 +1712,7 @@ class TestEngineConfigWiring:
         )
         monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
         monkeypatch.setattr(
-            "optimize_anything.cli._timestamped_run_dir",
+            "optimize_anything.cli_optimize._timestamped_run_dir",
             lambda base: str(Path(base) / "run-20260303-150000"),
         )
 
@@ -1936,12 +1937,10 @@ class TestRunDir:
     def test_run_dir_write_failure_does_not_exit_nonzero(
         self, tmp_path: Path, capsys, monkeypatch
     ):
-        """Writing to a read-only directory prints warning but returns exit 0."""
+        """Writing run-dir artifacts can fail without making optimize fail overall."""
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("test")
-        read_only_dir = tmp_path / "ro"
-        read_only_dir.mkdir()
-        read_only_dir.chmod(0o444)
+        run_dir = tmp_path / "run-dir"
 
         class DummyResult:
             best_candidate = "best"
@@ -1960,21 +1959,25 @@ class TestRunDir:
             lambda **kwargs: DummyResult(),
         )
 
+        def fake_save_run_dir(**kwargs):
+            print("Warning: failed to write run-dir '/fake/path': simulated failure", file=sys.stderr)
+            return None
+
+        monkeypatch.setattr("optimize_anything.cli_optimize._save_run_dir", fake_save_run_dir)
+
         result = main([
             "optimize", str(seed_file),
             "--evaluator-command", "bash", "eval.sh",
-            "--run-dir", str(read_only_dir),
+            "--run-dir", str(run_dir),
         ])
         assert result == 0
         captured = capsys.readouterr()
         assert "Warning" in captured.err or "failed to write" in captured.err
 
-        read_only_dir.chmod(0o755)
-
 
 class TestHttpEvaluatorPreflight:
     def test_preflight_passes_on_valid_response(self, monkeypatch):
-        from optimize_anything.cli import _preflight_http_evaluator
+        from optimize_anything.preflight import _preflight_http_evaluator
 
         class FakeResponse:
             status_code = 200
@@ -1988,7 +1991,7 @@ class TestHttpEvaluatorPreflight:
 
     def test_preflight_fails_on_connection_refused(self, monkeypatch):
         import httpx
-        from optimize_anything.cli import _preflight_http_evaluator
+        from optimize_anything.preflight import _preflight_http_evaluator
 
         monkeypatch.setattr("httpx.post", lambda *a, **kw: (_ for _ in ()).throw(httpx.ConnectError("refused")))
         result = _preflight_http_evaluator("http://localhost:9999/eval")
@@ -1997,7 +2000,7 @@ class TestHttpEvaluatorPreflight:
 
     def test_preflight_fails_on_timeout(self, monkeypatch):
         import httpx
-        from optimize_anything.cli import _preflight_http_evaluator
+        from optimize_anything.preflight import _preflight_http_evaluator
 
         monkeypatch.setattr("httpx.post", lambda *a, **kw: (_ for _ in ()).throw(httpx.TimeoutException("timed out")))
         result = _preflight_http_evaluator("http://localhost:8000/eval")
@@ -2005,7 +2008,7 @@ class TestHttpEvaluatorPreflight:
         assert "timed out" in result.lower()
 
     def test_preflight_fails_on_non_json_response(self, monkeypatch):
-        from optimize_anything.cli import _preflight_http_evaluator
+        from optimize_anything.preflight import _preflight_http_evaluator
 
         class FakeResponse:
             status_code = 200
@@ -2019,7 +2022,7 @@ class TestHttpEvaluatorPreflight:
         assert "non-JSON" in result
 
     def test_preflight_fails_on_missing_score_field(self, monkeypatch):
-        from optimize_anything.cli import _preflight_http_evaluator
+        from optimize_anything.preflight import _preflight_http_evaluator
 
         class FakeResponse:
             status_code = 200

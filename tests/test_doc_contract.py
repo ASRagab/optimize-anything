@@ -60,6 +60,7 @@ def test_optimize_output_keys_are_documented_and_in_runtime_contract():
         "top_diagnostics",
         "plateau_guidance",
         "evaluator_failure_signal",
+        "budget_utilization",
     ]
 
     docs_text = _combined_docs_text()

@@ -130,6 +130,25 @@ optimize-anything optimize seed.txt \
 
 optimize-anything is also a Claude Code plugin with guided slash commands and skills.
 
+### Plugin Regression Workflow
+
+Use the regression harness when you want to verify that Claude can actually invoke the plugin correctly end-to-end, not merely that the CLI itself still works.
+
+```bash
+# Direct plugin regression run
+uv run python scripts/plugin_regression.py
+
+# Full repo validation including plugin regression
+uv run python scripts/check.py --with-plugin
+```
+
+Requirements:
+- `claude` CLI installed and authenticated
+- `OPENAI_API_KEY` set in the shell that launches the command
+- `ANTHROPIC_API_KEY` set in the shell that launches the command
+
+The harness runs three real scenarios (`analyze`, `validate`, `quick`), saves Claude JSON outputs plus stderr logs, and fails if Claude does not execute the expected workflow or the optimized artifact is not written.
+
 ### Installation
 
 ```bash
@@ -193,6 +212,7 @@ CLI stdout returns a JSON summary with these fields:
 - `plateau_detected`, `plateau_guidance`
 - optional `evaluator_failure_signal`
 - optional `early_stopped`, `stopped_at_iteration`
+- `budget_utilization` (`requested`, `evaluator_calls`, `candidates_accepted`, `efficiency`)
 
 ### Evaluator Protocol (v2)
 

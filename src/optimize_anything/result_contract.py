@@ -49,6 +49,11 @@ def build_optimize_summary(
         "plateau_detected": plateau_detected,
         "plateau_guidance": plateau_guidance,
         "evaluator_failure_signal": evaluator_failure_signal,
+        "budget_utilization": _build_budget_utilization(
+            requested_budget=requested_budget,
+            total_metric_calls=total_metric_calls,
+            num_candidates=len(scores),
+        ),
     }
     if evaluator_failure_signal is None:
         summary.pop("evaluator_failure_signal")
@@ -63,6 +68,21 @@ def build_optimize_summary(
         summary["stopped_at_iteration"] = stopped_at_iteration
 
     return summary
+
+
+def _build_budget_utilization(
+    *,
+    requested_budget: int | None,
+    total_metric_calls: int | None,
+    num_candidates: int,
+) -> dict[str, Any]:
+    calls = total_metric_calls if isinstance(total_metric_calls, int) else 0
+    return {
+        "requested": requested_budget,
+        "evaluator_calls": calls,
+        "candidates_accepted": num_candidates,
+        "efficiency": round(num_candidates / max(calls, 1), 4),
+    }
 
 
 def _coerce_numeric_list(raw: Any) -> list[float]:

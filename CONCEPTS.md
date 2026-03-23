@@ -98,3 +98,4 @@ These are independent axes:
 - `plateau_detected`, `plateau_guidance`
 - optional `evaluator_failure_signal`
 - optional `early_stopped`, `stopped_at_iteration`
+- `budget_utilization` — breakdown of requested budget vs actual evaluator calls, accepted candidates, and efficiency ratio

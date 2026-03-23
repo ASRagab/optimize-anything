@@ -34,13 +34,19 @@ def _run_gate(label: str, cmd: list[str], cwd: Path) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run all validation gates: pytest, smoke harness, score check."
+        description="Run validation gates: pytest, smoke harness, optional plugin regression, score check."
     )
     parser.add_argument(
         "--skip-smoke",
         action="store_true",
         default=False,
         help="Skip the smoke harness gate (use for offline testing).",
+    )
+    parser.add_argument(
+        "--with-plugin",
+        action="store_true",
+        default=False,
+        help="Include the Claude Code plugin regression gate (requires Claude CLI + API keys).",
     )
     args = parser.parse_args(argv)
 
@@ -68,7 +74,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         results.append(("smoke harness", passed))
 
-    # Gate 3: score check
+    # Gate 3: plugin regression
+    if args.with_plugin:
+        passed = _run_gate(
+            "plugin regression",
+            ["uv", "run", "python", "scripts/plugin_regression.py"],
+            cwd=root,
+        )
+        results.append(("plugin regression", passed))
+    else:
+        print("\n[SKIP] plugin regression (--with-plugin not set)")
+        results.append(("plugin regression", "SKIP"))
+
+    # Gate 4: score check
     passed = _run_gate(
         "score check",
         ["uv", "run", "python", "scripts/score_check.py"],

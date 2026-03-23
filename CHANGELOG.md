@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.3.5 - 2026-03-20
+
+### Structural refactor
+- Extracted `cli.py` monolith (1,639 lines) into 4 focused modules:
+  - `preflight.py` — evaluator preflight validation checks
+  - `persist.py` — run-directory persistence, diff output, artifact writing
+  - `cli_optimize.py` — optimize subcommand implementation
+  - `cli_tools.py` — score, validate, analyze, explain, budget, intake, generate-evaluator subcommands
+- `cli.py` reduced to ~500 lines: argparse dispatcher + shared utilities
+
+### New features
+- Added `budget_utilization` section to optimize output contract with `requested`, `evaluator_calls`, `candidates_accepted`, and `efficiency` fields for transparent budget tracking
+
+### Verification
+- All 307 unit tests pass
+- Doc contract and score check gates pass
+- No circular import issues with extracted modules
+
 ## v0.3.2 - 2026-03-09
 
 ### Improvements
