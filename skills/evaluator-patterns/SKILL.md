@@ -11,6 +11,13 @@ Use this skill to generate evaluator scripts that follow the optimize-anything c
 - Read one JSON object from stdin: `{"candidate": "..."}`
 - Write one JSON object to stdout on a single line: `{"score": <float>, ...diagnostics...}`
 - Return a numeric `score` (recommended in `0.0..1.0`)
+- **Preflight guard** (recommended): detect `"__optimize_anything_preflight__"` candidate and fast-return
+  ```python
+  candidate = str(payload.get("candidate", ""))
+  if candidate == "__optimize_anything_preflight__":
+      print(json.dumps({"score": 0.5}, separators=(",", ":")))
+      return 0
+  ```
 
 ---
 
@@ -35,6 +42,11 @@ def clamp01(x: float) -> float:
 def main() -> int:
     payload = json.load(sys.stdin)
     candidate = str(payload.get("candidate", ""))
+
+    # Preflight guard for optimize-anything CLI
+    if candidate == "__optimize_anything_preflight__":
+        print(json.dumps({"score": 0.5}, separators=(",", ":")))
+        return 0
 
     dimensions = [
         {"name": "clarity", "weight": 0.35, "guide": "Clear, specific, easy to follow"},
@@ -222,6 +234,12 @@ def clamp01(x: float) -> float:
 def main() -> int:
     payload = json.load(sys.stdin)
     candidate = str(payload.get("candidate", ""))
+
+    # Preflight guard for optimize-anything CLI
+    if candidate == "__optimize_anything_preflight__":
+        print(json.dumps({"score": 0.5}, separators=(",", ":")))
+        return 0
+
     text = candidate.strip()
 
     words = re.findall(r"\w+", text)
@@ -285,6 +303,11 @@ def scenario_score(text: str, required_signals: list[str]) -> float:
 def main() -> int:
     payload = json.load(sys.stdin)
     candidate = str(payload.get("candidate", "")).lower()
+
+    # Preflight guard for optimize-anything CLI (check raw payload, not lowercased)
+    if payload.get("candidate", "") == "__optimize_anything_preflight__":
+        print(json.dumps({"score": 0.5}, separators=(",", ":")))
+        return 0
 
     scenarios = {
         "ambiguous_request": ["clarifying question", "assumption"],
