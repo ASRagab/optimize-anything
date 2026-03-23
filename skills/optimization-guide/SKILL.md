@@ -17,6 +17,47 @@ Start with your current best version of the artifact. `gepa` evolves from here.
 ### 2. Create an Evaluator
 Use the **generate-evaluator** skill to create one matched to your objective. The evaluator is the most critical piece—`gepa`'s optimization quality is bounded by your evaluator's feedback quality.
 
+### 2b. Choose Your Evaluator Interface
+
+Three interfaces exist. Pick based on where your evaluator code lives:
+
+| Your evaluator is... | Use this interface | Evaluator signature |
+|---|---|---|
+| Python code in the same project | **Python API** — pass a function to `optimize_anything()` | `def eval(candidate: str) -> float` or `-> tuple[float, dict]` |
+| A standalone script/binary | **CLI command** — `--evaluator-command` | Reads `{"candidate": "..."}` from stdin, writes `{"score": float}` to stdout |
+| A remote service | **HTTP endpoint** — `--evaluator-url` | POST `{"candidate": "..."}`, response `{"score": float}` |
+
+**Prefer the Python API** when your evaluator is Python code. It bypasses all CLI overhead: no preflight timeout, no argparse conflicts, no subprocess timeout, no stdin/stdout protocol. Your evaluator is just a function:
+
+```python
+import gepa.optimize_anything as oa
+
+def my_evaluator(candidate: str) -> tuple[float, dict]:
+    score = run_my_scoring(candidate)
+    oa.log("Details:", some_diagnostic)  # captured as ASI
+    return score, {"feedback": "..."}
+
+result = optimize_anything(
+    seed_candidate=open("seed.txt").read(),
+    evaluator=my_evaluator,
+    objective="maximize quality",
+    config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
+)
+```
+
+**Use CLI command** only when your evaluator is a separate process (different language, isolated environment, or shared team tooling). Wrap evaluator-specific flags in a shell script — do not pass them through `--evaluator-command`:
+
+```bash
+# evaluators/eval.sh (bakes in your evaluator's flags)
+#!/bin/bash
+cd "$(dirname "$0")/.."
+exec python -m my_eval.scorer --subset-size 5 --temperature 0.0
+```
+
+```bash
+optimize-anything optimize seed.txt --evaluator-command bash evaluators/eval.sh
+```
+
 ### 3. Choose Optimization Mode
 
 **Single-task** (no dataset) — optimize one artifact against one evaluator:
@@ -145,3 +186,29 @@ The result contains:
 4. Add background context: Use `background` for domain knowledge, constraints, or strategies such as "Target audience is non-technical users. Never use jargon."
 5. Iterate on the evaluator: Improve the evaluator before increasing `budget` if optimization results on `seed.txt` are poor.
 6. Set evaluator working directory: Pass `evaluator_cwd` as an absolute project path next to `seed.txt` and `evaluators/eval.sh` when `evaluators/eval.sh` or other evaluator commands use repo-relative files or scripts.
+
+## Preflight Behavior (CLI only)
+
+When using `--evaluator-command`, the CLI runs a **preflight check** before optimization starts. It sends:
+
+```json
+{"_protocol_version": 2, "candidate": "__optimize_anything_preflight__"}
+```
+
+The preflight has a **10-second timeout**. If your evaluator makes slow API calls (LLM inference, database queries), it will timeout on the real evaluation pipeline. Two solutions:
+
+1. **Detect the sentinel** in your evaluator and fast-return:
+```python
+payload = json.load(sys.stdin)
+candidate = payload["candidate"]
+if candidate == "__optimize_anything_preflight__":
+    print(json.dumps({"score": 0.5}))
+    sys.exit(0)
+# ... actual evaluation below
+```
+
+2. **Use the Python API instead** — it has no preflight step at all.
+
+### Command Evaluator Timeout
+
+The `command_evaluator` has a default **30-second timeout per evaluation call** (not configurable via CLI). If your evaluator takes longer than 30s per call, use the Python API or the HTTP evaluator interface.
