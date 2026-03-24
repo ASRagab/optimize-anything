@@ -297,7 +297,7 @@ Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-
 | `--early-stop-threshold <float>` | Min improvement required over window | `0.005` |
 | `--spec-file <path>` | Load TOML spec defaults | -- |
 | `--task-model <model>` | Optional metadata forwarded to evaluators | -- |
-| `--score-range unit|any` | Score validation mode for cmd/http | `unit` |
+| `--score-range unit\|any` | Score validation mode for cmd/http | `unit` |
 
 ## Learn More
 
