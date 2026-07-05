@@ -22,7 +22,7 @@ optimize-anything optimize seed.txt \
   --objective "Improve clarity and specificity" \
   --model openai/gpt-4o-mini \
   --budget 20 \
-  --parallel --workers 4 \
+  --workers 4 \
   --cache \
   --run-dir runs \
   --output result.txt
@@ -60,7 +60,7 @@ optimize-anything optimize prompt.txt \
   --dataset data/train.jsonl \
   --valset data/val.jsonl \
   --model openai/gpt-4o-mini \
-  --budget 120 --parallel --workers 6 --cache --run-dir runs
+  --budget 120 --workers 6 --cache --run-dir runs
 ```
 
 ### Multi-provider validation
@@ -91,6 +91,9 @@ optimize-anything optimize --no-seed \
 
 - Early stop is auto-enabled when `--budget > 30` (or force with `--early-stop`)
 - Reuse prior evaluator cache with `--cache-from` (requires `--cache` + `--run-dir`)
+- Evaluator calls run in parallel by default; pass `--no-parallel` for evaluators
+  that write shared temp files, depend on process-global state, or need strict
+  provider rate-limit control.
 
 ```bash
 optimize-anything optimize seed.txt \
@@ -114,6 +117,22 @@ optimize-anything optimize seed.txt \
   --model openai/gpt-4o-mini \
   --score-range any
 ```
+
+### Optimization observability benchmark
+
+Use the maintainer benchmark when you want evidence that an optimization loop
+improved a useful artifact and was not just a seed-only or scorer-gaming run.
+
+```bash
+uv run python scripts/optimization_observer.py setup
+uv run python scripts/optimization_observer.py report \
+  --run-dir integration_runs/optimization-observability/evaluator-generation-guidance/runs/run-YYYYMMDD-HHMMSS \
+  --benchmark examples/optimization-observability/evaluator-generation-benchmark.json \
+  --strict
+```
+
+See `examples/optimization-observability/README.md` for the full benchmark
+commands, expected report fields, acceptance criteria, and troubleshooting.
 
 ## CLI Subcommands
 
@@ -288,7 +307,8 @@ Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-
 | `--api-base <url>` | Override LiteLLM API base | -- |
 | `--diff` | Print unified diff (seed vs best) to stderr | `false` |
 | `--run-dir <path>` | Save run artifacts in timestamped run dir | -- |
-| `--parallel` | Enable parallel evaluator calls | `false` |
+| `--parallel` | Explicitly enable parallel evaluator calls | `true` |
+| `--no-parallel` | Run evaluator calls serially | -- |
 | `--workers <int>` | Max workers for parallel evaluation | -- |
 | `--cache` | Enable evaluator cache | `false` |
 | `--cache-from <run-dir>` | Copy prior `fitness_cache` into new run | -- |

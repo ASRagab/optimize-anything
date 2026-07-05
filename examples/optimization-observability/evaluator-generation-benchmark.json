@@ -1,0 +1,26 @@
+{
+  "id": "evaluator-generation-guidance",
+  "name": "Evaluator-generation guidance benchmark",
+  "seed_artifact": "skills/generate-evaluator/SKILL.md",
+  "why": "The generate-evaluator skill teaches users how to build scoring functions for optimize-anything. Improving it should make future optimization workflows easier to run, debug, and validate.",
+  "objective": "Improve the evaluator-generation guidance so it helps maintainers create reliable evaluators with clear JSON contracts, runnable examples, diagnostic feedback, calibration guidance, and concise acceptance criteria.",
+  "constraints": [
+    "Preserve the SKILL.md frontmatter and trigger intent.",
+    "Keep the artifact useful as an instruction file, not a marketing page.",
+    "Explain the evaluator JSON contract, including candidate input and numeric score output.",
+    "Include runnable command examples for generating and testing evaluators.",
+    "Tell maintainers how to diagnose weak or non-discriminating evaluators.",
+    "Do not overwrite the tracked source artifact during benchmark runs."
+  ],
+  "training_evaluator_command": [
+    "bash",
+    "evaluators/evaluator_generation_training.sh"
+  ],
+  "heldout_evaluator_command": [
+    "bash",
+    "evaluators/evaluator_generation_validation.sh"
+  ],
+  "meaningful_delta": 0.03,
+  "validation_delta": 0.01,
+  "recommended_budget": 6
+}

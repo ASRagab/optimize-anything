@@ -51,7 +51,12 @@ Mode guidance:
 
 If optimization fails: check error message. Common issues: missing API key, model quota exceeded, evaluator script error.
 
-For larger budgets (especially >50), suggest `--parallel` (and optionally `--workers`) when evaluator setup can support concurrency.
+Optimization runs evaluator calls in parallel by default. For larger budgets
+(especially >50), suggest `--workers` when evaluator setup can support
+concurrency. Suggest `--no-parallel` for evaluators that write shared temp
+files, depend on process-global state, or need strict provider rate-limit
+control. `--parallel` remains valid when users want to enable parallel mode
+explicitly.
 
 ## Step 5: Present results clearly
 After completion, provide:
