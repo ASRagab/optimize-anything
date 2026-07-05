@@ -11,7 +11,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["gepa", "httpx", "litellm", "cloudpickle"]
+dependencies = [
+    "gepa>=0.1.1,<0.2.0",
+    "httpx",
+    "litellm>=1.83.0,!=1.82.7,!=1.82.8",
+    "cloudpickle",
+]
 
 [project.urls]
 Homepage = "https://github.com/ASRagab/optimize-anything"

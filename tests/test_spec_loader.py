@@ -125,6 +125,47 @@ class TestLoadSpec:
 
 
 class TestSpecCliIntegration:
+    def _run_with_spec(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        spec_text: str,
+        *extra_args: str,
+    ):
+        from optimize_anything.cli import main
+
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text(spec_text)
+        captured_config: dict = {}
+
+        class DummyResult:
+            best_candidate = "best"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured_config["config"] = kwargs.get("config")
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--spec-file", str(spec_file),
+            *extra_args,
+        ])
+        return result, captured_config
+
     def test_cli_flags_take_precedence_over_spec(
         self, tmp_path: Path, capsys, monkeypatch
     ):
@@ -205,6 +246,69 @@ class TestSpecCliIntegration:
         cfg = captured_config.get("config")
         assert cfg is not None
         assert cfg.engine.max_metric_calls == 7
+
+    def test_spec_parallel_false_disables_engine_parallel(
+        self, tmp_path: Path, monkeypatch
+    ):
+        result, captured = self._run_with_spec(
+            tmp_path,
+            monkeypatch,
+            '[optimization]\nobjective = "test"\nparallel = false\n',
+        )
+
+        assert result == 0
+        assert captured["config"].engine.parallel is False
+
+    def test_spec_parallel_true_enables_engine_parallel(
+        self, tmp_path: Path, monkeypatch
+    ):
+        result, captured = self._run_with_spec(
+            tmp_path,
+            monkeypatch,
+            '[optimization]\nobjective = "test"\nparallel = true\n',
+        )
+
+        assert result == 0
+        assert captured["config"].engine.parallel is True
+
+    def test_cli_parallel_overrides_spec_parallel_false(
+        self, tmp_path: Path, monkeypatch
+    ):
+        result, captured = self._run_with_spec(
+            tmp_path,
+            monkeypatch,
+            '[optimization]\nobjective = "test"\nparallel = false\n',
+            "--parallel",
+        )
+
+        assert result == 0
+        assert captured["config"].engine.parallel is True
+
+    def test_cli_no_parallel_overrides_spec_parallel_true(
+        self, tmp_path: Path, monkeypatch
+    ):
+        result, captured = self._run_with_spec(
+            tmp_path,
+            monkeypatch,
+            '[optimization]\nobjective = "test"\nparallel = true\n',
+            "--no-parallel",
+        )
+
+        assert result == 0
+        assert captured["config"].engine.parallel is False
+
+    def test_spec_parallel_false_with_workers_returns_error(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        result, captured = self._run_with_spec(
+            tmp_path,
+            monkeypatch,
+            '[optimization]\nobjective = "test"\nparallel = false\nworkers = 4\n',
+        )
+
+        assert result == 1
+        assert "config" not in captured
+        assert "workers require parallel execution" in capsys.readouterr().err
 
     def test_invalid_spec_file_returns_1(self, tmp_path: Path, capsys):
         from optimize_anything.cli import main

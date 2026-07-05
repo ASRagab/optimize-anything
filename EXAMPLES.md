@@ -89,9 +89,13 @@ optimize-anything optimize prompt.txt \
   --dataset data/train.jsonl \
   --model openai/gpt-4o-mini \
   --budget 120 \
-  --parallel --workers 6 \
+  --workers 6 \
   --cache --run-dir runs
 ```
+
+Optimization runs evaluator calls in parallel by default. Use `--workers` to cap
+concurrency, or `--no-parallel` when an evaluator writes shared temp files,
+depends on process-global state, or must stay below strict provider rate limits.
 
 With validation set:
 

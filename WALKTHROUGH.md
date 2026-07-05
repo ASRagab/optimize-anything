@@ -105,9 +105,10 @@ uv run optimize-anything optimize seed.txt \
   --budget 120 --cache --run-dir runs
 ```
 
-## Step 9.5: Speed up with parallel workers
+## Step 9.5: Tune parallel workers
 
-For expensive evaluators, add parallel execution:
+Optimization runs evaluator calls in parallel by default. For expensive
+evaluators, cap concurrency with workers:
 
 ```bash
 uv run optimize-anything optimize seed.txt \
@@ -115,8 +116,11 @@ uv run optimize-anything optimize seed.txt \
   --objective "Improve quality" \
   --model openai/gpt-4o-mini \
   --budget 100 \
-  --parallel --workers 8
+  --workers 8
 ```
+
+Use `--no-parallel` if the evaluator writes shared temp files, depends on
+process-global state, or needs strict provider rate-limit control.
 
 ## Step 10: Accept or rerun
 

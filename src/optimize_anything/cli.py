@@ -94,14 +94,21 @@ def main(argv: list[str] | None = None) -> int:
         "--run-dir",
         help=(
             "Directory to save run artifacts. Creates <path>/run-<timestamp>/ "
-            "containing seed.txt, best_artifact.txt, and summary.json."
+            "with seed.txt, best_artifact.txt, summary.json, and GEPA runtime artifacts."
         ),
     )
     opt_parser.add_argument(
         "--parallel",
+        dest="parallel",
         action="store_true",
-        default=False,
-        help="Enable parallel evaluator calls.",
+        default=None,
+        help="Enable parallel evaluator calls (default).",
+    )
+    opt_parser.add_argument(
+        "--no-parallel",
+        dest="parallel",
+        action="store_false",
+        help="Run evaluator calls serially.",
     )
     opt_parser.add_argument(
         "--workers",

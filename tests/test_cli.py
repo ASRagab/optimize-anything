@@ -1560,6 +1560,91 @@ class TestBudgetPrecedence:
 
 
 class TestEngineConfigWiring:
+    def _run_optimize_with_config(self, tmp_path: Path, monkeypatch, *extra_args: str):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured["config"] = kwargs["config"]
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "1",
+            *extra_args,
+        ])
+        return result, captured
+
+    def test_default_sets_engine_parallel_without_worker_override(
+        self, tmp_path: Path, monkeypatch
+    ):
+        captured_engine_kwargs = {}
+
+        class FakeEngineConfig:
+            def __init__(self, **kwargs):
+                captured_engine_kwargs.update(kwargs)
+                self.parallel = kwargs["parallel"]
+                self.max_workers = kwargs.get("max_workers")
+                self.cache_evaluation = kwargs["cache_evaluation"]
+                self.run_dir = kwargs["run_dir"]
+
+        class FakeGEPAConfig:
+            def __init__(self, **kwargs):
+                self.engine = kwargs["engine"]
+                self.stop_callbacks = kwargs.get("stop_callbacks")
+
+        monkeypatch.setattr("gepa.optimize_anything.EngineConfig", FakeEngineConfig)
+        monkeypatch.setattr("gepa.optimize_anything.GEPAConfig", FakeGEPAConfig)
+
+        result, captured = self._run_optimize_with_config(tmp_path, monkeypatch)
+
+        assert result == 0
+        assert captured["config"].engine.parallel is True
+        assert "max_workers" not in captured_engine_kwargs
+
+    def test_no_parallel_flag_sets_engine_parallel_false(
+        self, tmp_path: Path, monkeypatch
+    ):
+        result, captured = self._run_optimize_with_config(
+            tmp_path, monkeypatch, "--no-parallel"
+        )
+
+        assert result == 0
+        assert captured["config"].engine.parallel is False
+
+    def test_no_parallel_rejects_worker_count(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--no-parallel",
+            "--workers", "4",
+            "--budget", "1",
+        ])
+
+        assert result == 1
+        assert "--workers requires parallel execution" in capsys.readouterr().err
+
     def test_parallel_flag_sets_engine_parallel(self, tmp_path: Path, monkeypatch):
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("test")

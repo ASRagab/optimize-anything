@@ -163,13 +163,21 @@ def _build_optimize_runtime(
             )
         ]
 
-    engine = EngineConfig(
-        max_metric_calls=args.budget,
-        run_dir=gepa_run_dir,
-        parallel=args.parallel or (args.workers is not None),
-        max_workers=args.workers,
-        cache_evaluation=args.cache,
-    )
+    parallel = args.parallel
+    if parallel is None:
+        parallel = True
+    if args.workers is not None:
+        parallel = True
+
+    engine_kwargs = {
+        "max_metric_calls": args.budget,
+        "run_dir": gepa_run_dir,
+        "parallel": parallel,
+        "cache_evaluation": args.cache,
+    }
+    if args.workers is not None:
+        engine_kwargs["max_workers"] = args.workers
+    engine = EngineConfig(**engine_kwargs)
     if model:
         config = GEPAConfig(
             engine=engine,
@@ -288,6 +296,11 @@ def _validate_optimize_args(args: argparse.Namespace) -> str | None:
         return "Error: --cache-from requires --cache"
     if args.valset and not args.dataset:
         return "Error: --valset requires --dataset"
+    if args.parallel is False and args.workers is not None:
+        return (
+            "Error: --workers requires parallel execution; "
+            "spec workers require parallel execution too."
+        )
     return None
 
 
@@ -345,10 +358,11 @@ def _apply_spec_to_args(
         "evaluator_command",
         "budget",
         "judge_model",
-        "workers",
     )
     _apply_spec_alias_if_missing(args, spec, arg_key="model", spec_key="proposer_model")
-    _apply_true_flags_from_spec(args, spec, "parallel", "cache", "early_stop")
+    _apply_parallel_from_spec(args, spec)
+    _apply_spec_values_if_missing(args, spec, "workers")
+    _apply_true_flags_from_spec(args, spec, "cache", "early_stop")
     _apply_spec_value_if_default(args, spec, "early_stop_window", default=10)
     _apply_spec_value_if_default(args, spec, "early_stop_threshold", default=0.005)
 
@@ -391,6 +405,15 @@ def _apply_true_flags_from_spec(
     for key in keys:
         if not getattr(args, key, False) and spec.get(key) is True:
             setattr(args, key, True)
+
+
+def _apply_parallel_from_spec(args: argparse.Namespace, spec: dict[str, Any]) -> None:
+    if (
+        getattr(args, "parallel", None) is None
+        and getattr(args, "workers", None) is None
+        and spec.get("parallel") is not None
+    ):
+        setattr(args, "parallel", spec["parallel"])
 
 
 def _apply_spec_value_if_default(
