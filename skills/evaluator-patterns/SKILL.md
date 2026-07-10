@@ -142,6 +142,12 @@ set -euo pipefail
 payload="$(cat)"
 candidate="$(printf '%s' "$payload" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("candidate",""))')"
 
+# Preflight guard for optimize-anything CLI
+if [ "$candidate" = "__optimize_anything_preflight__" ]; then
+  printf '{"score":0.5}\n'
+  exit 0
+fi
+
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
