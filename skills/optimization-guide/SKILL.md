@@ -17,6 +17,16 @@ Start with your current best version of the artifact. `gepa` evolves from here.
 ### 2. Create an Evaluator
 Use the **generate-evaluator** skill to create one matched to your objective. The evaluator is the most critical piece—`gepa`'s optimization quality is bounded by your evaluator's feedback quality.
 
+### 2b. Choose Your Evaluator Interface
+
+1. Use the **Python API** for in-process Python evaluators. Pass a function that returns a score or `(score, diagnostics)`.
+2. Use `--evaluator-command` for standalone scripts or binaries. Read `{"candidate":"..."}` from stdin and write `{"score":0.5}` to stdout.
+3. Use `--evaluator-url` for remote services that accept request JSON and return score JSON.
+
+Prefer the Python API. For command templates, use the **generate-evaluator** and **evaluator-patterns** skills.
+
+**Command preflight and timeouts:** Before optimization, the CLI sends `{"_protocol_version":2,"candidate":"__optimize_anything_preflight__"}` and waits 10 seconds. Detect that sentinel and immediately return `{"score":0.5}`. Normal command evaluations time out after 30 seconds; use the Python API for slower work.
+
 ### 3. Choose Optimization Mode
 
 **Single-task** (no dataset) — optimize one artifact against one evaluator:

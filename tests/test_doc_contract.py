@@ -129,6 +129,22 @@ def test_all_command_markdown_files_have_name_and_description_frontmatter():
         )
 
 
+def test_bash_evaluator_template_fast_returns_for_preflight():
+    skill_text = _read_text(Path("skills/evaluator-patterns/SKILL.md"))
+    pattern_2 = skill_text.split("## Pattern 2:", maxsplit=1)[1].split(
+        "## Pattern 3:", maxsplit=1
+    )[0]
+    guard = (
+        'if [ "$candidate" = "__optimize_anything_preflight__" ]; then\n'
+        "  printf '{\"score\":0.5}\\n'\n"
+        "  exit 0\n"
+        "fi"
+    )
+
+    assert guard in pattern_2
+    assert pattern_2.index(guard) < pattern_2.index('workdir="$(mktemp -d)"')
+
+
 def test_concepts_mentions_multi_task_and_generalization():
     concepts_text = _read_text(Path("CONCEPTS.md"))
     _assert_contains_terms(
