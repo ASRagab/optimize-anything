@@ -29,29 +29,9 @@ Prefer the Python API. For command templates, use the **generate-evaluator** and
 
 ### 3. Choose Optimization Mode
 
-**Single-task** (no dataset) — optimize one artifact against one evaluator:
-```json
-{"seed": "...", "evaluator_command": ["bash", "evaluators/eval.sh"]}
-```
-
-**Multi-task** (with dataset) — optimize across multiple examples for cross-task transfer:
-```python
-result = optimize_anything(
-    seed_candidate="...",
-    evaluator=eval_fn,
-    dataset=[{"input": "q1", "expected": "a1"}, ...],
-)
-```
-
-**Generalization** (train + validation split) — ensure the artifact transfers to unseen examples:
-```python
-result = optimize_anything(
-    seed_candidate="...",
-    evaluator=eval_fn,
-    dataset=train_examples,
-    valset=val_examples,
-)
-```
+1. Use single-task mode without a dataset for one artifact and evaluator.
+2. Add `dataset` for cross-task transfer across training examples.
+3. Add `valset` with `dataset` to test generalization on unseen examples.
 
 ### 4. Set Budget and Configuration
 
@@ -73,9 +53,15 @@ config = GEPAConfig(
         max_metric_calls=150,     # Budget
         parallel=True,            # Parallel evaluation
         max_workers=8,            # Worker count
+        track_best_outputs=False,
     ),
 )
 ```
+
+For direct API fan-out, import `SameParentSampling` from
+`gepa.strategies.proposal_sampling` and pass
+`sampling_strategy=SameParentSampling(n=3)`. Omit the strategy for the default
+single proposal.
 
 ### 5. Run Optimization
 
@@ -83,6 +69,20 @@ config = GEPAConfig(
 ```bash
 optimize-anything optimize seed.txt --evaluator-command bash evaluators/eval.sh --budget 100 --objective "maximize clarity" -o result.txt
 ```
+
+To request multiple mutations from the selected parent, add
+`--proposals-per-iteration 3`. The equivalent spec setting is:
+
+```toml
+[optimization]
+proposals_per_iteration = 3
+```
+
+An explicit CLI value overrides the spec. Proposal fan-out is independent of
+`--workers`, `--parallel`, and `--no-parallel`, which control evaluator-call
+concurrency. Fan-out increases reflection and evaluation work, small datasets
+may reuse a minibatch across proposals, and the final iteration can exceed
+`--budget` because GEPA checks the limit between iterations.
 
 **Via Python API:**
 ```python
@@ -93,7 +93,9 @@ result = optimize_anything(
     seed_candidate=open("seed.txt").read(),
     evaluator=command_evaluator(["bash", "evaluators/eval.sh"]),
     objective="maximize clarity",
-    config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
+    config=GEPAConfig(
+        engine=EngineConfig(max_metric_calls=100, track_best_outputs=False)
+    ),
 )
 print(result.best_candidate)
 ```
@@ -129,17 +131,18 @@ optimize-anything optimize seed.txt \
 Notes:
 1. `--cache-from` requires `--cache` and `--run-dir`.
 2. `--cache-from` copies `fitness_cache/` from the previous run before optimization starts.
+3. GEPA 0.1.4 can migrate older run state forward, but its state is not expected to load under GEPA 0.1.1 after a rollback.
 
 ### 7. Interpret Results
 
-The result contains:
+Expected output:
 1. Inspect `best_candidate` — the optimized artifact.
 2. Review `val_aggregate_scores` — score progression across iterations.
 3. Check `total_metric_calls` — how many evaluator invocations were used.
 
 **Signs of a good run:**
-1. Confirm scores trend upward over iterations.
-2. Verify `total_metric_calls` < `budget` (converged early).
+1. You should see scores trend upward over iterations.
+2. Compare `total_metric_calls` with `budget`; the final iteration can overshoot the budget, especially with proposal fan-out.
 3. Compare `best_candidate` against `seed.txt` or in-memory seed to see targeted differences.
 
 **Signs of problems:**

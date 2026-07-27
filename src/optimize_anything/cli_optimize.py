@@ -139,6 +139,7 @@ def _build_optimize_runtime(
     """Build GEPA runtime config plus run-dir state for optimize."""
     from optimize_anything.stop import plateau_stop_callback
     from gepa.optimize_anything import GEPAConfig, EngineConfig, ReflectionConfig
+    from gepa.strategies.proposal_sampling import SameParentSampling
 
     gepa_run_dir = _timestamped_run_dir(args.run_dir) if getattr(args, "run_dir", None) else None
 
@@ -174,9 +175,14 @@ def _build_optimize_runtime(
         "run_dir": gepa_run_dir,
         "parallel": parallel,
         "cache_evaluation": args.cache,
+        "track_best_outputs": False,
     }
     if args.workers is not None:
         engine_kwargs["max_workers"] = args.workers
+    if args.proposals_per_iteration > 1:
+        engine_kwargs["sampling_strategy"] = SameParentSampling(
+            n=args.proposals_per_iteration
+        )
     engine = EngineConfig(**engine_kwargs)
     if model:
         config = GEPAConfig(
@@ -288,6 +294,10 @@ def _validate_optimize_args(args: argparse.Namespace) -> str | None:
         args.budget = 100
     if args.budget < 1:
         return "Error: --budget must be at least 1"
+    if args.proposals_per_iteration is None:
+        args.proposals_per_iteration = 1
+    if args.proposals_per_iteration < 1:
+        return "Error: --proposals-per-iteration must be a positive integer"
     if args.early_stop_window < 1:
         return "Error: --early-stop-window must be at least 1"
     if args.early_stop_threshold < 0:
@@ -357,6 +367,7 @@ def _apply_spec_to_args(
         "cache_from",
         "evaluator_command",
         "budget",
+        "proposals_per_iteration",
         "judge_model",
     )
     _apply_spec_alias_if_missing(args, spec, arg_key="model", spec_key="proposer_model")

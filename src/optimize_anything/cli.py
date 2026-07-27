@@ -117,6 +117,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Maximum worker count for parallel evaluation.",
     )
     opt_parser.add_argument(
+        "--proposals-per-iteration",
+        type=int,
+        default=None,
+        help=(
+            "Candidate mutations per GEPA iteration (default: 1). "
+            "Independent of evaluator --workers."
+        ),
+    )
+    opt_parser.add_argument(
         "--cache",
         action="store_true",
         default=False,

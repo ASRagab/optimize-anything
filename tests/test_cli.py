@@ -1617,6 +1617,69 @@ class TestEngineConfigWiring:
         assert result == 0
         assert captured["config"].engine.parallel is True
         assert "max_workers" not in captured_engine_kwargs
+        assert captured_engine_kwargs["track_best_outputs"] is False
+        assert "sampling_strategy" not in captured_engine_kwargs
+
+    def test_proposals_per_iteration_sets_same_parent_sampling(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from gepa.strategies.proposal_sampling import SameParentSampling
+
+        result, captured = self._run_optimize_with_config(
+            tmp_path,
+            monkeypatch,
+            "--proposals-per-iteration",
+            "4",
+        )
+
+        assert result == 0
+        sampling = captured["config"].engine.sampling_strategy
+        assert isinstance(sampling, SameParentSampling)
+        assert sampling.n == 4
+
+    def test_proposals_per_iteration_one_preserves_default_sampling(
+        self, tmp_path: Path, monkeypatch
+    ):
+        captured_engine_kwargs = {}
+
+        class FakeEngineConfig:
+            def __init__(self, **kwargs):
+                captured_engine_kwargs.update(kwargs)
+
+        class FakeGEPAConfig:
+            def __init__(self, **kwargs):
+                self.engine = kwargs["engine"]
+
+        monkeypatch.setattr("gepa.optimize_anything.EngineConfig", FakeEngineConfig)
+        monkeypatch.setattr("gepa.optimize_anything.GEPAConfig", FakeGEPAConfig)
+
+        result, _ = self._run_optimize_with_config(
+            tmp_path,
+            monkeypatch,
+            "--proposals-per-iteration",
+            "1",
+        )
+
+        assert result == 0
+        assert "sampling_strategy" not in captured_engine_kwargs
+
+    def test_proposals_per_iteration_must_be_positive(
+        self, tmp_path: Path, capsys
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--proposals-per-iteration", "0",
+        ])
+
+        assert result == 1
+        assert (
+            "--proposals-per-iteration must be a positive integer"
+            in capsys.readouterr().err
+        )
 
     def test_no_parallel_flag_sets_engine_parallel_false(
         self, tmp_path: Path, monkeypatch

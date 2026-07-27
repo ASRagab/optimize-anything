@@ -58,6 +58,15 @@ files, depend on process-global state, or need strict provider rate-limit
 control. `--parallel` remains valid when users want to enable parallel mode
 explicitly.
 
+Only suggest `--proposals-per-iteration N` when the user wants multiple
+mutations from the selected parent in each GEPA iteration. This is independent
+of evaluator `--workers` and defaults to one. Fan-out increases reflection and
+evaluation work; small datasets may reuse a minibatch across proposals, and
+the final iteration can exceed `--budget` because GEPA checks the limit between
+iterations. GEPA 0.1.4 can migrate older run state forward, but state it writes
+is not expected to load under 0.1.1 after a rollback; `--cache-from` copies only
+the fitness cache.
+
 ## Step 5: Present results clearly
 After completion, provide:
 1. **Diff summary** (seed vs optimized)

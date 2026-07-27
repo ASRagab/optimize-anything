@@ -1,6 +1,6 @@
 [project]
 name = "optimize-anything"
-version = "0.3.5"
+version = "0.4.0"
 description = "Optimize any text artifact using gepa — prompts, code, configs, skills"
 readme = "README.md"
 license = {text = "MIT"}
@@ -12,9 +12,9 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "gepa>=0.1.1,<0.2.0",
+    "gepa>=0.1.4,<0.2.0",
     "httpx",
-    "litellm>=1.83.0,!=1.82.7,!=1.82.8",
+    "litellm>=1.83.0,<1.92,!=1.82.7,!=1.82.8",
     "cloudpickle",
 ]
 

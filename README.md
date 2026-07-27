@@ -94,6 +94,18 @@ optimize-anything optimize --no-seed \
 - Evaluator calls run in parallel by default; pass `--no-parallel` for evaluators
   that write shared temp files, depend on process-global state, or need strict
   provider rate-limit control.
+- `--proposals-per-iteration N` asks GEPA to generate `N` mutations from the
+  selected parent each iteration. It is independent of `--workers`, which only
+  controls concurrent evaluator calls, and defaults to one proposal.
+
+Proposal fan-out increases reflection and evaluation work. Small training sets
+may reuse the same minibatch across proposals, and GEPA checks the metric-call
+budget between iterations, so the final iteration can exceed `--budget` after
+its work has been scheduled.
+
+GEPA 0.1.4 can migrate older run state forward. State written by 0.1.4 is not
+expected to load under 0.1.1 after a rollback; `--cache-from` remains limited
+to copying the prior fitness cache.
 
 ```bash
 optimize-anything optimize seed.txt \
@@ -310,6 +322,7 @@ Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-
 | `--parallel` | Explicitly enable parallel evaluator calls | `true` |
 | `--no-parallel` | Run evaluator calls serially | -- |
 | `--workers <int>` | Max workers for parallel evaluation | -- |
+| `--proposals-per-iteration <int>` | Candidate mutations per iteration; independent of evaluator workers | `1` |
 | `--cache` | Enable evaluator cache | `false` |
 | `--cache-from <run-dir>` | Copy prior `fitness_cache` into new run | -- |
 | `--early-stop` | Enable plateau early stop | auto on when budget > 30 |

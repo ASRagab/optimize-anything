@@ -100,6 +100,24 @@ class TestLoadSpec:
         assert result["workers"] == 4
         assert result["cache"] is True
 
+    def test_proposals_per_iteration_parsed(self, tmp_path: Path):
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text("[optimization]\nproposals_per_iteration = 3\n")
+
+        result = load_spec(spec_file)
+
+        assert result["proposals_per_iteration"] == 3
+
+    def test_proposals_per_iteration_must_be_positive(self, tmp_path: Path):
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text("[optimization]\nproposals_per_iteration = 0\n")
+
+        with pytest.raises(
+            SpecLoadError,
+            match="optimization.proposals_per_iteration must be a positive integer",
+        ):
+            load_spec(spec_file)
+
     def test_early_stop_and_cache_from_parsed(self, tmp_path: Path):
         cache_source = tmp_path / "previous-run"
         cache_source.mkdir()
@@ -309,6 +327,36 @@ class TestSpecCliIntegration:
         assert result == 1
         assert "config" not in captured
         assert "workers require parallel execution" in capsys.readouterr().err
+
+    def test_spec_proposals_per_iteration_configures_same_parent_sampling(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from gepa.strategies.proposal_sampling import SameParentSampling
+
+        result, captured = self._run_with_spec(
+            tmp_path,
+            monkeypatch,
+            "[optimization]\nproposals_per_iteration = 3\n",
+        )
+
+        assert result == 0
+        sampling = captured["config"].engine.sampling_strategy
+        assert isinstance(sampling, SameParentSampling)
+        assert sampling.n == 3
+
+    def test_cli_proposals_per_iteration_overrides_spec(
+        self, tmp_path: Path, monkeypatch
+    ):
+        result, captured = self._run_with_spec(
+            tmp_path,
+            monkeypatch,
+            "[optimization]\nproposals_per_iteration = 3\n",
+            "--proposals-per-iteration",
+            "2",
+        )
+
+        assert result == 0
+        assert captured["config"].engine.sampling_strategy.n == 2
 
     def test_invalid_spec_file_returns_1(self, tmp_path: Path, capsys):
         from optimize_anything.cli import main

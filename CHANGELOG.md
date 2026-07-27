@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.4.0 - 2026-07-27
+
+### New features
+- Added opt-in `--proposals-per-iteration N` and `[optimization].proposals_per_iteration` controls backed by GEPA's `SameParentSampling`
+- Kept proposal fan-out independent from evaluator concurrency controls and preserved one proposal per iteration by default
+
+### Dependency compatibility
+- Upgraded GEPA to `0.1.4` within the compatible `0.1` release line
+- Constrained LiteLLM to GEPA's supported `>=1.83.0,<1.92` range while retaining compromised-version exclusions
+- Disabled unused best-validation-output retention to preserve bounded output memory
+
+### Documentation and skills
+- Documented fan-out cost, repeated-minibatch behavior, final-iteration budget overshoot, and forward-only state migration
+- Aligned the packaged optimization guide and added contract coverage for the GEPA 0.1.4 guidance
+- Synchronized package, plugin, and marketplace release versions
+
+### Verification
+- Full offline project gate, dependency compatibility checks, documentation contracts, and strict OpenSpec validation pass
+
 ## v0.3.5 - 2026-03-20
 
 ### Structural refactor

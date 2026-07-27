@@ -28,17 +28,43 @@ def _locked_version(package_name: str) -> Version:
 def test_optimizer_dependency_constraints_exclude_compromised_litellm_versions():
     dependencies = _project_dependencies()
 
-    assert Version("0.1.1") in dependencies["gepa"].specifier
+    assert Version("0.1.4") in dependencies["gepa"].specifier
     assert Version("0.2.0") not in dependencies["gepa"].specifier
 
     litellm_specifier = dependencies["litellm"].specifier
     assert Version("1.83.0") in litellm_specifier
+    assert Version("1.92.0") not in litellm_specifier
     for version in COMPROMISED_LITELLM_VERSIONS:
         assert version not in litellm_specifier
 
 
-def test_uv_lock_pins_litellm_after_compromised_versions():
+def test_uv_lock_pins_supported_optimizer_versions():
+    assert _locked_version("gepa") == Version("0.1.4")
+
     locked_litellm = _locked_version("litellm")
 
     assert locked_litellm >= Version("1.83.0")
+    assert locked_litellm < Version("1.92.0")
     assert locked_litellm not in COMPROMISED_LITELLM_VERSIONS
+
+
+def test_gepa_014_production_surface_is_compatible():
+    from gepa.optimize_anything import (
+        GEPAConfig,
+        EngineConfig,
+        ReflectionConfig,
+        optimize_anything,
+    )
+    from gepa.strategies.proposal_sampling import SameParentSampling
+
+    sampling = SameParentSampling(n=2)
+    engine = EngineConfig(
+        track_best_outputs=False,
+        sampling_strategy=sampling,
+    )
+
+    assert GEPAConfig is not None
+    assert ReflectionConfig is not None
+    assert optimize_anything is not None
+    assert engine.track_best_outputs is False
+    assert engine.sampling_strategy is sampling

@@ -96,6 +96,24 @@ def test_cli_intake_flags_are_documented_and_in_runtime():
     )
 
 
+def test_optimization_guide_matches_gepa_014_contract():
+    skill_text = _read_text(Path("skills/optimization-guide/SKILL.md"))
+    _assert_contains_terms(
+        text=skill_text,
+        terms=[
+            "--proposals-per-iteration",
+            "proposals_per_iteration",
+            "SameParentSampling",
+            "track_best_outputs=False",
+            "--workers",
+            "final iteration",
+            "GEPA 0.1.1",
+        ],
+        label="skills/optimization-guide/SKILL.md",
+    )
+    assert "Verify `total_metric_calls` < `budget`" not in skill_text
+
+
 def test_removed_server_artifacts_not_referenced_in_active_docs():
     docs_text = _combined_docs_text()
     forbidden_terms = ["optimize_anything.server", "tests/test_server.py"]
@@ -167,6 +185,25 @@ class TestPluginManifest:
         data = _plugin_json()
         for field in ("name", "version", "description"):
             assert field in data, f"plugin.json missing '{field}'"
+
+    def test_release_versions_match(self):
+        pyproject_text = _read_text(Path("pyproject.toml"))
+        pyproject_match = re.search(
+            r'^version\s*=\s*"([^"]+)"$', pyproject_text, flags=re.MULTILINE
+        )
+        assert pyproject_match is not None, "pyproject.toml missing project version"
+
+        marketplace = json.loads(
+            _read_text(Path(".claude-plugin/marketplace.json"))
+        )
+        versions = {
+            "pyproject.toml": pyproject_match.group(1),
+            ".claude-plugin/plugin.json": _plugin_json()["version"],
+            ".claude-plugin/marketplace.json metadata": marketplace["metadata"]["version"],
+            ".claude-plugin/marketplace.json plugin": marketplace["plugins"][0]["version"],
+        }
+
+        assert len(set(versions.values())) == 1, f"release versions differ: {versions}"
 
     def test_commands_directory_has_expected_files(self):
         """Auto-discovery finds commands from the commands/ directory."""

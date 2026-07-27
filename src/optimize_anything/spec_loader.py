@@ -45,6 +45,7 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         "output": None,
         "parallel": None,
         "workers": None,
+        "proposals_per_iteration": None,
         "cache": None,
         "cache_from": None,
         "early_stop": None,
@@ -85,7 +86,12 @@ def _normalize_optimization_section(
         if key in opt:
             normalized[key] = _require_string(opt, key, "optimization")
 
-    for key in ("budget", "workers", "early_stop_window"):
+    for key in (
+        "budget",
+        "workers",
+        "proposals_per_iteration",
+        "early_stop_window",
+    ):
         if key in opt:
             normalized[key] = _require_positive_int(opt, key, "optimization")
 
