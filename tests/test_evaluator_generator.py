@@ -39,6 +39,22 @@ class TestGenerateEvaluatorScript:
         assert "from litellm import completion" in script
         assert objective in script
 
+    def test_default_judge_uses_current_evaluator_model(self) -> None:
+        script = generate_evaluator_script(
+            seed="hello",
+            objective="score quality",
+            evaluator_type="judge",
+        )
+        assert "MODEL = 'openai/gpt-5.6-luna'" in script
+
+    def test_default_composite_uses_current_evaluator_model(self) -> None:
+        script = generate_evaluator_script(
+            seed="hello",
+            objective="score quality",
+            evaluator_type="composite",
+        )
+        assert "MODEL = 'openai/gpt-5.6-luna'" in script
+
     def test_judge_evaluator_handles_missing_api_key_gracefully(self):
         script = generate_evaluator_script(seed="hello", objective="test", evaluator_type="judge")
         assert "Missing API key" in script

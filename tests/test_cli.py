@@ -856,6 +856,44 @@ class TestCLI:
         cfg = captured_config["config"]
         assert cfg.reflection.reflection_lm == "gemini/gemini-2.0-flash"
 
+    def test_optimize_uses_default_proposer_model(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("test")
+        captured_config = {}
+
+        class DummyResult:
+            best_candidate = "x"
+            total_metric_calls = 1
+
+        def fake_optimize(**kwargs):
+            captured_config["config"] = kwargs.get("config")
+            return DummyResult()
+
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda c: (0.5, {}),
+        )
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            fake_optimize,
+        )
+        monkeypatch.setattr(
+            "optimize_anything.cli._preflight_command_evaluator",
+            lambda command, cwd=None: None,
+        )
+        monkeypatch.delenv("OPTIMIZE_ANYTHING_MODEL", raising=False)
+
+        result = main([
+            "optimize", str(seed_file),
+            "--evaluator-command", "bash", "eval.sh",
+            "--budget", "1",
+        ])
+        assert result == 0
+        cfg = captured_config["config"]
+        assert cfg.reflection.reflection_lm == "openai/gpt-5.6-sol"
+
     def test_optimize_prints_progress_to_stderr(
         self, tmp_path: Path, capsys, monkeypatch
     ):

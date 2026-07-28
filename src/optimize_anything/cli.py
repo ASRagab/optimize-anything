@@ -14,6 +14,7 @@ from optimize_anything.preflight import (
     _preflight_command_evaluator,
     _preflight_http_evaluator,
 )
+from optimize_anything.model_defaults import DEFAULT_EVALUATOR_MODEL
 
 EvaluatorFn = Callable[..., tuple[float, dict[str, Any]]]
 EvaluatorFactory = Callable[..., EvaluatorFn]
@@ -187,8 +188,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen_parser.add_argument(
         "--model",
-        default="openai/gpt-4o-mini",
-        help="LiteLLM model to hardcode in generated judge/composite evaluators",
+        default=DEFAULT_EVALUATOR_MODEL,
+        help=(
+            "LiteLLM model to hardcode in generated judge/composite evaluators "
+            f"(default: {DEFAULT_EVALUATOR_MODEL})"
+        ),
     )
     gen_parser.add_argument(
         "--dataset",

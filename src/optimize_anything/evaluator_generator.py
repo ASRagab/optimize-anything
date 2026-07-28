@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from numbers import Real
 from typing import Any
 
+from optimize_anything.model_defaults import DEFAULT_EVALUATOR_MODEL
+
 
 def generate_evaluator_script(
     *,
@@ -13,7 +15,7 @@ def generate_evaluator_script(
     objective: str,
     evaluator_type: str | None = None,
     intake: Mapping[str, Any] | None = None,
-    model: str = "openai/gpt-4o-mini",
+    model: str = DEFAULT_EVALUATOR_MODEL,
     dataset: bool = False,
 ) -> str:
     """Generate an evaluator script that reads input JSON and outputs score JSON."""
@@ -414,7 +416,7 @@ def _generate_judge_evaluator(
     template_family: str,
     rubric_summary: str,
     quality_dimensions: list[tuple[str, float]],
-    model: str = "openai/gpt-4o-mini",
+    model: str,
     dataset: bool = False,
 ) -> str:
     """Generate a Python LLM-judge evaluator script using litellm."""
@@ -524,7 +526,7 @@ def _generate_composite_evaluator(
     template_family: str,
     rubric_summary: str,
     quality_dimensions: list[tuple[str, float]],
-    model: str = "openai/gpt-4o-mini",
+    model: str,
     dataset: bool = False,
 ) -> str:
     """Generate composite evaluator with hard constraints + judge scoring."""
@@ -544,6 +546,8 @@ def _generate_composite_evaluator(
         import sys
 
         # Composite evaluator: hard constraints first, then LLM judge.
+        MODEL = {model!r}
+
         def _constraint_non_empty(candidate: str) -> tuple[bool, str]:
             if candidate.strip():
                 return True, ""
