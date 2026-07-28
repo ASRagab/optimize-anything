@@ -23,6 +23,16 @@ class TestCLI:
         assert "--intake-json" in captured.out
         assert "--intake-file" in captured.out
         assert "--evaluator-cwd" in captured.out
+        assert "openai/gpt-5.6-sol" in captured.out
+
+    def test_generate_evaluator_help(self, capsys):
+        """Verify generated evaluator help recommends the current judge model."""
+        try:
+            main(["generate-evaluator", "--help"])
+        except SystemExit as e:
+            assert e.code == 0
+        captured = capsys.readouterr()
+        assert "openai/gpt-5.6-luna" in captured.out
 
     def test_explain(self, tmp_path: Path, capsys):
         seed_file = tmp_path / "seed.txt"

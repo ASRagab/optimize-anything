@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from optimize_anything.model_defaults import (
@@ -7,6 +9,37 @@ from optimize_anything.model_defaults import (
     DEFAULT_PROPOSER_MODEL,
     resolve_proposer_model,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
+EXECUTABLE_MODEL_REFERENCE_FILES = (
+    "src/optimize_anything/cli.py",
+    "src/optimize_anything/evaluator_generator.py",
+    "scripts/live_integration.py",
+    "scripts/plugin_eval.sh",
+    "scripts/plugin_regression.py",
+    "skills/evaluator-patterns/SKILL.md",
+    "skills/generate-evaluator/SKILL.md",
+)
+STALE_CANONICAL_MODEL_STRINGS = (
+    "openai/gpt-4o-mini",
+    "openai/gpt-5.1",
+    "anthropic/claude-sonnet-4-5",
+    "anthropic/claude-sonnet-4-5-20250929",
+    "anthropic/claude-sonnet-4-6",
+    "google/gemini-2.0-flash",
+    "gemini/gemini-2.0-flash",
+)
+
+
+@pytest.mark.parametrize("relative_path", EXECUTABLE_MODEL_REFERENCE_FILES)
+def test_executable_surfaces_do_not_recommend_stale_models(
+    relative_path: str,
+) -> None:
+    text = (ROOT / relative_path).read_text(encoding="utf-8")
+    assert not [
+        model for model in STALE_CANONICAL_MODEL_STRINGS if model in text
+    ]
 
 
 def test_default_models_match_current_capability_tiers() -> None:

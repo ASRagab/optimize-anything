@@ -82,7 +82,7 @@ Return JSON exactly like:
 }}
 """.strip()
 
-    model = os.getenv("JUDGE_MODEL", "openai/gpt-4o-mini")
+    model = os.getenv("JUDGE_MODEL", "openai/gpt-5.6-luna")
 
     try:
         resp = completion(
@@ -91,7 +91,6 @@ Return JSON exactly like:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0,
             response_format={"type": "json_object"},
         )
         content = resp.choices[0].message.content

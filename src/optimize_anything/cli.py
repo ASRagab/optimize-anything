@@ -61,16 +61,16 @@ def main(argv: list[str] | None = None) -> int:
     opt_parser.add_argument(
         "--model",
         help=(
-            "LiteLLM model string for the proposer LLM "
-            "(e.g. 'openai/gpt-4o-mini', 'claude-sonnet-4-6'). "
+            "LiteLLM model string for the proposer LLM. Proposer: "
+            "openai/gpt-5.6-sol or anthropic/claude-sonnet-5. "
             "Falls back to OPTIMIZE_ANYTHING_MODEL env var."
         ),
     )
     opt_parser.add_argument(
         "--judge-model",
         help=(
-            "LiteLLM model string for built-in LLM-as-judge evaluation "
-            "(e.g. 'openai/gpt-4o-mini'). "
+            "LiteLLM model string for built-in LLM-as-judge evaluation. "
+            "Judge: openai/gpt-5.6-luna. "
             "Mutually exclusive with --evaluator-command and --evaluator-url."
         ),
     )
@@ -258,8 +258,8 @@ def main(argv: list[str] | None = None) -> int:
     score_parser.add_argument(
         "--judge-model",
         help=(
-            "LiteLLM model string for LLM-as-judge scoring "
-            "(e.g. 'openai/gpt-5.1'). "
+            "LiteLLM model string for LLM-as-judge scoring. "
+            "Judge: openai/gpt-5.6-luna. "
             "Mutually exclusive with --evaluator-command and --evaluator-url."
         ),
     )
@@ -302,7 +302,11 @@ def main(argv: list[str] | None = None) -> int:
         "--providers",
         nargs="+",
         required=True,
-        help="Two or more LiteLLM provider model strings (e.g. openai/gpt-4o-mini anthropic/claude-sonnet-4-5)",
+        help=(
+            "Two or more LiteLLM provider model strings. Validation: "
+            "openai/gpt-5.6-luna anthropic/claude-sonnet-5 "
+            "gemini/gemini-3.6-flash"
+        ),
     )
     validate_parser.add_argument(
         "--objective",
@@ -331,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     analyze_parser.add_argument(
         "--judge-model",
         required=True,
-        help="LiteLLM model string for the LLM judge (e.g. 'openai/gpt-4o-mini')",
+        help="LiteLLM model string for the LLM judge. Judge: openai/gpt-5.6-luna.",
     )
     analyze_parser.add_argument(
         "--objective",
