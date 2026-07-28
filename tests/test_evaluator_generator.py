@@ -1,9 +1,49 @@
 """Tests for evaluator generator."""
 import json
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
+
 from optimize_anything.evaluator_generator import generate_evaluator_script
+
+
+@pytest.mark.parametrize("evaluator_type", ["judge", "composite"])
+def test_generated_python_evaluator_compiles(evaluator_type: str) -> None:
+    script = generate_evaluator_script(
+        seed="hello",
+        objective="score quality",
+        evaluator_type=evaluator_type,
+    )
+
+    compile(script, f"<generated-{evaluator_type}-evaluator>", "exec")
+
+
+@pytest.mark.parametrize("evaluator_type", ["judge", "composite"])
+def test_generated_python_evaluator_reports_missing_key_offline(
+    evaluator_type: str,
+    tmp_path: Path,
+) -> None:
+    script = generate_evaluator_script(
+        seed="hello",
+        objective="score quality",
+        evaluator_type=evaluator_type,
+    )
+    script_path = tmp_path / f"{evaluator_type}_evaluator.py"
+    script_path.write_text(script, encoding="utf-8")
+
+    proc = subprocess.run(
+        [sys.executable, str(script_path)],
+        input=json.dumps({"candidate": "hello"}),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={},
+    )
+
+    result = json.loads(proc.stdout)
+    assert result["error"] == "missing_api_key"
 
 
 def test_generated_judge_uses_provider_sampling_defaults() -> None:

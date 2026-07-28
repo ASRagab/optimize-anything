@@ -617,6 +617,30 @@ class TestAnalyzeForDimensions:
         assert call_count == 2
         assert all("temperature" not in kwargs for kwargs in captured_calls)
 
+    def test_explicit_temperature_is_forwarded_to_both_llm_calls(self):
+        score_response = json.dumps({"score": 0.5, "reasoning": "ok"})
+        dims_response = json.dumps({
+            "dimensions": [
+                {"name": "a", "weight": 1.0, "score": 0.5, "description": "d"},
+            ]
+        })
+        responses = iter((score_response, dims_response))
+        captured_calls: list[dict[str, object]] = []
+
+        def mock_completion(**kwargs):
+            captured_calls.append(kwargs)
+            return self._make_mock_response(next(responses))
+
+        with patch("litellm.completion", side_effect=mock_completion):
+            analyze_for_dimensions(
+                "text",
+                "obj",
+                "openai/gpt-4o-mini",
+                temperature=0.7,
+            )
+
+        assert [call["temperature"] for call in captured_calls] == [0.7, 0.7]
+
     def test_scoring_failure_raises_runtime_error(self):
         with patch("litellm.completion", side_effect=RuntimeError("API down")):
             with pytest.raises(RuntimeError, match="Scoring LLM call failed"):

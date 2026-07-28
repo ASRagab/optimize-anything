@@ -439,7 +439,7 @@ def _generate_judge_evaluator(
         def _build_prompt(candidate: str, example: object | None) -> str:
             dimensions_text = "\\n".join([f"- {{name}} (weight={{weight}})" for name, weight in QUALITY_DIMENSIONS])
             example_text = json.dumps(example, ensure_ascii=False, indent=2) if example is not None else "(none)"
-            return f\"\"\"## Objective\n{{OBJECTIVE}}\n\n## Template Family\n{{TEMPLATE_FAMILY}}\n\n## Rubric Summary\n{{RUBRIC_SUMMARY}}\n\n## Quality Dimensions\n{{dimensions_text}}\n\n## Example Context (optional)\n{{example_text}}\n\n## Artifact to Evaluate\n```\n{{candidate}}\n```\n\nReturn JSON with keys: score, reasoning, and one key per quality dimension name. score must be in [0,1].\"\"\"
+            return f\"\"\"## Objective\\n{{OBJECTIVE}}\\n\\n## Template Family\\n{{TEMPLATE_FAMILY}}\\n\\n## Rubric Summary\\n{{RUBRIC_SUMMARY}}\\n\\n## Quality Dimensions\\n{{dimensions_text}}\\n\\n## Example Context (optional)\\n{{example_text}}\\n\\n## Artifact to Evaluate\\n```\\n{{candidate}}\\n```\\n\\nReturn JSON with keys: score, reasoning, and one key per quality dimension name. score must be in [0,1].\"\"\"
 
         def _api_key_available() -> bool:
             key_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
@@ -448,7 +448,7 @@ def _generate_judge_evaluator(
         def _strip_code_fences(text: str) -> str:
             cleaned = text.strip()
             if cleaned.startswith("```"):
-                first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+                first_newline = cleaned.index("\\n") if "\\n" in cleaned else len(cleaned)
                 cleaned = cleaned[first_newline + 1:]
                 if cleaned.rstrip().endswith("```"):
                     cleaned = cleaned.rstrip()[:-len("```")].rstrip()
@@ -567,7 +567,7 @@ def _generate_composite_evaluator(
         def _strip_code_fences(text: str) -> str:
             cleaned = text.strip()
             if cleaned.startswith("```"):
-                first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+                first_newline = cleaned.index("\\n") if "\\n" in cleaned else len(cleaned)
                 cleaned = cleaned[first_newline + 1:]
                 if cleaned.rstrip().endswith("```"):
                     cleaned = cleaned.rstrip()[:-len("```")].rstrip()

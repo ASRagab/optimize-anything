@@ -5,18 +5,19 @@ Run one GREEN (optimize) or RED (multi-provider score) phase and output
 structured JSON. Designed to be driven by Claude Code as an interactive observer.
 
 Usage:
-    # GREEN phase: optimize an artifact
+    # GREEN phase: optimize with the proposer-tier default
     python scripts/live_integration.py --phase green \
         --artifact skills/generate-evaluator/SKILL.md \
         --budget 15 --objective "Improve clarity" \
         --run-dir integration_runs \
+        --model openai/gpt-5.6-sol \
         --evaluator-command bash evaluators/skill_clarity.sh
 
-    # RED phase: score with multiple providers
+    # RED phase: validate with the canonical judge-tier provider set
     python scripts/live_integration.py --phase red \
         --artifact skills/generate-evaluator/SKILL.md \
         --objective "Score skill quality" \
-        --providers openai/gpt-5.6-sol anthropic/claude-sonnet-5 \
+        --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
         --evaluator-command bash evaluators/skill_clarity.sh
 """
 from __future__ import annotations
@@ -261,7 +262,7 @@ def _run_red(args: argparse.Namespace) -> int:
     providers = args.providers or []
     for provider in providers:
         judge_score = _score_with_judge(artifact_path, provider, args.objective)
-        # Use a clean key: "openai/gpt-5.6-sol" -> "openai_gpt_5_6_sol"
+        # Use a clean key: "openai/gpt-5.6-luna" -> "openai_gpt_5_6_luna"
         key = provider.replace("/", "_").replace("-", "_").replace(".", "_")
         scores[key] = judge_score
 

@@ -35,8 +35,10 @@ DOCUMENTATION_MODEL_REFERENCE_FILES = (
     "commands/validate.md",
 )
 STALE_CANONICAL_MODEL_STRINGS = (
+    "openai/gpt-4o",
     "openai/gpt-4o-mini",
     "openai/gpt-5.1",
+    "claude-sonnet-4-6",
     "anthropic/claude-sonnet-4-5",
     "anthropic/claude-sonnet-4-5-20250929",
     "anthropic/claude-sonnet-4-6",
