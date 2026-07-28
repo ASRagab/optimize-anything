@@ -6,6 +6,15 @@ from pathlib import Path
 from optimize_anything.evaluator_generator import generate_evaluator_script
 
 
+def test_generated_judge_uses_provider_sampling_defaults() -> None:
+    script = generate_evaluator_script(
+        seed="hello",
+        objective="score quality",
+        evaluator_type="judge",
+    )
+    assert "temperature=" not in script
+
+
 class TestGenerateEvaluatorScript:
     def test_command_evaluator_is_bash(self):
         script = generate_evaluator_script(seed="hello", objective="improve clarity", evaluator_type="command")

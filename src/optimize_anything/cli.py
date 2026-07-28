@@ -345,8 +345,11 @@ def main(argv: list[str] | None = None) -> int:
     analyze_parser.add_argument(
         "--temperature",
         type=float,
-        default=0.0,
-        help="Sampling temperature for LLM calls (default: 0.0)",
+        default=None,
+        help=(
+            "Sampling temperature for LLM calls "
+            "(default: provider model default)"
+        ),
     )
     analyze_parser.add_argument(
         "--timeout",

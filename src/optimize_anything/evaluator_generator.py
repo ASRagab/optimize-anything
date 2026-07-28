@@ -480,7 +480,6 @@ def _generate_judge_evaluator(
                         {{"role": "system", "content": JUDGE_SYSTEM_PROMPT}},
                         {{"role": "user", "content": prompt}},
                     ],
-                    temperature=0.0,
                     timeout=60.0,
                     response_format={{"type": "json_object"}},
                 )
