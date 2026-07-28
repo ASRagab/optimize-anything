@@ -18,9 +18,9 @@ optimize-anything generate-evaluator seed.txt \
 
 # 4) Optimize
 optimize-anything optimize seed.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Improve clarity and specificity" \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 20 \
   --workers 4 \
   --cache \
@@ -29,6 +29,10 @@ optimize-anything optimize seed.txt \
 ```
 
 CLI stdout returns a JSON summary — see [Result Contract](#result-contract) for the full shape.
+
+### Model defaults
+
+The proposer defaults to `openai/gpt-5.6-sol` after checking `--model` and `OPTIMIZE_ANYTHING_MODEL`. Generated judge and composite evaluators default to `openai/gpt-5.6-luna`. LLM judge calls use each provider's sampling defaults unless an explicit temperature is supplied.
 
 ## How It Works
 
@@ -55,11 +59,11 @@ Use `--dataset` for multi-task optimization (one evaluator call per example). Ad
 
 ```bash
 optimize-anything optimize prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Generalize across customer request types" \
   --dataset data/train.jsonl \
   --valset data/val.jsonl \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 120 --workers 6 --cache --run-dir runs
 ```
 
@@ -69,10 +73,12 @@ Cross-check one artifact with multiple judge providers:
 
 ```bash
 optimize-anything validate result.txt \
-  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
   --objective "Score clarity, constraints, and robustness" \
   --intake-file intake.json
 ```
+
+Gemini uses LiteLLM's `gemini/` provider prefix.
 
 ### Seedless mode
 
@@ -81,8 +87,8 @@ No seed file required; GEPA bootstraps from objective.
 ```bash
 optimize-anything optimize --no-seed \
   --objective "Draft a concise, testable API prompt" \
-  --model openai/gpt-4o-mini \
-  --judge-model openai/gpt-4o-mini
+  --model openai/gpt-5.6-sol \
+  --judge-model openai/gpt-5.6-luna
 ```
 
 `--no-seed` requires both `--objective` and `--model`.
@@ -110,7 +116,7 @@ to copying the prior fitness cache.
 ```bash
 optimize-anything optimize seed.txt \
   --evaluator-command bash eval.sh \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 150 \
   --cache --cache-from runs/run-20260303-120000 \
   --run-dir runs \
@@ -126,7 +132,7 @@ For command/HTTP evaluators:
 ```bash
 optimize-anything optimize seed.txt \
   --evaluator-command bash eval.sh \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --score-range any
 ```
 
@@ -226,7 +232,7 @@ The plugin includes three skills that Claude Code can invoke automatically:
 /optimize-anything:quick prompt.txt "improve clarity and specificity"
   → runs analyze + optimize with sensible defaults, shows diff
 
-/optimize-anything:validate result.txt --providers openai/gpt-4o anthropic/claude-sonnet-4-5
+/optimize-anything:validate result.txt --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash
   → cross-checks the result with multiple judges
 ```
 
@@ -278,12 +284,12 @@ Pass it inline or from a file:
 # Inline
 optimize-anything optimize seed.txt \
   --intake-json '{"quality_dimensions": ["clarity", "specificity"], "hard_constraints": ["max 100 words"]}' \
-  --judge-model openai/gpt-4o-mini
+  --judge-model openai/gpt-5.6-luna
 
 # From file
 optimize-anything optimize seed.txt \
   --intake-file intake.json \
-  --judge-model openai/gpt-4o-mini
+  --judge-model openai/gpt-5.6-luna
 ```
 
 `optimize-anything intake` normalizes and validates these keys:

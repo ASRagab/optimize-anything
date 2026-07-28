@@ -36,7 +36,7 @@ Optimization output examples should follow this structure:
 ```bash
 optimize-anything optimize parse_duration.py \
   --evaluator-command bash eval_tests.sh \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --objective "Pass all duration parsing tests" \
   --budget 20
 ```
@@ -61,7 +61,7 @@ Sample output excerpt:
 ```bash
 optimize-anything optimize error_template.txt \
   --evaluator-url http://localhost:8080/evaluate \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --objective "Make API error messages clear and actionable" \
   --budget 15
 ```
@@ -72,9 +72,9 @@ optimize-anything optimize error_template.txt \
 
 ```bash
 optimize-anything optimize support_prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Improve clarity, constraints, and tone" \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 30
 ```
 
@@ -84,10 +84,10 @@ optimize-anything optimize support_prompt.txt \
 
 ```bash
 optimize-anything optimize prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Generalize across user intents" \
   --dataset data/train.jsonl \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 120 \
   --workers 6 \
   --cache --run-dir runs
@@ -101,11 +101,11 @@ With validation set:
 
 ```bash
 optimize-anything optimize prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Generalize to unseen examples" \
   --dataset data/train.jsonl \
   --valset data/val.jsonl \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 150 \
   --cache --cache-from runs/run-20260303-120000 \
   --run-dir runs
@@ -117,10 +117,12 @@ optimize-anything optimize prompt.txt \
 
 ```bash
 optimize-anything validate runs/run-20260303-130000/best_artifact.txt \
-  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
   --objective "Score clarity, correctness, and robustness" \
   --intake-file intake.json
 ```
+
+Gemini uses LiteLLM's `gemini/` provider prefix.
 
 Sample output excerpt:
 
@@ -129,9 +131,9 @@ Sample output excerpt:
   "artifact_file": "runs/run-20260303-130000/best_artifact.txt",
   "objective": "Score clarity, correctness, and robustness",
   "providers": [
-    {"provider": "openai/gpt-4o-mini", "score": 0.82, "reasoning": "..."},
-    {"provider": "anthropic/claude-sonnet-4-5", "score": 0.79, "reasoning": "..."},
-    {"provider": "google/gemini-2.0-flash", "score": 0.81, "reasoning": "..."}
+    {"provider": "openai/gpt-5.6-luna", "score": 0.82, "reasoning": "..."},
+    {"provider": "anthropic/claude-sonnet-5", "score": 0.79, "reasoning": "..."},
+    {"provider": "gemini/gemini-3.6-flash", "score": 0.81, "reasoning": "..."}
   ],
   "mean": 0.8066666667,
   "stddev": 0.0152752523,
@@ -147,8 +149,8 @@ Sample output excerpt:
 ```bash
 optimize-anything optimize --no-seed \
   --objective "Draft a concise support policy prompt" \
-  --model openai/gpt-4o-mini \
-  --judge-model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
+  --judge-model openai/gpt-5.6-luna \
   --budget 25
 ```
 
@@ -161,7 +163,7 @@ optimize-anything optimize --no-seed \
 ```bash
 optimize-anything optimize strategy.md \
   --evaluator-command bash eval_unbounded.sh \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --objective "Maximize reward" \
   --score-range any
 ```

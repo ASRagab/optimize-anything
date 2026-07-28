@@ -11,7 +11,7 @@ Score a single artifact file using a command evaluator, HTTP evaluator, or LLM j
 
 ```
 optimize-anything score SEED_FILE --evaluator-command bash eval.sh
-optimize-anything score SEED_FILE --judge-model openai/gpt-4o-mini --objective "Score clarity"
+optimize-anything score SEED_FILE --judge-model openai/gpt-5.6-luna --objective "Score clarity"
 ```
 
 ## Example
@@ -21,7 +21,7 @@ optimize-anything score my-prompt.txt \
   --evaluator-command bash evaluators/clarity.sh
 
 optimize-anything score my-prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Score for persuasiveness"
 ```
 

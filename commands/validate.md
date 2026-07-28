@@ -12,9 +12,11 @@ Use multiple LLM judges to verify that a quality improvement is not provider-spe
 ## Usage
 ```bash
 optimize-anything validate <file> \
-  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 \
+  --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
   --objective "Score for clarity and constraint adherence"
 ```
+
+Gemini uses LiteLLM's `gemini/` provider prefix.
 
 Optional:
 - `--intake-json` or `--intake-file` for shared dimensions/constraints

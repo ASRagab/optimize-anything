@@ -21,6 +21,19 @@ EXECUTABLE_MODEL_REFERENCE_FILES = (
     "skills/evaluator-patterns/SKILL.md",
     "skills/generate-evaluator/SKILL.md",
 )
+DOCUMENTATION_MODEL_REFERENCE_FILES = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "EXAMPLES.md",
+    "PROTOCOL.md",
+    "README.md",
+    "WALKTHROUGH.md",
+    "evaluator-cookbook.md",
+    "commands/analyze.md",
+    "commands/quick.md",
+    "commands/score.md",
+    "commands/validate.md",
+)
 STALE_CANONICAL_MODEL_STRINGS = (
     "openai/gpt-4o-mini",
     "openai/gpt-5.1",
@@ -32,14 +45,25 @@ STALE_CANONICAL_MODEL_STRINGS = (
 )
 
 
-@pytest.mark.parametrize("relative_path", EXECUTABLE_MODEL_REFERENCE_FILES)
-def test_executable_surfaces_do_not_recommend_stale_models(
+@pytest.mark.parametrize(
+    "relative_path",
+    EXECUTABLE_MODEL_REFERENCE_FILES + DOCUMENTATION_MODEL_REFERENCE_FILES,
+)
+def test_user_facing_surfaces_do_not_recommend_stale_models(
     relative_path: str,
 ) -> None:
     text = (ROOT / relative_path).read_text(encoding="utf-8")
     assert not [
         model for model in STALE_CANONICAL_MODEL_STRINGS if model in text
     ]
+
+
+def test_primary_docs_show_current_validation_models() -> None:
+    for relative_path in ("README.md", "EXAMPLES.md", "WALKTHROUGH.md"):
+        text = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "openai/gpt-5.6-luna" in text
+        assert "anthropic/claude-sonnet-5" in text
+        assert "gemini/gemini-3.6-flash" in text
 
 
 def test_default_models_match_current_capability_tiers() -> None:

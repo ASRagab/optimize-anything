@@ -10,20 +10,20 @@ uv run pytest
 uv run optimize-anything --help
 
 # Optimize
-uv run optimize-anything optimize seed.txt --evaluator-command bash eval.sh --model openai/gpt-4o-mini --objective "Improve quality"
+uv run optimize-anything optimize seed.txt --evaluator-command bash eval.sh --model openai/gpt-5.6-sol --objective "Improve quality"
 
 # Generate evaluator (default type: judge)
 uv run optimize-anything generate-evaluator seed.txt --objective "Score quality" > eval.py
 
 # Score one artifact
-uv run optimize-anything score artifact.txt --judge-model openai/gpt-4o-mini --objective "Score clarity"
+uv run optimize-anything score artifact.txt --judge-model openai/gpt-5.6-luna --objective "Score clarity"
 
 # Analyze for quality dimensions
-uv run optimize-anything analyze artifact.txt --judge-model openai/gpt-4o-mini --objective "Quality"
+uv run optimize-anything analyze artifact.txt --judge-model openai/gpt-5.6-luna --objective "Quality"
 
 # Validate across providers
 uv run optimize-anything validate artifact.txt \
-  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
   --objective "Score quality" \
   --intake-file intake.json
 ```
@@ -70,6 +70,8 @@ uv run optimize-anything validate artifact.txt \
 Notes:
 - Exactly one evaluator source: `--evaluator-command` OR `--evaluator-url` OR `--judge-model`.
 - Early stop auto-activates when budget > 30.
+- The proposer defaults to `openai/gpt-5.6-sol` after checking `--model` and `OPTIMIZE_ANYTHING_MODEL`; generated judge and composite evaluators default to `openai/gpt-5.6-luna`.
+- LLM judge calls use each provider's sampling defaults unless an explicit temperature is supplied.
 
 ## Validate subcommand
 
@@ -77,10 +79,12 @@ Notes:
 
 ```bash
 uv run optimize-anything validate runs/run-20260303-130000/best_artifact.txt \
-  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
   --objective "Score clarity, constraints, and robustness" \
   --intake-file intake.json
 ```
+
+Gemini uses LiteLLM's `gemini/` provider prefix.
 
 ## Plugin structure
 
