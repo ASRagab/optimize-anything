@@ -10,13 +10,13 @@ Display the optimization plan that would be executed for the given seed artifact
 ## Usage
 
 ```
-optimize-anything explain SEED_FILE --evaluator-command bash eval.sh --objective "your goal"
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" explain SEED_FILE --evaluator-command bash eval.sh --objective "your goal"
 ```
 
 ## Example
 
 ```
-optimize-anything explain prompt.txt \
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" explain prompt.txt \
   --evaluator-command bash evaluators/clarity.sh \
   --budget 50
 ```

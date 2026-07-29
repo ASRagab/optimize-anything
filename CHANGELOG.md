@@ -8,6 +8,16 @@
 - Centralized project-owned model defaults across the CLI, evaluator generation, judge flows, and operational scripts
 - Preserved proposer precedence as explicit CLI model, then `OPTIMIZE_ANYTHING_MODEL`, then the project default
 
+### Prompt optimization workflow
+- Added the `optimize-prompt` skill for inline prompts, files, embedded prompt regions, and independent batches
+- Separated fast prompt-quality scoring from rigorous task-output evaluation with deterministic hard gates and held-out acceptance
+- Kept repository sources unchanged during search and limited accepted edits to the recorded prompt destination
+
+### Plugin distribution
+- Added a self-locating locked-runtime launcher used by every packaged Claude command
+- Added native Codex plugin and marketplace metadata over the same canonical skill tree
+- Aligned Python, Claude, and Codex release metadata at 0.5.0
+
 ### Provider compatibility
 - Let providers apply their own sampling defaults unless a judge temperature is explicitly supplied
 - Removed hard-coded sampling parameters from generated judge and composite evaluators
@@ -15,6 +25,7 @@
 ### Documentation and verification
 - Modernized runnable examples, command guidance, protocol docs, skills, and integration tooling for current model identifiers
 - Added drift coverage for model defaults, CLI help and resolution, generated evaluators, and judge request payloads
+- Added offline launcher, evaluator, workflow-fixture, documentation, manifest, and release-version contracts
 - Synchronized package, plugin, and marketplace release versions
 
 ## v0.4.0 - 2026-07-27

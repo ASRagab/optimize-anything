@@ -1,129 +1,135 @@
 # Installation Guide
 
-optimize-anything can be installed three ways. Each gives you different capabilities:
+Choose the host integration or standalone runtime you need:
 
-| Method | Skills + `/optimize` | Terminal CLI | Prerequisites |
-|---|---|---|---|
-| **Claude Code plugin** | Yes | No | [uv](https://docs.astral.sh/uv/), Python >= 3.10 |
-| **CLI installer** | No | Yes | None (installs uv automatically) |
-| **From source** | If used as plugin | Via `uv run` | uv, Python >= 3.10 |
+| Method | Skills | Slash commands | Runtime | Prerequisites |
+|---|---|---|---|---|
+| **Claude Code plugin** | Yes | Yes | Bundled, locked project | uv, Python >= 3.10 |
+| **Codex plugin** | Yes | No | Bundled, locked project | uv, Python >= 3.10 |
+| **CLI installer** | No | No | Global `optimize-anything` | None; installer adds uv |
+| **From source** | Local checkout | No | `uv run` | uv, Python >= 3.10 |
 
-> **Plugin vs CLI:** The plugin gives you skills *inside Claude Code*. The CLI gives you the `optimize-anything` command *in your terminal*. They are independent -- install either or both.
+The Claude Code plugin and Codex plugin discover the same `skills/` tree. Their
+launcher runs the repository project directly, so neither plugin requires a
+separately installed global CLI. The CLI installer does not install either
+plugin.
 
----
+## Claude Code Plugin
 
-## Claude Code Plugin (recommended for Claude Code users)
-
-The plugin auto-discovers skills and the `/optimize` command.
-
-**Prerequisite:** [uv](https://docs.astral.sh/uv/) and Python >= 3.10 must be installed on your system.
-
-### Install
-
-Inside Claude Code, add the marketplace and install the plugin:
+Add the Git marketplace and install:
 
 ```bash
 /plugin marketplace add ASRagab/optimize-anything
 /plugin install optimize-anything@optimize-anything
 ```
 
-Or from a local clone:
+For a local clone:
 
 ```bash
-/plugin marketplace add /path/to/optimize-anything
+/plugin marketplace add /absolute/path/to/optimize-anything
 /plugin install optimize-anything@optimize-anything
 ```
 
-### What you get
+Restart Claude Code, then invoke `$optimize-prompt` or an existing
+`/optimize-anything:*` command. The packaged command instructions and skill use
+`scripts/run-optimize-anything` automatically.
 
-- **Skills** — `generate-evaluator` and `optimization-guide`
-- **Command** — `/optimize` slash command
-
-### Verify
-
-In Claude Code, run `/optimize` or ask Claude to use the optimization-guide skill.
-
-### Uninstall
+Update or remove:
 
 ```bash
-/plugin uninstall optimize-anything@optimize-anything
+claude plugin update optimize-anything@optimize-anything
+claude plugin uninstall optimize-anything@optimize-anything
 ```
 
----
+## Codex Plugin
 
-## CLI Installer (recommended for terminal use)
+Add the Git marketplace and install:
 
-Installs `optimize-anything` as a global CLI command in `~/.local/bin/`. This does **not** install the Claude Code plugin — the CLI is a standalone tool.
+```bash
+codex plugin marketplace add ASRagab/optimize-anything
+codex plugin add optimize-anything@optimize-anything
+```
 
-### Install
+For a local clone:
+
+```bash
+codex plugin marketplace add /absolute/path/to/optimize-anything
+codex plugin add optimize-anything@optimize-anything
+```
+
+Start a new Codex thread, then invoke `$optimize-anything:optimize-prompt`.
+Codex namespaces plugin skills and discovers the canonical `skills/` tree
+through `.codex-plugin/plugin.json`.
+
+Update the Git marketplace and reinstall the plugin, or remove it:
+
+```bash
+codex plugin marketplace upgrade optimize-anything
+codex plugin add optimize-anything@optimize-anything
+codex plugin remove optimize-anything@optimize-anything
+```
+
+For local marketplaces, edits are visible after reinstalling the plugin and
+starting a new thread; no Git marketplace upgrade is needed.
+
+## CLI Installer
+
+Use this path for a global terminal command without agent skills:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
-```
-
-This will:
-1. Install [uv](https://docs.astral.sh/uv/) if not already present
-2. Run `uv tool install` to install `optimize-anything` in an isolated environment
-3. Verify the installation
-
-### Verify
-
-```bash
 optimize-anything --help
 ```
 
-If the command is not found, add `~/.local/bin` to your PATH:
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+The installer places the command in `~/.local/bin/`. If that directory is not
+on `PATH`, add it in the shell that will run the CLI.
 
-### Uninstall
+Remove it with:
 
 ```bash
 uv tool uninstall optimize-anything
 ```
 
-Or via the installer:
-```bash
-curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash -s -- --uninstall
-```
-
----
-
-## From Source (for development)
-
-Clone and install in a local virtual environment. Use `uv run` to execute commands.
+## From Source
 
 ```bash
 git clone https://github.com/ASRagab/optimize-anything.git
 cd optimize-anything
 uv sync
+uv run pytest
+uv run optimize-anything --help
 ```
 
-### Verify
+The plugin-equivalent launcher is available at
+`scripts/run-optimize-anything`. It resolves this checkout, verifies the
+prerequisites, and runs `uv run --project <checkout> --locked`.
 
-```bash
-uv run pytest              # Run tests
-uv run optimize-anything --help   # Check CLI
+## Verify Prompt Optimization
+
+After installing either plugin, start a new host session and use its skill
+name:
+
+```text
+# Claude Code
+$optimize-prompt Improve this prompt in fast mode and return the accepted result:
+"Summarize this."
+
+# Codex
+$optimize-anything:optimize-prompt Improve this prompt in fast mode and return the accepted result:
+"Summarize this."
 ```
 
-### Use as plugin from source
-
-If you've cloned the repo, you can add it as a local marketplace in Claude Code:
-```bash
-/plugin marketplace add /path/to/optimize-anything
-/plugin install optimize-anything@optimize-anything
-```
-
----
+Fast mode returns prompt-quality evidence. Rigorous mode additionally requires
+representative JSONL examples, a target model, a judge model, and explicit cost
+controls; see the prompt workflow in [README.md](README.md).
 
 ## Common Errors
 
 | Error | Cause | Fix |
 |---|---|---|
-| `uv: command not found` | uv not installed | Run the CLI installer (installs uv) or install from https://docs.astral.sh/uv/ |
-| `ANTHROPIC_API_KEY missing` | Env var not set | Export in shell before running CLI |
-| `ModuleNotFoundError` | Dependencies not installed | Run `uv sync` in the project directory (source install) |
-| Evaluator command fails repeatedly | Script path/cwd mismatch | Use `artifacts/eval.sh` directly or set `--evaluator-cwd` correctly, then validate with `echo '{"candidate":"test"}' | <command>` |
-| `Error: --output must be a file path` | Passed directory to CLI output | Use a file path like `artifacts/result.txt` instead of `artifacts/` |
-| Plugin not working | uv not on PATH | Ensure `uv` is installed and available in your shell's PATH |
+| `uv: command not found` | Plugin runtime prerequisite missing | Install uv from https://docs.astral.sh/uv/ |
+| `Python 3.10 or newer is required` | No supported interpreter is available | Run `uv python install 3.10` |
+| Model credential error | Selected proposer, task, or judge model is not authenticated | Export that provider's credential before launching the host |
+| Skill is not visible | Host loaded the prior plugin snapshot | Reinstall/update, then start a new thread or session |
+| Evaluator command fails | Script path or working directory is wrong | Set `--evaluator-cwd` and run the evaluator preflight payload manually |
+| `Error: --output must be a file path` | Output points to a directory | Use a candidate file in a temporary or run directory |

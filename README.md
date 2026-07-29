@@ -163,9 +163,59 @@ commands, expected report fields, acceptance criteria, and troubleshooting.
 - `analyze`
 - `validate`
 
-## Claude Code Plugin
+## Agent Plugins
 
-optimize-anything is also a Claude Code plugin with guided slash commands and skills.
+The Claude Code plugin and Codex plugin share the same `skills/` tree and
+bundled locked runtime. Plugin users need `uv` and Python 3.10 or newer, but do
+not need a global `optimize-anything` command. The standalone CLI remains a
+separate installation choice.
+
+### Prompt Optimization Workflow
+
+Claude Code users invoke `$optimize-prompt`; Codex users invoke the namespaced
+`$optimize-anything:optimize-prompt`. Both accept prompt text, a standalone
+file, an embedded prompt region, or a list of independent prompt files.
+
+| Evidence mode | Evaluation | What it proves |
+|---|---|---|
+| **Fast mode** | Scores the prompt text for clarity, constraints, and task fitness | Prompt-quality evidence only |
+| **Rigorous mode** | Runs the candidate on representative inputs, then scores task outputs | Task-performance evidence for the tested examples |
+| **Composite mode** | Runs deterministic hard constraints before the rigorous judge | No subjective score can override a failed gate |
+
+Rigorous datasets use JSONL records with `input`, optional `expected`,
+`criteria`, and `hard_constraints`. See
+[`prompt-execution-dataset.md`](skills/optimize-prompt/references/prompt-execution-dataset.md)
+for representative examples, the default system-prompt adapter, custom adapter
+guidance, and expected cost controls. Use explicit proposer, target, and judge
+models; bound calls with a small dataset, budget, and early stopping.
+
+The workflow captures the baseline and writes search output to a temporary or
+run directory. It accepts only a positive comparable score delta with all hard
+constraints satisfied, plus required held-out acceptance in rigorous mode.
+Independent prompt files receive separate decisions. Coupled components require
+an explicit structured-candidate adapter and are not optimized as unrelated
+files.
+
+Inline example:
+
+```text
+$optimize-prompt Improve this prompt in fast mode and return the accepted result:
+"Summarize this."
+```
+
+The response includes the complete accepted prompt, evidence mode, and score
+delta; it does not write a repository file.
+
+Embedded repository example:
+
+```text
+$optimize-prompt Optimize SYSTEM_PROMPT in src/agent.py with the examples in
+evals/prompt.jsonl. Apply it only if held-out acceptance passes.
+```
+
+The workflow optimizes a captured copy, replaces only `SYSTEM_PROMPT`, preserves
+the source representation, and runs the cheapest relevant parse or targeted
+test. Rejected candidates leave the file unchanged.
 
 ### Plugin Regression Workflow
 
@@ -182,24 +232,35 @@ uv run python scripts/check.py --with-plugin
 Requirements:
 - `claude` CLI installed and authenticated
 - `OPENAI_API_KEY` set in the shell that launches the command
-- `ANTHROPIC_API_KEY` set in the shell that launches the command
+- `ANTHROPIC_API_KEY` for `validate` or the full scenario set
 
-The harness runs three real scenarios (`analyze`, `validate`, `quick`), saves Claude JSON outputs plus stderr logs, and fails if Claude does not execute the expected workflow or the optimized artifact is not written.
+The harness runs existing CLI scenarios plus bounded prompt inline-return and
+repository-apply scenarios. `--dry-run` verifies prompt and artifact wiring
+without credentials or model calls.
 
-### Installation
-
-```bash
-# In Claude Code
-/plugin install ASRagab/optimize-anything
-```
-
-Or clone and install locally:
+### Claude Code Plugin
 
 ```bash
-git clone https://github.com/ASRagab/optimize-anything.git
-cd optimize-anything
-/plugin install .
+/plugin marketplace add ASRagab/optimize-anything
+/plugin install optimize-anything@optimize-anything
 ```
+
+For a local clone, replace the repository name in the first command with its
+absolute path. Restart Claude Code after installation or update, then invoke
+`$optimize-prompt` or an existing slash command.
+
+### Codex Plugin
+
+```bash
+codex plugin marketplace add ASRagab/optimize-anything
+codex plugin add optimize-anything@optimize-anything
+```
+
+For local development, pass the clone path to `codex plugin marketplace add`.
+Start a new Codex thread after install or update, then invoke
+`$optimize-anything:optimize-prompt` so skill discovery refreshes.
+See [install.md](install.md) for update, removal, verification, and the optional
+standalone CLI path.
 
 ### Slash Commands
 
@@ -217,8 +278,9 @@ cd optimize-anything
 
 ### Skills
 
-The plugin includes three skills that Claude Code can invoke automatically:
+Both plugins include four skills that the host can invoke:
 
+- **optimize-prompt** — Build the rubric, choose fast or rigorous evidence, optimize outside the source, and return or safely apply an accepted prompt
 - **optimization-guide** — Full workflow walkthrough covering modes, configuration, budget, and result interpretation
 - **generate-evaluator** — Choose the right evaluator pattern (judge, command, composite) and generate a script
 - **evaluator-patterns** — Library of ready-to-use evaluator templates for prompts, code, docs, and agent instructions

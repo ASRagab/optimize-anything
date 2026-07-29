@@ -11,7 +11,7 @@ Use multiple LLM judges to verify that a quality improvement is not provider-spe
 
 ## Usage
 ```bash
-optimize-anything validate <file> \
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" validate <file> \
   --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
   --objective "Score for clarity and constraint adherence"
 ```

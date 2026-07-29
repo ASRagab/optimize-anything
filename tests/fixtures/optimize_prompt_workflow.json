@@ -1,0 +1,50 @@
+[
+  {
+    "id": "inline-return",
+    "source": "inline",
+    "baseline": "Summarize this.",
+    "candidate": "Summarize the input in three factual bullets.",
+    "accepted": true,
+    "expected_action": "return"
+  },
+  {
+    "id": "standalone-apply",
+    "source": "standalone",
+    "baseline": "Be helpful.",
+    "candidate": "Answer accurately and ask for missing critical context.",
+    "accepted": true,
+    "destination": "prompts/system.txt",
+    "expected": "Answer accurately and ask for missing critical context."
+  },
+  {
+    "id": "embedded-apply",
+    "source": "embedded",
+    "baseline": "Be helpful.",
+    "candidate": "Give a concise, evidence-based answer.",
+    "baseline_source": "SYSTEM_PROMPT = \"\"\"Be helpful.\"\"\"\nKEEP = 1\n",
+    "expected_source": "SYSTEM_PROMPT = \"\"\"Give a concise, evidence-based answer.\"\"\"\nKEEP = 1\n",
+    "accepted": true
+  },
+  {
+    "id": "rejected-noop",
+    "source": "standalone",
+    "baseline": "Return JSON.",
+    "candidate": "Write prose.",
+    "accepted": false,
+    "expected": "Return JSON."
+  },
+  {
+    "id": "independent-batch",
+    "source": "batch",
+    "destinations": ["prompts/a.txt", "prompts/b.txt"],
+    "accepted": [true, false],
+    "expected_action": "report-per-file"
+  },
+  {
+    "id": "coupled-refusal",
+    "source": "batch",
+    "components": ["system_prompt", "few_shot_examples"],
+    "coupled": true,
+    "expected_action": "refuse-independent-optimization"
+  }
+]

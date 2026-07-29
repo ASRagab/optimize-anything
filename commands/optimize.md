@@ -4,6 +4,10 @@ description: Guided optimization workflow with mode selection and evaluator setu
 ---
 Run optimization using a deterministic, guided workflow.
 
+For inline prompts, embedded prompt regions, independent prompt batches, or
+task-output evaluation with representative examples, invoke the shared
+`$optimize-prompt` skill instead.
+
 ## Step 1: Identify the artifact
 - If the user provided a file argument, use it directly.
 - Otherwise ask: **"What file should I optimize?"**
@@ -29,7 +33,7 @@ Present these options and ask the user to choose one unless they already specifi
 - If evaluator is already specified, proceed.
 - If no evaluator is specified:
   1. Run `analyze` first:
-     - `optimize-anything analyze <file> --judge-model <model> --objective "<objective>"`
+     - `"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" analyze <file> --judge-model <model> --objective "<objective>"`
   2. If analyze fails (API key missing, model unavailable): ask the user for their preferred model, or suggest using `--evaluator-command` with a custom script instead.
   3. Ask: **"Should we use LLM judge directly, or do you want a custom evaluator?"**
   4. If custom evaluator is needed, invoke evaluator generation workflow.
