@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.0 - 2026-07-28
+
+### Model defaults
+- Updated the default proposer model to `openai/gpt-5.6-sol`
+- Updated the default evaluator model to `openai/gpt-5.6-luna`
+- Centralized project-owned model defaults across the CLI, evaluator generation, judge flows, and operational scripts
+- Preserved proposer precedence as explicit CLI model, then `OPTIMIZE_ANYTHING_MODEL`, then the project default
+
+### Provider compatibility
+- Let providers apply their own sampling defaults unless a judge temperature is explicitly supplied
+- Removed hard-coded sampling parameters from generated judge and composite evaluators
+
+### Documentation and verification
+- Modernized runnable examples, command guidance, protocol docs, skills, and integration tooling for current model identifiers
+- Added drift coverage for model defaults, CLI help and resolution, generated evaluators, and judge request payloads
+- Synchronized package, plugin, and marketplace release versions
+
 ## v0.4.0 - 2026-07-27
 
 ### New features
