@@ -10,13 +10,13 @@ Use an LLM to discover relevant quality dimensions for a given artifact and opti
 ## Usage
 
 ```bash
-optimize-anything analyze SEED_FILE --judge-model openai/gpt-5.6-luna --objective "Quality"
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" analyze SEED_FILE --judge-model openai/gpt-5.6-luna --objective "Quality"
 ```
 
 ## Example
 
 ```bash
-optimize-anything analyze my-prompt.txt \
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" analyze my-prompt.txt \
   --judge-model openai/gpt-5.6-luna \
   --objective "Score for clarity and persuasiveness"
 ```
@@ -25,7 +25,7 @@ optimize-anything analyze my-prompt.txt \
 After dimension discovery, proceed directly to optimization using the returned `intake_json`:
 
 ```bash
-optimize-anything optimize my-prompt.txt \
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" optimize my-prompt.txt \
   --judge-model openai/gpt-5.6-luna \
   --objective "Score for clarity and persuasiveness" \
   --intake-json '<paste intake_json from analyze>' \

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OPTIMIZE_ANYTHING_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "optimize-anything plugin: uv is required. Install uv from https://docs.astral.sh/uv/." >&2
+  exit 127
+fi
+
+if ! uv python find '>=3.10' >/dev/null 2>&1; then
+  echo "optimize-anything plugin: Python 3.10 or newer is required. Install it with 'uv python install 3.10'." >&2
+  exit 1
+fi
+
+exec uv run --project "$OPTIMIZE_ANYTHING_PLUGIN_ROOT" --locked optimize-anything "$@"

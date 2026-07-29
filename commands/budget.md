@@ -10,13 +10,13 @@ Analyze a seed artifact and recommend an appropriate iteration budget based on i
 ## Usage
 
 ```
-optimize-anything budget SEED_FILE
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" budget SEED_FILE
 ```
 
 ## Example
 
 ```
-optimize-anything budget my-prompt.txt
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" budget my-prompt.txt
 ```
 
 See [README](../README.md) for full flag documentation.

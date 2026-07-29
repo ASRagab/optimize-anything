@@ -27,8 +27,14 @@ Or skip evaluator setup entirely — the guided workflow handles it:
 /optimize-anything:quick my-prompt.txt "make it clearer and more specific"
 ```
 
+For inline prompts, repository prompt regions, or representative-example
+evaluation, invoke `$optimize-prompt` in Claude Code or the namespaced
+`$optimize-anything:optimize-prompt` in Codex. It uses the bundled runtime,
+keeps search output outside the source, and applies only an accepted result.
+
 ## Available Skills
 
+- **optimize-prompt** — Optimize inline prompts, files, embedded regions, or independent batches with fast prompt-quality or rigorous task-output evidence
 - **generate-evaluator** — Choose the right evaluator pattern (judge, command, composite) and generate a script
 - **optimization-guide** — Full workflow walkthrough covering optimization modes, configuration, budget, and result interpretation
 - **evaluator-patterns** — Library of ready-to-use evaluator templates for prompts, code, docs, and agent instructions

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Optimize Prompt"
+  short_description: "Optimize prompts with measured acceptance"
+  default_prompt: "Use $optimize-anything:optimize-prompt to improve this prompt and verify the result."
+
+policy:
+  allow_implicit_invocation: true

@@ -10,13 +10,13 @@ Normalize and validate an intake specification, filling in defaults for quality 
 ## Usage
 
 ```
-optimize-anything intake --intake-json '{"artifact_class": "prompt"}'
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" intake --intake-json '{"artifact_class": "prompt"}'
 ```
 
 ## Example
 
 ```
-optimize-anything intake --intake-file intake.json
+"${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" intake --intake-file intake.json
 ```
 
 See [README](../README.md) for full flag documentation.

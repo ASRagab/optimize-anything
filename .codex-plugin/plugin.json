@@ -1,0 +1,24 @@
+{
+  "name": "optimize-anything",
+  "version": "0.5.0",
+  "description": "Optimize prompts and other text artifacts with measured evaluator feedback",
+  "author": {
+    "name": "optimize-anything contributors"
+  },
+  "repository": "https://github.com/ASRagab/optimize-anything",
+  "license": "MIT",
+  "keywords": ["optimization", "prompts", "evaluator", "gepa"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Optimize Anything",
+    "shortDescription": "Optimize prompts with measured feedback",
+    "longDescription": "Build an evaluation contract, improve prompts with the bundled optimize-anything runtime, and apply only accepted results.",
+    "developerName": "optimize-anything contributors",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Optimize this prompt and verify the result.",
+      "Improve the prompt in this file safely."
+    ]
+  }
+}

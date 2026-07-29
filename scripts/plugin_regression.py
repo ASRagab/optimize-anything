@@ -17,6 +17,10 @@ class PluginRegressionFailure(RuntimeError):
 
 
 SEED_BASELINE = "You are a helpful assistant."
+EMBEDDED_PREFIX = 'SYSTEM_PROMPT = """'
+EMBEDDED_PROMPT = "Be helpful."
+EMBEDDED_SUFFIX = '"""\nKEEP = 1\n'
+EMBEDDED_BASELINE = EMBEDDED_PREFIX + EMBEDDED_PROMPT + EMBEDDED_SUFFIX
 
 
 def _timestamp() -> str:
@@ -43,12 +47,83 @@ def _require_env(name: str) -> None:
         raise PluginRegressionFailure(f"missing required environment variable: {name}")
 
 
+def _required_env_names(scenario: str) -> list[str]:
+    names = ["OPENAI_API_KEY"]
+    if scenario in {"all", "validate"}:
+        names.append("ANTHROPIC_API_KEY")
+    return names
+
+
 def _ensure_seed(repo_root: Path) -> Path:
     seed_path = repo_root / "runs" / "zo-eval" / "seed.txt"
     seed_path.parent.mkdir(parents=True, exist_ok=True)
     if not seed_path.exists():
         seed_path.write_text(SEED_BASELINE + "\n")
     return seed_path
+
+
+def _ensure_repository_fixture(output_dir: Path) -> Path:
+    fixture = output_dir / "repository-apply" / "prompt_module.py"
+    _write_text(fixture, EMBEDDED_BASELINE)
+    return fixture
+
+
+def _inline_prompt() -> str:
+    return (
+        "Use $optimize-prompt in fast mode on this inline prompt: "
+        "'You are a helpful assistant.' Use openai/gpt-4o-mini as proposer and judge, "
+        "a budget of 3, and return the complete accepted prompt with prompt-quality "
+        "evidence and score delta. Do not modify repository files."
+    )
+
+
+def _repository_apply_prompt(fixture: Path) -> str:
+    return (
+        f"Use $optimize-prompt in fast mode on SYSTEM_PROMPT in {fixture}. "
+        "Improve clarity and specificity with openai/gpt-4o-mini as proposer and judge "
+        "and a budget of 3. Apply only an accepted candidate to that exact string, "
+        "preserve KEEP = 1 and valid Python syntax, then report prompt-quality evidence "
+        "and score delta."
+    )
+
+
+def _workflow_fixture_ids(repo_root: Path) -> list[str]:
+    path = repo_root / "tests" / "fixtures" / "optimize_prompt_workflow.json"
+    cases = json.loads(path.read_text(encoding="utf-8"))
+    return [str(case["id"]) for case in cases]
+
+
+def _write_dry_run(repo_root: Path, output_dir: Path) -> dict[str, Any]:
+    fixture = _ensure_repository_fixture(output_dir)
+    summary = {
+        "overall": "DRY_RUN",
+        "workflow_fixture_ids": _workflow_fixture_ids(repo_root),
+        "live_scenarios": [
+            {"scenario": "inline", "prompt": _inline_prompt()},
+            {
+                "scenario": "repository-apply",
+                "prompt": _repository_apply_prompt(fixture),
+                "artifact": str(fixture),
+            },
+        ],
+    }
+    _write_json(output_dir / "summary.json", summary)
+    return summary
+
+
+def _validate_repository_apply(updated: str, fixture: Path) -> str:
+    if not updated.startswith(EMBEDDED_PREFIX) or not updated.endswith(EMBEDDED_SUFFIX):
+        raise PluginRegressionFailure(
+            "repository-apply: content outside the recorded prompt region changed"
+        )
+    candidate = updated[len(EMBEDDED_PREFIX) : -len(EMBEDDED_SUFFIX)]
+    if not candidate.strip() or candidate == EMBEDDED_PROMPT:
+        raise PluginRegressionFailure("repository-apply: prompt fixture was not updated")
+    try:
+        compile(updated, str(fixture), "exec")
+    except SyntaxError as exc:
+        raise PluginRegressionFailure(f"repository-apply: invalid Python after apply: {exc}") from exc
+    return candidate
 
 
 def _claude_base(repo_root: Path) -> list[str]:
@@ -167,14 +242,61 @@ def scenario_quick(repo_root: Path, output_dir: Path, seed_path: Path) -> dict[s
     }
 
 
+def scenario_inline(repo_root: Path, output_dir: Path, seed_path: Path) -> dict[str, Any]:
+    payload = _run_claude(
+        repo_root,
+        _inline_prompt(),
+        output_dir / "inline.json",
+        output_dir / "inline.stderr.log",
+    )
+    result = _assert_success(payload, "inline")
+    _assert_contains(result, "inline", ["prompt-quality", "score", "helpful assistant"])
+    return {
+        "scenario": "inline",
+        "turns": payload.get("num_turns"),
+        "cost_usd": payload.get("total_cost_usd"),
+        "duration_ms": payload.get("duration_ms"),
+        "returned": True,
+    }
+
+
+def scenario_repository_apply(
+    repo_root: Path, output_dir: Path, seed_path: Path
+) -> dict[str, Any]:
+    fixture = _ensure_repository_fixture(output_dir)
+    payload = _run_claude(
+        repo_root,
+        _repository_apply_prompt(fixture),
+        output_dir / "repository-apply.json",
+        output_dir / "repository-apply.stderr.log",
+    )
+    result = _assert_success(payload, "repository-apply")
+    _assert_contains(result, "repository-apply", ["prompt-quality", "score"])
+    updated = fixture.read_text(encoding="utf-8")
+    _validate_repository_apply(updated, fixture)
+    return {
+        "scenario": "repository-apply",
+        "turns": payload.get("num_turns"),
+        "cost_usd": payload.get("total_cost_usd"),
+        "duration_ms": payload.get("duration_ms"),
+        "artifact": str(fixture),
+        "applied": True,
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run Claude Code plugin regression scenarios and validate outputs."
     )
     parser.add_argument("--output-dir", help="Directory for saved plugin regression artifacts.")
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write workflow prompts and fixture artifacts without credentials or model calls.",
+    )
+    parser.add_argument(
         "--scenario",
-        choices=["all", "analyze", "validate", "quick"],
+        choices=["all", "analyze", "validate", "quick", "inline", "repository-apply"],
         default="all",
         help="Which scenario to run.",
     )
@@ -188,8 +310,13 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        _require_env("OPENAI_API_KEY")
-        _require_env("ANTHROPIC_API_KEY")
+        if args.dry_run:
+            summary = _write_dry_run(repo_root, output_dir)
+            print(json.dumps(summary, indent=2))
+            return 0
+
+        for name in _required_env_names(args.scenario):
+            _require_env(name)
         seed_path = _ensure_seed(repo_root)
 
         scenarios: list[tuple[str, Any]] = []
@@ -199,6 +326,10 @@ def main(argv: list[str] | None = None) -> int:
             scenarios.append(("validate", scenario_validate))
         if args.scenario in {"all", "quick"}:
             scenarios.append(("quick", scenario_quick))
+        if args.scenario in {"all", "inline"}:
+            scenarios.append(("inline", scenario_inline))
+        if args.scenario in {"all", "repository-apply"}:
+            scenarios.append(("repository-apply", scenario_repository_apply))
 
         results = [fn(repo_root, output_dir, seed_path) for _, fn in scenarios]
         summary = {"overall": "PASS", "results": results}
