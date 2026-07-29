@@ -71,7 +71,7 @@ def _ensure_repository_fixture(output_dir: Path) -> Path:
 def _inline_prompt() -> str:
     return (
         "Use $optimize-prompt in fast mode on this inline prompt: "
-        "'You are a helpful assistant.' Use openai/gpt-4o-mini as proposer and judge, "
+        "'You are a helpful assistant.' Use openai/gpt-5.6-luna as proposer and judge, "
         "a budget of 3, and return the complete accepted prompt with prompt-quality "
         "evidence and score delta. Do not modify repository files."
     )
@@ -80,7 +80,7 @@ def _inline_prompt() -> str:
 def _repository_apply_prompt(fixture: Path) -> str:
     return (
         f"Use $optimize-prompt in fast mode on SYSTEM_PROMPT in {fixture}. "
-        "Improve clarity and specificity with openai/gpt-4o-mini as proposer and judge "
+        "Improve clarity and specificity with openai/gpt-5.6-luna as proposer and judge "
         "and a budget of 3. Apply only an accepted candidate to that exact string, "
         "preserve KEEP = 1 and valid Python syntax, then report prompt-quality evidence "
         "and score delta."
