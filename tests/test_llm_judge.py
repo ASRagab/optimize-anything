@@ -164,6 +164,24 @@ class TestLlmJudgeEvaluatorUnit:
         call_kwargs = mock_call.call_args.kwargs
         assert call_kwargs["temperature"] == 0.7
 
+    def test_default_temperature_is_omitted_from_litellm(self):
+        captured: dict[str, object] = {}
+
+        def fake_completion(**kwargs):
+            captured.update(kwargs)
+            return self._make_mock_completion(
+                '{"score": 0.8, "reasoning": "Good"}'
+            )
+
+        with patch("litellm.completion", side_effect=fake_completion):
+            evaluate = llm_judge_evaluator(
+                "Score quality",
+                model="anthropic/claude-sonnet-5",
+            )
+            evaluate("candidate")
+
+        assert "temperature" not in captured
+
     def test_model_string_passed_through(self):
         response_content = json.dumps({"score": 0.5, "reasoning": "ok"})
         evaluator = llm_judge_evaluator(
@@ -582,9 +600,12 @@ class TestAnalyzeForDimensions:
             ]
         })
 
+        captured_calls: list[dict[str, object]] = []
         call_count = 0
+
         def mock_completion(**kwargs):
             nonlocal call_count
+            captured_calls.append(kwargs)
             call_count += 1
             if call_count == 1:
                 return self._make_mock_response(score_response)
@@ -594,6 +615,31 @@ class TestAnalyzeForDimensions:
             analyze_for_dimensions("text", "obj", "openai/gpt-4o-mini")
 
         assert call_count == 2
+        assert all("temperature" not in kwargs for kwargs in captured_calls)
+
+    def test_explicit_temperature_is_forwarded_to_both_llm_calls(self):
+        score_response = json.dumps({"score": 0.5, "reasoning": "ok"})
+        dims_response = json.dumps({
+            "dimensions": [
+                {"name": "a", "weight": 1.0, "score": 0.5, "description": "d"},
+            ]
+        })
+        responses = iter((score_response, dims_response))
+        captured_calls: list[dict[str, object]] = []
+
+        def mock_completion(**kwargs):
+            captured_calls.append(kwargs)
+            return self._make_mock_response(next(responses))
+
+        with patch("litellm.completion", side_effect=mock_completion):
+            analyze_for_dimensions(
+                "text",
+                "obj",
+                "openai/gpt-4o-mini",
+                temperature=0.7,
+            )
+
+        assert [call["temperature"] for call in captured_calls] == [0.7, 0.7]
 
     def test_scoring_failure_raises_runtime_error(self):
         with patch("litellm.completion", side_effect=RuntimeError("API down")):

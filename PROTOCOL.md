@@ -27,7 +27,7 @@ Protocol v2 extends the input payload with optional metadata and example context
 {
   "_protocol_version": 2,
   "candidate": "<text>",
-  "task_model": "openai/gpt-4o-mini",
+  "task_model": "openai/gpt-5.6-luna",
   "example": {
     "...": "dataset example object"
   }

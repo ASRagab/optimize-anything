@@ -85,7 +85,7 @@ def llm_judge_evaluator(
     quality_dimensions: list[dict[str, Any]] | None = None,
     hard_constraints: list[str] | None = None,
     timeout: float = 60.0,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     api_base: str | None = None,
     task_model: str | None = None,
 ) -> Callable[[str, Any | None], tuple[float, dict[str, Any]]]:
@@ -113,10 +113,11 @@ def llm_judge_evaluator(
                     {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                "temperature": temperature,
                 "timeout": timeout,
                 "response_format": {"type": "json_object"},
             }
+            if temperature is not None:
+                completion_kwargs["temperature"] = temperature
             if api_base:
                 completion_kwargs["base_url"] = api_base
 
@@ -321,7 +322,7 @@ def analyze_for_dimensions(
     *,
     api_base: str | None = None,
     timeout: float = 60.0,
-    temperature: float = 0.0,
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     """Score an artifact then discover quality dimensions for refinement.
 
@@ -346,10 +347,11 @@ def analyze_for_dimensions(
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {"role": "user", "content": score_prompt},
         ],
-        "temperature": temperature,
         "timeout": timeout,
         "response_format": {"type": "json_object"},
     }
+    if temperature is not None:
+        completion_kwargs["temperature"] = temperature
     if api_base:
         completion_kwargs["base_url"] = api_base
 
@@ -375,10 +377,11 @@ def analyze_for_dimensions(
             {"role": "system", "content": ANALYZE_SYSTEM_PROMPT},
             {"role": "user", "content": analyze_prompt},
         ],
-        "temperature": temperature,
         "timeout": timeout,
         "response_format": {"type": "json_object"},
     }
+    if temperature is not None:
+        analyze_kwargs["temperature"] = temperature
     if api_base:
         analyze_kwargs["base_url"] = api_base
 

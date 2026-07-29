@@ -61,7 +61,7 @@ Generate a judge evaluator and test it:
 # Generate
 optimize-anything generate-evaluator seed.txt \
   --objective "Score clarity and specificity" \
-  --model openai/gpt-4o-mini > eval_judge.py
+  --model openai/gpt-5.6-luna > eval_judge.py
 
 # Test it
 echo '{"candidate":"Your artifact text here"}' | python3 eval_judge.py

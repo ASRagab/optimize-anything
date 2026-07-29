@@ -81,17 +81,17 @@ scenario_budget() {
 
 scenario_analyze() {
   run_scenario "analyze" \
-    "Use the optimize-anything plugin to analyze the artifact at $SEED_FILE for quality dimensions. Run: optimize-anything analyze $SEED_FILE --judge-model openai/gpt-4o-mini --objective 'Score the quality of this system prompt'"
+    "Use the optimize-anything plugin to analyze the artifact at $SEED_FILE for quality dimensions. Run: optimize-anything analyze $SEED_FILE --judge-model openai/gpt-5.6-luna --objective 'Score the quality of this system prompt'"
 }
 
 scenario_validate() {
   run_scenario "validate" \
-    "Use the optimize-anything plugin to validate the artifact at $SEED_FILE across multiple providers. Run: optimize-anything validate $SEED_FILE --providers openai/gpt-4o-mini anthropic/claude-haiku-4-5-20251001 --objective 'Score the quality and clarity of this system prompt'"
+    "Use the optimize-anything plugin to validate the artifact at $SEED_FILE across multiple providers. Run: optimize-anything validate $SEED_FILE --providers openai/gpt-5.6-luna anthropic/claude-haiku-4-5-20251001 --objective 'Score the quality and clarity of this system prompt'"
 }
 
 scenario_quick() {
   run_scenario "quick" \
-    "Use the optimize-anything plugin to quickly optimize the seed at $SEED_FILE. Run: optimize-anything optimize $SEED_FILE --judge-model openai/gpt-4o-mini --objective 'Improve clarity and specificity of this system prompt' --budget 5 --model openai/gpt-4o-mini --output $RESULTS_DIR/quick-best.txt"
+    "Use the optimize-anything plugin to quickly optimize the seed at $SEED_FILE. Run: optimize-anything optimize $SEED_FILE --judge-model openai/gpt-5.6-luna --objective 'Improve clarity and specificity of this system prompt' --budget 5 --model openai/gpt-5.6-sol --output $RESULTS_DIR/quick-best.txt"
 }
 
 case "$SCENARIO" in

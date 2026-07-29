@@ -15,7 +15,7 @@ Your evaluator reads a JSON object from **stdin** (command) or as a **POST body*
   "_protocol_version": 2,
   "candidate": "the text being optimized",
   "example": {"input": "...", "expected": "..."},
-  "task_model": "openai/gpt-4o-mini"
+  "task_model": "openai/gpt-5.6-luna"
 }
 ```
 
@@ -39,7 +39,7 @@ The `example` field is populated **per-call** when using `--dataset` mode. Each 
 For shell-command evaluators, `task_model` is also available as an environment variable:
 
 ```bash
-echo "$OPTIMIZE_ANYTHING_TASK_MODEL"   # e.g. openai/gpt-4o-mini
+echo "$OPTIMIZE_ANYTHING_TASK_MODEL"   # e.g. openai/gpt-5.6-luna
 ```
 
 ### Output
@@ -183,14 +183,14 @@ Use an LLM judge when you want to score text qualitatively (clarity, style, pers
 **Score a single artifact:**
 ```bash
 uv run optimize-anything score my-prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Score clarity and persuasiveness"
 ```
 
 **Optimize with an LLM judge:**
 ```bash
 uv run optimize-anything optimize my-prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Maximize clarity and persuasiveness" \
   --budget 15
 ```
@@ -198,7 +198,7 @@ uv run optimize-anything optimize my-prompt.txt \
 **Discover quality dimensions, then optimize:**
 ```bash
 uv run optimize-anything analyze my-prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Quality"
 ```
 
@@ -206,7 +206,7 @@ Outcome: The `analyze` command returns named dimensions (e.g., clarity, specific
 
 ```bash
 uv run optimize-anything optimize prompt.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Maximize quality" \
   --intake-json '{
     "quality_dimensions": [
@@ -254,12 +254,12 @@ def main():
         print(json.dumps({"score": 0.0, "error": "example missing input field"}))
         return 0
 
-    model = os.getenv("JUDGE_MODEL", "openai/gpt-4o-mini")
+    model = os.getenv("JUDGE_MODEL", "openai/gpt-5.6-luna")
     try:
         resp = completion(model=model, messages=[
             {"role": "system", "content": candidate},
             {"role": "user", "content": user_input},
-        ], temperature=0, max_tokens=256)
+        ], max_tokens=256)
         output = (resp.choices[0].message.content or "").lower()
     except Exception as exc:
         print(json.dumps({"score": 0.0, "error": f"llm_call_failed: {exc}"}))
@@ -337,7 +337,7 @@ def llm_judge(candidate, model):
         resp = completion(model=model, messages=[
             {"role": "system", "content": "Return JSON: {score, clarity, completeness, reasoning} all 0-1."},
             {"role": "user", "content": f"Rate clarity and completeness:\n\n{candidate}"},
-        ], temperature=0, response_format={"type": "json_object"})
+        ], response_format={"type": "json_object"})
         p = json.loads(resp.choices[0].message.content or "{}")
         return clamp01(float(p.get("score", 0))), p
     except Exception as e:
@@ -346,7 +346,7 @@ def llm_judge(candidate, model):
 def main():
     payload = json.load(sys.stdin)
     candidate = str(payload.get("candidate", ""))
-    model = os.getenv("JUDGE_MODEL", "openai/gpt-4o-mini")
+    model = os.getenv("JUDGE_MODEL", "openai/gpt-5.6-luna")
 
     h_score, h_side = heuristic_score(candidate.strip())
     if h_score < 0.2:  # short-circuit: skip LLM
@@ -462,7 +462,7 @@ else:
 ```bash
 uv run optimize-anything optimize prompt.txt \
   --evaluator-command python3 eval.py \
-  --task-model openai/gpt-4o-mini \
+  --task-model openai/gpt-5.6-luna \
   --objective "Optimize for the target model" \
   --budget 15
 ```

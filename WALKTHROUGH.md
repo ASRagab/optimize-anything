@@ -57,7 +57,7 @@ echo '{"_protocol_version":2,"candidate":"test"}' | python evaluators/eval.py
 
 ```bash
 uv run optimize-anything score seed.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Score clarity and constraints"
 ```
 
@@ -65,9 +65,9 @@ uv run optimize-anything score seed.txt \
 
 ```bash
 uv run optimize-anything optimize seed.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Improve clarity and specificity" \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 40 \
   --cache --run-dir runs --diff
 ```
@@ -80,7 +80,7 @@ Notes:
 
 ```bash
 uv run optimize-anything score runs/run-<TIMESTAMP>/best_artifact.txt \
-  --judge-model anthropic/claude-sonnet-4-5 \
+  --judge-model anthropic/claude-sonnet-5 \
   --objective "Score clarity, constraints, and usefulness"
 ```
 
@@ -88,9 +88,11 @@ uv run optimize-anything score runs/run-<TIMESTAMP>/best_artifact.txt \
 
 ```bash
 uv run optimize-anything validate runs/run-<TIMESTAMP>/best_artifact.txt \
-  --providers openai/gpt-4o-mini anthropic/claude-sonnet-4-5 google/gemini-2.0-flash \
+  --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
   --objective "Score clarity, constraints, and robustness"
 ```
+
+Gemini uses LiteLLM's `gemini/` provider prefix.
 
 ## Step 9: Iterate (dataset/generalization optional)
 
@@ -98,10 +100,10 @@ For multi-task optimization:
 
 ```bash
 uv run optimize-anything optimize seed.txt \
-  --judge-model openai/gpt-4o-mini \
+  --judge-model openai/gpt-5.6-luna \
   --objective "Generalize across support scenarios" \
   --dataset data/train.jsonl --valset data/val.jsonl \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 120 --cache --run-dir runs
 ```
 
@@ -114,7 +116,7 @@ evaluators, cap concurrency with workers:
 uv run optimize-anything optimize seed.txt \
   --evaluator-command bash evaluators/eval.sh \
   --objective "Improve quality" \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.6-sol \
   --budget 100 \
   --workers 8
 ```

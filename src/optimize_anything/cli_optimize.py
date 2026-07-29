@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from optimize_anything.persist import (
     _save_run_dir,
     _timestamped_run_dir,
 )
+from optimize_anything.model_defaults import resolve_proposer_model
 
 OptimizeInputs = tuple[
     argparse.Namespace,
@@ -67,7 +67,7 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
 
-    model = args.model or os.environ.get("OPTIMIZE_ANYTHING_MODEL")
+    model = resolve_proposer_model(args.model)
     config, gepa_run_dir, early_stop_active, runtime_error = _build_optimize_runtime(
         args,
         model=model,
@@ -134,7 +134,7 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
 def _build_optimize_runtime(
     args: argparse.Namespace,
     *,
-    model: str | None,
+    model: str,
 ) -> tuple[Any, str | None, bool, str | None]:
     """Build GEPA runtime config plus run-dir state for optimize."""
     from optimize_anything.stop import plateau_stop_callback
@@ -184,14 +184,11 @@ def _build_optimize_runtime(
             n=args.proposals_per_iteration
         )
     engine = EngineConfig(**engine_kwargs)
-    if model:
-        config = GEPAConfig(
-            engine=engine,
-            reflection=ReflectionConfig(reflection_lm=model),
-            stop_callbacks=stop_callbacks,
-        )
-    else:
-        config = GEPAConfig(engine=engine, stop_callbacks=stop_callbacks)
+    config = GEPAConfig(
+        engine=engine,
+        reflection=ReflectionConfig(reflection_lm=model),
+        stop_callbacks=stop_callbacks,
+    )
 
     return config, gepa_run_dir, early_stop_active, None
 

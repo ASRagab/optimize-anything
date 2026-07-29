@@ -23,7 +23,7 @@ Tests are in `tests/` with shared fixtures in `tests/conftest.py`. Supporting ma
 - `uv run python scripts/smoke_harness.py --budget 1` — run CLI smoke harness.
 - `uv run python scripts/score_check.py` — score regression check.
 - `uv run python scripts/score_check.py --update` — update baselines after improvement.
-- `uv run python scripts/live_integration.py --phase green --artifact FILE --model openai/gpt-4o-mini --budget 15 --objective "..." --evaluator-command bash evaluators/eval.sh` — GREEN phase optimization.
+- `uv run python scripts/live_integration.py --phase green --artifact FILE --model openai/gpt-5.6-sol --budget 15 --objective "..." --evaluator-command bash evaluators/eval.sh` — GREEN phase optimization.
 
 ## Coding Style & Naming Conventions
 Target Python is `>=3.10`. Follow existing style:

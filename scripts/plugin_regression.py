@@ -104,7 +104,7 @@ def _assert_contains(result: str, scenario: str, needles: list[str]) -> None:
 def scenario_analyze(repo_root: Path, output_dir: Path, seed_path: Path) -> dict[str, Any]:
     prompt = (
         f"Use the optimize-anything plugin to analyze the artifact at {seed_path} for quality dimensions. "
-        "Run: optimize-anything analyze runs/zo-eval/seed.txt --judge-model openai/gpt-4o-mini "
+        "Run: optimize-anything analyze runs/zo-eval/seed.txt --judge-model openai/gpt-5.6-luna "
         "--objective 'Score the quality of this system prompt'"
     )
     payload = _run_claude(repo_root, prompt, output_dir / "analyze.json", output_dir / "analyze.stderr.log")
@@ -121,7 +121,7 @@ def scenario_analyze(repo_root: Path, output_dir: Path, seed_path: Path) -> dict
 def scenario_validate(repo_root: Path, output_dir: Path, seed_path: Path) -> dict[str, Any]:
     prompt = (
         f"Use the optimize-anything plugin to validate the artifact at {seed_path} across multiple providers. "
-        "Run: optimize-anything validate runs/zo-eval/seed.txt --providers openai/gpt-4o-mini "
+        "Run: optimize-anything validate runs/zo-eval/seed.txt --providers openai/gpt-5.6-luna "
         "anthropic/claude-haiku-4-5-20251001 --objective 'Score the quality and clarity of this system prompt'"
     )
     payload = _run_claude(repo_root, prompt, output_dir / "validate.json", output_dir / "validate.stderr.log")
@@ -139,9 +139,9 @@ def scenario_quick(repo_root: Path, output_dir: Path, seed_path: Path) -> dict[s
     best_path = repo_root / "runs" / "plugin-eval" / "quick-best.txt"
     prompt = (
         f"Use the optimize-anything plugin to quickly optimize the seed at {seed_path}. "
-        f"Run: optimize-anything optimize runs/zo-eval/seed.txt --judge-model openai/gpt-4o-mini "
+        f"Run: optimize-anything optimize runs/zo-eval/seed.txt --judge-model openai/gpt-5.6-luna "
         f"--objective 'Improve clarity and specificity of this system prompt' --budget 5 "
-        f"--model openai/gpt-4o-mini --output {best_path}"
+        f"--model openai/gpt-5.6-sol --output {best_path}"
     )
     payload = _run_claude(repo_root, prompt, output_dir / "quick.json", output_dir / "quick.stderr.log")
     result = _assert_success(payload, "quick")

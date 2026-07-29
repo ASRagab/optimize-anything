@@ -5,18 +5,19 @@ Run one GREEN (optimize) or RED (multi-provider score) phase and output
 structured JSON. Designed to be driven by Claude Code as an interactive observer.
 
 Usage:
-    # GREEN phase: optimize an artifact
+    # GREEN phase: optimize with the proposer-tier default
     python scripts/live_integration.py --phase green \
         --artifact skills/generate-evaluator/SKILL.md \
-        --evaluator-command bash evaluators/skill_clarity.sh \
         --budget 15 --objective "Improve clarity" \
-        --run-dir integration_runs
+        --run-dir integration_runs \
+        --model openai/gpt-5.6-sol \
+        --evaluator-command bash evaluators/skill_clarity.sh
 
-    # RED phase: score with multiple providers
+    # RED phase: validate with the canonical judge-tier provider set
     python scripts/live_integration.py --phase red \
         --artifact skills/generate-evaluator/SKILL.md \
         --objective "Score skill quality" \
-        --providers openai/gpt-5.1 anthropic/claude-sonnet-4-5-20250929 \
+        --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash \
         --evaluator-command bash evaluators/skill_clarity.sh
 """
 from __future__ import annotations
@@ -45,16 +46,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-dir", help="GREEN: directory to save run artifacts")
     parser.add_argument(
         "--model",
-        help="GREEN: LLM model string for the proposer (e.g. 'openai/gpt-4o-mini')",
+        help="GREEN proposer model (e.g. 'openai/gpt-5.6-sol')",
     )
     parser.add_argument(
         "--providers",
         nargs="+",
-        help="RED: LLM provider model strings for multi-provider scoring",
+        help="RED validation models (e.g. openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash)",
     )
     parser.add_argument(
         "--judge-model",
-        help="GREEN: LLM judge model for meta-evaluator optimization",
+        help="GREEN judge model (e.g. 'openai/gpt-5.6-luna')",
     )
     parser.add_argument(
         "--judge-objective",
@@ -261,7 +262,7 @@ def _run_red(args: argparse.Namespace) -> int:
     providers = args.providers or []
     for provider in providers:
         judge_score = _score_with_judge(artifact_path, provider, args.objective)
-        # Use a clean key: "openai/gpt-5.1" -> "openai_gpt_5_1"
+        # Use a clean key: "openai/gpt-5.6-luna" -> "openai_gpt_5_6_luna"
         key = provider.replace("/", "_").replace("-", "_").replace(".", "_")
         scores[key] = judge_score
 

@@ -9,10 +9,10 @@ Run a no-questions-asked fast optimization.
 
 ## Behavior (do not ask follow-up questions)
 1. Run analysis to discover dimensions:
-   - `optimize-anything analyze <file> --judge-model openai/gpt-4o-mini --objective "<objective>"`
+   - `optimize-anything analyze <file> --judge-model openai/gpt-5.6-luna --objective "<objective>"`
    - If analyze fails, skip dimension discovery and run optimize with `--judge-model` directly using the objective as-is.
 2. Run optimization using LLM judge with:
-   - `--judge-model openai/gpt-4o-mini`
+   - `--judge-model openai/gpt-5.6-luna`
    - `--budget 50`
    - `--diff`
    - `--early-stop`

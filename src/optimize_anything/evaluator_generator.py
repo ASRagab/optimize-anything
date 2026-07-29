@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from numbers import Real
 from typing import Any
 
+from optimize_anything.model_defaults import DEFAULT_EVALUATOR_MODEL
+
 
 def generate_evaluator_script(
     *,
@@ -13,7 +15,7 @@ def generate_evaluator_script(
     objective: str,
     evaluator_type: str | None = None,
     intake: Mapping[str, Any] | None = None,
-    model: str = "openai/gpt-4o-mini",
+    model: str = DEFAULT_EVALUATOR_MODEL,
     dataset: bool = False,
 ) -> str:
     """Generate an evaluator script that reads input JSON and outputs score JSON."""
@@ -414,7 +416,7 @@ def _generate_judge_evaluator(
     template_family: str,
     rubric_summary: str,
     quality_dimensions: list[tuple[str, float]],
-    model: str = "openai/gpt-4o-mini",
+    model: str,
     dataset: bool = False,
 ) -> str:
     """Generate a Python LLM-judge evaluator script using litellm."""
@@ -437,7 +439,7 @@ def _generate_judge_evaluator(
         def _build_prompt(candidate: str, example: object | None) -> str:
             dimensions_text = "\\n".join([f"- {{name}} (weight={{weight}})" for name, weight in QUALITY_DIMENSIONS])
             example_text = json.dumps(example, ensure_ascii=False, indent=2) if example is not None else "(none)"
-            return f\"\"\"## Objective\n{{OBJECTIVE}}\n\n## Template Family\n{{TEMPLATE_FAMILY}}\n\n## Rubric Summary\n{{RUBRIC_SUMMARY}}\n\n## Quality Dimensions\n{{dimensions_text}}\n\n## Example Context (optional)\n{{example_text}}\n\n## Artifact to Evaluate\n```\n{{candidate}}\n```\n\nReturn JSON with keys: score, reasoning, and one key per quality dimension name. score must be in [0,1].\"\"\"
+            return f\"\"\"## Objective\\n{{OBJECTIVE}}\\n\\n## Template Family\\n{{TEMPLATE_FAMILY}}\\n\\n## Rubric Summary\\n{{RUBRIC_SUMMARY}}\\n\\n## Quality Dimensions\\n{{dimensions_text}}\\n\\n## Example Context (optional)\\n{{example_text}}\\n\\n## Artifact to Evaluate\\n```\\n{{candidate}}\\n```\\n\\nReturn JSON with keys: score, reasoning, and one key per quality dimension name. score must be in [0,1].\"\"\"
 
         def _api_key_available() -> bool:
             key_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
@@ -446,7 +448,7 @@ def _generate_judge_evaluator(
         def _strip_code_fences(text: str) -> str:
             cleaned = text.strip()
             if cleaned.startswith("```"):
-                first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+                first_newline = cleaned.index("\\n") if "\\n" in cleaned else len(cleaned)
                 cleaned = cleaned[first_newline + 1:]
                 if cleaned.rstrip().endswith("```"):
                     cleaned = cleaned.rstrip()[:-len("```")].rstrip()
@@ -478,7 +480,6 @@ def _generate_judge_evaluator(
                         {{"role": "system", "content": JUDGE_SYSTEM_PROMPT}},
                         {{"role": "user", "content": prompt}},
                     ],
-                    temperature=0.0,
                     timeout=60.0,
                     response_format={{"type": "json_object"}},
                 )
@@ -524,7 +525,7 @@ def _generate_composite_evaluator(
     template_family: str,
     rubric_summary: str,
     quality_dimensions: list[tuple[str, float]],
-    model: str = "openai/gpt-4o-mini",
+    model: str,
     dataset: bool = False,
 ) -> str:
     """Generate composite evaluator with hard constraints + judge scoring."""
@@ -544,6 +545,8 @@ def _generate_composite_evaluator(
         import sys
 
         # Composite evaluator: hard constraints first, then LLM judge.
+        MODEL = {model!r}
+
         def _constraint_non_empty(candidate: str) -> tuple[bool, str]:
             if candidate.strip():
                 return True, ""
@@ -564,7 +567,7 @@ def _generate_composite_evaluator(
         def _strip_code_fences(text: str) -> str:
             cleaned = text.strip()
             if cleaned.startswith("```"):
-                first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+                first_newline = cleaned.index("\\n") if "\\n" in cleaned else len(cleaned)
                 cleaned = cleaned[first_newline + 1:]
                 if cleaned.rstrip().endswith("```"):
                     cleaned = cleaned.rstrip()[:-len("```")].rstrip()
