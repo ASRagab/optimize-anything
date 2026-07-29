@@ -1,6 +1,6 @@
 {
   "name": "optimize-anything",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Optimize prompts and other text artifacts with measured evaluator feedback",
   "author": {
     "name": "optimize-anything contributors"

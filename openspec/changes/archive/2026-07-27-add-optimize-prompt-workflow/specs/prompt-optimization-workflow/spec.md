@@ -149,4 +149,3 @@ The workflow SHALL optimize multiple prompt or text files as independent runs by
 - **WHEN** a system prompt, examples, tool descriptions, or other components must evolve together
 - **THEN** the workflow does not optimize them as unrelated files
 - **AND** requires an explicit structured-candidate path or reports that the requested joint shape is unsupported
-

@@ -22,6 +22,7 @@ docs/
 smoke_outputs/
 artifacts/
 integration_runs/
+plugin_regressions/
 dogfood_runs/
 .entire/
 PROMPT.md

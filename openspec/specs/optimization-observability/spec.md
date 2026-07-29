@@ -1,3 +1,9 @@
+## Purpose
+
+Define repeatable evidence that optimization explores useful candidates,
+improves a project-relevant artifact, and survives held-out validation without
+overwriting the source.
+
 ## Requirements
 
 ### Requirement: Realistic optimization benchmark

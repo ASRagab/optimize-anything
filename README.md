@@ -11,12 +11,7 @@ curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/inst
 # 2) Create a seed artifact
 echo "Write a concise support prompt" > seed.txt
 
-# 3) Generate a starter evaluator (default: judge/python template)
-optimize-anything generate-evaluator seed.txt \
-  --objective "Score clarity, actionability, and specificity" \
-  > eval.py
-
-# 4) Optimize
+# 3) Optimize with the built-in LLM judge
 optimize-anything optimize seed.txt \
   --judge-model openai/gpt-5.6-luna \
   --objective "Improve clarity and specificity" \
@@ -33,6 +28,26 @@ CLI stdout returns a JSON summary — see [Result Contract](#result-contract) fo
 ### Model defaults
 
 The proposer defaults to `openai/gpt-5.6-sol` after checking `--model` and `OPTIMIZE_ANYTHING_MODEL`. Generated judge and composite evaluators default to `openai/gpt-5.6-luna`. LLM judge calls use each provider's sampling defaults unless an explicit temperature is supplied.
+
+### LLM API authentication
+
+Export the API key for every provider selected by `--model`, `--judge-model`,
+or `--providers` before launching the CLI or plugin host:
+
+```bash
+export OPENAI_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+export GEMINI_API_KEY="..."
+export OPENROUTER_API_KEY="..."
+```
+
+The default proposer and judge require `OPENAI_API_KEY`. Multi-provider
+validation requires each selected provider's key; Gemini also accepts
+`GOOGLE_API_KEY`. Claude Code or Codex login is separate from provider API
+authentication. Plugin installation does not store credentials, so export keys
+before launching the host and restart it after changes. `--api-base` changes the
+endpoint but does not select a provider or its credentials. Do not commit API
+keys or `.env` files.
 
 ## How It Works
 
@@ -381,7 +396,7 @@ Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-
 | `--valset <val.jsonl>` | Validation dataset JSONL (requires `--dataset`) | -- |
 | `--budget <int>` | Max evaluator calls | `100` |
 | `--output, -o <file>` | Write best artifact to file | -- |
-| `--model <model>` | Proposer model (or env fallback) | `OPTIMIZE_ANYTHING_MODEL` |
+| `--model <model>` | Proposer model (or env fallback) | `OPTIMIZE_ANYTHING_MODEL`, then `openai/gpt-5.6-sol` |
 | `--judge-model <model>` | Built-in LLM judge evaluator model | -- |
 | `--judge-objective <text>` | Judge objective override | falls back to `--objective` |
 | `--api-base <url>` | Override LiteLLM API base | -- |

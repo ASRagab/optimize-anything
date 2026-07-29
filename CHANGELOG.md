@@ -1,12 +1,6 @@
 # Changelog
 
-## v0.5.0 - 2026-07-28
-
-### Model defaults
-- Updated the default proposer model to `openai/gpt-5.6-sol`
-- Updated the default evaluator model to `openai/gpt-5.6-luna`
-- Centralized project-owned model defaults across the CLI, evaluator generation, judge flows, and operational scripts
-- Preserved proposer precedence as explicit CLI model, then `OPTIMIZE_ANYTHING_MODEL`, then the project default
+## v0.5.1 - 2026-07-28
 
 ### Prompt optimization workflow
 - Added the `optimize-prompt` skill for inline prompts, files, embedded prompt regions, and independent batches
@@ -16,7 +10,19 @@
 ### Plugin distribution
 - Added a self-locating locked-runtime launcher used by every packaged Claude command
 - Added native Codex plugin and marketplace metadata over the same canonical skill tree
-- Aligned Python, Claude, and Codex release metadata at 0.5.0
+- Aligned Python, Claude, and Codex release metadata at 0.5.1
+
+### Documentation and verification
+- Documented LLM provider authentication in the README
+- Added offline launcher, evaluator, workflow-fixture, documentation, manifest, and release-version contracts
+
+## v0.5.0 - 2026-07-28
+
+### Model defaults
+- Updated the default proposer model to `openai/gpt-5.6-sol`
+- Updated the default evaluator model to `openai/gpt-5.6-luna`
+- Centralized project-owned model defaults across the CLI, evaluator generation, judge flows, and operational scripts
+- Preserved proposer precedence as explicit CLI model, then `OPTIMIZE_ANYTHING_MODEL`, then the project default
 
 ### Provider compatibility
 - Let providers apply their own sampling defaults unless a judge temperature is explicitly supplied
@@ -25,7 +31,6 @@
 ### Documentation and verification
 - Modernized runnable examples, command guidance, protocol docs, skills, and integration tooling for current model identifiers
 - Added drift coverage for model defaults, CLI help and resolution, generated evaluators, and judge request payloads
-- Added offline launcher, evaluator, workflow-fixture, documentation, manifest, and release-version contracts
 - Synchronized package, plugin, and marketplace release versions
 
 ## v0.4.0 - 2026-07-27

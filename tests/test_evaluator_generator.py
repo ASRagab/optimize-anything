@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -44,6 +45,41 @@ def test_generated_python_evaluator_reports_missing_key_offline(
 
     result = json.loads(proc.stdout)
     assert result["error"] == "missing_api_key"
+
+
+@pytest.mark.parametrize(
+    ("model", "environment_key", "expected"),
+    [
+        ("openai/gpt-5.6-luna", "ANTHROPIC_API_KEY", False),
+        ("gemini/gemini-3.6-flash", "GOOGLE_API_KEY", True),
+    ],
+)
+def test_generated_judge_validates_selected_provider_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    environment_key: str,
+    expected: bool,
+) -> None:
+    for name in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENROUTER_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(environment_key, "provider-key")
+    script = generate_evaluator_script(
+        seed="hello",
+        objective="score quality",
+        evaluator_type="judge",
+        model=model,
+    )
+    namespace: dict[str, Any] = {"__name__": "generated_evaluator"}
+
+    exec(compile(script, "<generated-judge-evaluator>", "exec"), namespace)
+
+    assert namespace["_api_key_available"]() is expected
 
 
 def test_generated_judge_uses_provider_sampling_defaults() -> None:

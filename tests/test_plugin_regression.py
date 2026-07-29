@@ -53,7 +53,75 @@ def test_live_prompt_scenarios_are_bounded_and_preserve_targeting():
     assert "budget of 3" in repository
     assert str(fixture) in repository
     assert "exact string" in repository
+    assert "triple-quoted" in repository
     assert "KEEP = 1" in repository
+
+
+def test_claude_host_regression_uses_bounded_model(tmp_path: Path):
+    command = plugin_regression._claude_base(tmp_path)
+
+    assert command[command.index("--model") + 1] == "sonnet"
+    assert command[command.index("--max-budget-usd") + 1] == "0.75"
+
+
+def test_analyze_accepts_seed_score_wording(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(
+        plugin_regression,
+        "_run_claude",
+        lambda *args: {
+            "subtype": "success",
+            "is_error": False,
+            "result": "Seed score 0.3. Improve specificity with optimize-anything optimize.",
+            "num_turns": 2,
+            "total_cost_usd": 0.1,
+            "duration_ms": 1000,
+        },
+    )
+
+    result = plugin_regression.scenario_analyze(tmp_path, tmp_path, tmp_path / "seed.txt")
+
+    assert result["scenario"] == "analyze"
+
+
+def test_quick_accepts_compact_score_transition(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    best_path = tmp_path / "runs" / "plugin-eval" / "quick-best.txt"
+    best_path.parent.mkdir(parents=True)
+    best_path.write_text("Give clear, concise, specific answers with useful context.")
+    monkeypatch.setattr(
+        plugin_regression,
+        "_run_claude",
+        lambda *args: {
+            "subtype": "success",
+            "is_error": False,
+            "result": "Done. Score 0.15 → 0.91, 3 iterations, 7 evaluator calls.",
+            "num_turns": 3,
+            "total_cost_usd": 0.2,
+            "duration_ms": 1000,
+        },
+    )
+
+    result = plugin_regression.scenario_quick(tmp_path, tmp_path, tmp_path / "seed.txt")
+
+    assert result["scenario"] == "quick"
+
+
+def test_inline_accepts_an_expanded_prompt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(
+        plugin_regression,
+        "_run_claude",
+        lambda *args: {
+            "subtype": "success",
+            "is_error": False,
+            "result": "Accepted prompt: You are a helpful, accurate assistant. Prompt-quality score improved.",
+            "num_turns": 9,
+            "total_cost_usd": 0.4,
+            "duration_ms": 1000,
+        },
+    )
+
+    result = plugin_regression.scenario_inline(tmp_path, tmp_path, tmp_path / "seed.txt")
+
+    assert result["scenario"] == "inline"
 
 
 def test_prompt_scenarios_require_only_the_provider_they_use():

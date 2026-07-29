@@ -85,4 +85,3 @@ The repository SHALL provide offline contract checks for both plugin packages an
 - **WHEN** a maintainer explicitly runs the credentialed plugin regression gate
 - **THEN** the gate exercises the supported host workflow within its configured spend limit
 - **AND** records whether the optimized result was returned or applied as expected
-

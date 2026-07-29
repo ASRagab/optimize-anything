@@ -425,9 +425,8 @@ def _generate_judge_evaluator(
     return textwrap.dedent(f"""\
         #!/usr/bin/env python3
         import json
-        import os
         import sys
-        from litellm import completion
+        from litellm import completion, validate_environment
 
         MODEL = {model!r}
         OBJECTIVE = {objective!r}
@@ -441,9 +440,11 @@ def _generate_judge_evaluator(
             example_text = json.dumps(example, ensure_ascii=False, indent=2) if example is not None else "(none)"
             return f\"\"\"## Objective\\n{{OBJECTIVE}}\\n\\n## Template Family\\n{{TEMPLATE_FAMILY}}\\n\\n## Rubric Summary\\n{{RUBRIC_SUMMARY}}\\n\\n## Quality Dimensions\\n{{dimensions_text}}\\n\\n## Example Context (optional)\\n{{example_text}}\\n\\n## Artifact to Evaluate\\n```\\n{{candidate}}\\n```\\n\\nReturn JSON with keys: score, reasoning, and one key per quality dimension name. score must be in [0,1].\"\"\"
 
+        def _model_environment() -> dict:
+            return validate_environment(MODEL)
+
         def _api_key_available() -> bool:
-            key_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
-            return any(os.environ.get(k) for k in key_vars)
+            return bool(_model_environment().get("keys_in_environment"))
 
         def _strip_code_fences(text: str) -> str:
             cleaned = text.strip()
@@ -465,9 +466,11 @@ def _generate_judge_evaluator(
             example = data.get("example") if {dataset} else None
 
             if not _api_key_available():
+                missing_keys = _model_environment().get("missing_keys", [])
+                required = " or ".join(missing_keys) or "the provider's required credentials"
                 print(json.dumps({{
                     "score": 0.0,
-                    "reasoning": "Missing API key. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY.",
+                    "reasoning": f"Missing API key or model authentication for {{MODEL}}. Set {{required}}.",
                     "error": "missing_api_key"
                 }}))
                 return 0

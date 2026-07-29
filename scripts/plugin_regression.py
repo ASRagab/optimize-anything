@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,8 +83,8 @@ def _repository_apply_prompt(fixture: Path) -> str:
         f"Use $optimize-prompt in fast mode on SYSTEM_PROMPT in {fixture}. "
         "Improve clarity and specificity with openai/gpt-5.6-luna as proposer and judge "
         "and a budget of 3. Apply only an accepted candidate to that exact string, "
-        "preserve KEEP = 1 and valid Python syntax, then report prompt-quality evidence "
-        "and score delta."
+        "preserve its triple-quoted representation, KEEP = 1, and valid Python syntax, "
+        "then report prompt-quality evidence and score delta."
     )
 
 
@@ -136,8 +137,10 @@ def _claude_base(repo_root: Path) -> list[str]:
         "json",
         "--allowedTools",
         "Bash Read Write Edit Glob Grep",
+        "--model",
+        "sonnet",
         "--max-budget-usd",
-        "0.50",
+        "0.75",
     ]
 
 
@@ -184,7 +187,7 @@ def scenario_analyze(repo_root: Path, output_dir: Path, seed_path: Path) -> dict
     )
     payload = _run_claude(repo_root, prompt, output_dir / "analyze.json", output_dir / "analyze.stderr.log")
     result = _assert_success(payload, "analyze")
-    _assert_contains(result, "analyze", ["current score", "specificity", "optimize-anything optimize"])
+    _assert_contains(result, "analyze", ["score", "specificity", "optimize-anything optimize"])
     return {
         "scenario": "analyze",
         "turns": payload.get("num_turns"),
@@ -221,9 +224,13 @@ def scenario_quick(repo_root: Path, output_dir: Path, seed_path: Path) -> dict[s
     payload = _run_claude(repo_root, prompt, output_dir / "quick.json", output_dir / "quick.stderr.log")
     result = _assert_success(payload, "quick")
     quick_lower = result.lower()
-    if not (("initial score" in quick_lower and "best score" in quick_lower) or ("0.4" in quick_lower and "0.85" in quick_lower)):
+    score_transition = re.search(
+        r"\bscore\s+\d+(?:\.\d+)?\s*(?:→|->|to)\s*\d+(?:\.\d+)?",
+        quick_lower,
+    )
+    if not score_transition and not (("initial score" in quick_lower and "best score" in quick_lower) or ("0.4" in quick_lower and "0.85" in quick_lower)):
         raise PluginRegressionFailure("quick: result is missing recognizable score reporting")
-    if "delta" not in quick_lower and "retained" not in quick_lower and "improvement" not in quick_lower and "better version" not in quick_lower:
+    if not score_transition and "delta" not in quick_lower and "retained" not in quick_lower and "improvement" not in quick_lower and "better version" not in quick_lower:
         raise PluginRegressionFailure("quick: result is missing improvement/retention evidence")
     if not best_path.exists():
         raise PluginRegressionFailure("quick: expected optimized artifact file was not written")
@@ -250,7 +257,7 @@ def scenario_inline(repo_root: Path, output_dir: Path, seed_path: Path) -> dict[
         output_dir / "inline.stderr.log",
     )
     result = _assert_success(payload, "inline")
-    _assert_contains(result, "inline", ["prompt-quality", "score", "helpful assistant"])
+    _assert_contains(result, "inline", ["accepted prompt", "prompt-quality", "score"])
     return {
         "scenario": "inline",
         "turns": payload.get("num_turns"),
