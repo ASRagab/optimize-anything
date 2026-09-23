@@ -1,13 +1,17 @@
 """Tests for evaluator generator."""
+import builtins
+import io
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from optimize_anything.evaluator_generator import generate_evaluator_script
+from optimize_anything import evaluator_runtime
 
 
 @pytest.mark.parametrize("evaluator_type", ["judge", "composite"])
@@ -91,6 +95,60 @@ def test_generated_judge_uses_provider_sampling_defaults() -> None:
     assert "temperature=" not in script
 
 
+def test_generated_wrapper_runs_json_lines_through_installed_runtime(monkeypatch):
+    script = generate_evaluator_script(
+        seed="hello", objective="score quality", evaluator_type="judge",
+        dataset=True, backend="codex",
+        intake={"hard_constraints": ["No invented facts"]},
+    )
+    prompts = []
+
+    class Backend:
+        def complete(self, request):
+            prompts.append(request.prompt)
+            return SimpleNamespace(structured={"score": 0.7, "reasoning": "Useful"})
+
+    monkeypatch.setattr(evaluator_runtime, "_resolve_backend", lambda config, *, role: Backend())
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(
+        json.dumps({"candidate": "Answer", "example": {"expected": "Fact"}}) + "\n"
+    ))
+    monkeypatch.setattr(sys, "stdout", output)
+    namespace = {"__name__": "generated_evaluator"}
+    exec(compile(script, "<generated-evaluator>", "exec"), namespace)
+
+    assert namespace["EVALUATOR_METADATA"]["min_runtime_contract_version"] == 1
+    assert namespace["main"]() == 0
+    assert json.loads(output.getvalue())["score"] == 0.7
+    assert "No invented facts" in prompts[0]
+    assert '"expected": "Fact"' in prompts[0]
+
+
+def test_generated_wrapper_reports_missing_installed_runtime(monkeypatch):
+    script = generate_evaluator_script(
+        seed="hello", objective="score quality", backend="codex",
+    )
+    namespace = {"__name__": "generated_evaluator"}
+    exec(compile(script, "<generated-evaluator>", "exec"), namespace)
+    original_import = builtins.__import__
+
+    def missing_runtime(name, *args, **kwargs):
+        if name == "optimize_anything.evaluator_runtime":
+            raise ImportError("runtime unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_runtime)
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"candidate": "one"}\n'))
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", output)
+
+    assert namespace["main"]() == 0
+    result = json.loads(output.getvalue())
+    assert result["score"] == 0.0
+    assert result["error"] == "runtime_unavailable"
+    assert "install or upgrade" in result["reasoning"].lower()
+
+
 class TestGenerateEvaluatorScript:
     def test_command_evaluator_is_bash(self):
         script = generate_evaluator_script(seed="hello", objective="improve clarity", evaluator_type="command")
@@ -116,12 +174,15 @@ class TestGenerateEvaluatorScript:
     def test_default_is_judge(self):
         script = generate_evaluator_script(seed="x", objective="y")
         assert script.startswith("#!/usr/bin/env python3")
-        assert "litellm" in script
-
-    def test_judge_evaluator_contains_litellm_and_objective(self):
-        objective = "assess clarity and usefulness"
-        script = generate_evaluator_script(seed="hello", objective=objective, evaluator_type="judge")
         assert "from litellm import completion" in script
+
+    def test_judge_evaluator_contains_runtime_config_and_objective(self):
+        objective = "assess clarity and usefulness"
+        script = generate_evaluator_script(
+            seed="hello", objective=objective, evaluator_type="judge", backend="codex",
+        )
+        assert "litellm" not in script
+        assert "runtime_contract_version" in script
         assert objective in script
 
     def test_default_judge_uses_current_evaluator_model(self) -> None:
@@ -140,10 +201,14 @@ class TestGenerateEvaluatorScript:
         )
         assert "MODEL = 'openai/gpt-5.6-luna'" in script
 
-    def test_judge_evaluator_handles_missing_api_key_gracefully(self):
-        script = generate_evaluator_script(seed="hello", objective="test", evaluator_type="judge")
-        assert "Missing API key" in script
-        assert "missing_api_key" in script
+    def test_judge_evaluator_embeds_backend_and_fallback_configuration(self):
+        script = generate_evaluator_script(
+            seed="hello", objective="test", evaluator_type="judge",
+            backend="codex", api_fallback=False, max_concurrency=2,
+        )
+        assert "'backend': 'codex'" in script
+        assert "'api_fallback': False" in script
+        assert "'max_concurrency': 2" in script
 
     def test_objective_with_quotes_is_safe_in_command_script(self, tmp_path: Path):
         objective = 'Improve "install docs"\nfor O\'Reilly users'
@@ -248,12 +313,13 @@ class TestGenerateEvaluatorScript:
         )
         assert "QUALITY_DIMENSIONS = [('accuracy', 0.7), ('clarity', 0.3)]" in script
 
-    def test_composite_evaluator_has_constraints_and_judge(self):
-        script = generate_evaluator_script(seed="hello", objective="test", evaluator_type="composite")
-        assert "_constraint_non_empty" in script
-        assert "hard_constraint_failures" in script
-        assert "_run_judge" in script
-        assert "litellm" in script
+    def test_subscription_composite_evaluator_has_constraints_and_judge(self):
+        script = generate_evaluator_script(
+            seed="hello", objective="test", evaluator_type="composite", backend="codex",
+        )
+        assert "'evaluator_type': 'composite'" in script
+        assert "run_generated_evaluator" in script
+        assert "litellm" not in script
 
     def test_dataset_flag_adds_example_extraction_for_all_types(self):
         for ev_type in ["judge", "command", "http", "composite"]:
@@ -262,6 +328,10 @@ class TestGenerateEvaluatorScript:
                 objective="test",
                 evaluator_type=ev_type,
                 dataset=True,
+                backend="codex" if ev_type in {"judge", "composite"} else "api",
             )
-            assert "example" in script
-            assert "data.get(\"example\")" in script
+            if ev_type in {"judge", "composite"}:
+                assert "'dataset': True" in script
+            else:
+                assert "example" in script
+                assert "data.get(\"example\")" in script

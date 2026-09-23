@@ -2,6 +2,10 @@
 name: validate
 description: Cross-validate an artifact with multiple LLM judge providers
 ---
+The `--providers` list accepts `codex`, `codex:<model>`, `claude`, and
+`claude:<model>` before ordinary LiteLLM model strings. Prefer the selector for
+the current host when subscription reuse is requested. Announce possible
+same-vendor billed API fallback, or add `--no-api-fallback` to prohibit it.
 Use multiple LLM judges to verify that a quality improvement is not provider-specific.
 
 ## When to use

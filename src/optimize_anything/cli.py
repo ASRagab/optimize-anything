@@ -15,9 +15,33 @@ from optimize_anything.preflight import (
     _preflight_http_evaluator,
 )
 from optimize_anything.model_defaults import DEFAULT_EVALUATOR_MODEL
+from optimize_anything.llm_backends.base import Role
 
 EvaluatorFn = Callable[..., tuple[float, dict[str, Any]]]
 EvaluatorFactory = Callable[..., EvaluatorFn]
+
+
+def _add_subscription_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--subscription-concurrency",
+        type=int,
+        default=1,
+        help="Maximum concurrent calls per subscription provider (default: 1).",
+    )
+    parser.add_argument(
+        "--no-api-fallback",
+        action="store_true",
+        default=False,
+        help="Never switch a subscription request to a billed API call.",
+    )
+    parser.add_argument(
+        "--openai-api-fallback-model",
+        help="OpenAI API model used if an eligible Codex subscription call fails.",
+    )
+    parser.add_argument(
+        "--anthropic-api-fallback-model",
+        help="Anthropic API model used if an eligible Claude subscription call fails.",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,6 +91,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     opt_parser.add_argument(
+        "--proposer-backend",
+        choices=["api", "codex", "claude"],
+        default=None,
+        help="Backend for proposal generation (default: api).",
+    )
+    opt_parser.add_argument(
         "--judge-model",
         help=(
             "LiteLLM model string for built-in LLM-as-judge evaluation. "
@@ -74,6 +104,13 @@ def main(argv: list[str] | None = None) -> int:
             "Mutually exclusive with --evaluator-command and --evaluator-url."
         ),
     )
+    opt_parser.add_argument(
+        "--judge-backend",
+        choices=["api", "codex", "claude"],
+        default=None,
+        help="Backend for the built-in LLM judge (default: api).",
+    )
+    _add_subscription_options(opt_parser)
     opt_parser.add_argument(
         "--judge-objective",
         help="Objective for the LLM judge. Falls back to --objective if not set.",
@@ -188,12 +225,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen_parser.add_argument(
         "--model",
-        default=DEFAULT_EVALUATOR_MODEL,
+        default=None,
         help=(
             "LiteLLM model to hardcode in generated judge/composite evaluators "
-            f"(default: {DEFAULT_EVALUATOR_MODEL})"
+            f"(API default: {DEFAULT_EVALUATOR_MODEL}; subscription default: provider choice)"
         ),
     )
+    gen_parser.add_argument(
+        "--judge-backend",
+        choices=["api", "codex", "claude"],
+        default=None,
+        help="Backend configured in generated judge/composite evaluators.",
+    )
+    gen_parser.add_argument("--api-base", help="API base for the generated evaluator runtime.")
+    _add_subscription_options(gen_parser)
     gen_parser.add_argument(
         "--dataset",
         action="store_true",
@@ -264,6 +309,13 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     score_parser.add_argument(
+        "--judge-backend",
+        choices=["api", "codex", "claude"],
+        default=None,
+        help="Backend for LLM scoring (default: api).",
+    )
+    _add_subscription_options(score_parser)
+    score_parser.add_argument(
         "--objective",
         help="Objective for the LLM judge (required with --judge-model).",
     )
@@ -308,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
             "gemini/gemini-3.6-flash"
         ),
     )
+    _add_subscription_options(validate_parser)
     validate_parser.add_argument(
         "--objective",
         required=True,
@@ -334,9 +387,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     analyze_parser.add_argument(
         "--judge-model",
-        required=True,
+        required=False,
         help="LiteLLM model string for the LLM judge. Judge: openai/gpt-5.6-luna.",
     )
+    analyze_parser.add_argument(
+        "--analysis-backend",
+        choices=["api", "codex", "claude"],
+        default=None,
+        help="Backend for scoring and dimension discovery (default: api).",
+    )
+    _add_subscription_options(analyze_parser)
     analyze_parser.add_argument(
         "--objective",
         required=True,
@@ -363,6 +423,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    if (
+        args.command == "analyze"
+        and (args.analysis_backend or "api") == "api"
+        and not args.judge_model
+    ):
+        parser.error("analyze with the API backend requires --judge-model")
 
     if args.command == "optimize":
         from optimize_anything.cli_optimize import _cmd_optimize
@@ -437,6 +503,9 @@ def _resolve_evaluator(
     api_base: str | None = None,
     task_model: str | None = None,
     score_range: str = "unit",
+    judge_backend: str = "api",
+    completion_backend: object | None = None,
+    completion_role: Role = "judge",
 ) -> tuple[EvaluatorFn | None, str]:
     """Resolve evaluator from command, URL, judge model, or intake spec.
 
@@ -452,10 +521,10 @@ def _resolve_evaluator(
     evaluator_sources = sum([
         bool(evaluator_command),
         bool(evaluator_url),
-        bool(judge_model),
+        bool(judge_model) or judge_backend != "api",
     ])
     if evaluator_sources > 1:
-        return (None, "Error: provide only one of --evaluator-command, --evaluator-url, or --judge-model")
+        return (None, "Error: provide only one of --evaluator-command, --evaluator-url, --judge-model, or --judge-backend")
 
     if evaluator_sources == 0:
         if allow_intake_fallback and intake_spec is not None:
@@ -464,7 +533,7 @@ def _resolve_evaluator(
                 return (None, "Error: intake execution_mode='command' requires --evaluator-command")
             else:
                 return (None, "Error: intake execution_mode='http' requires --evaluator-url")
-        return (None, "Error: provide --evaluator-command, --evaluator-url, or --judge-model")
+        return (None, "Error: provide --evaluator-command, --evaluator-url, --judge-model, or a subscription --judge-backend")
 
     if evaluator_command:
         return _resolve_command_evaluator_source(
@@ -490,6 +559,9 @@ def _resolve_evaluator(
         intake_spec=intake_spec,
         api_base=api_base,
         task_model=task_model,
+        judge_backend=judge_backend,
+        completion_backend=completion_backend,
+        completion_role=completion_role,
     )
 
 
@@ -562,10 +634,15 @@ def _resolve_judge_evaluator_source(
     intake_spec: dict[str, Any] | None,
     api_base: str | None,
     task_model: str | None,
+    judge_backend: str = "api",
+    completion_backend: object | None = None,
+    completion_role: Role = "judge",
 ) -> tuple[EvaluatorFn | None, str]:
     judge_obj = judge_objective or objective
     if not judge_obj:
-        return (None, "Error: --judge-model requires --objective or --judge-objective")
+        if judge_backend == "api":
+            return (None, "Error: --judge-model requires --objective or --judge-objective")
+        return (None, "Error: the built-in judge requires --objective or --judge-objective")
 
     quality_dimensions = None
     hard_constraints = None
@@ -580,8 +657,13 @@ def _resolve_judge_evaluator_source(
         hard_constraints=hard_constraints,
         api_base=api_base,
         task_model=task_model,
+        backend=completion_backend,
+        role=completion_role,
     )
-    return eval_fn, f"LLM judge ({judge_model})"
+    model_label = judge_model or "provider default"
+    if judge_backend == "api":
+        return eval_fn, f"LLM judge ({model_label})"
+    return eval_fn, f"LLM judge ({judge_backend}:{model_label})"
 
 
 def _read_seed(path: str) -> str | None:

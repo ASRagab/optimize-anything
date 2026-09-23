@@ -1,5 +1,26 @@
 # Installation Guide
 
+## Optional local subscription backends
+
+The default install keeps LiteLLM/API behavior. To reuse a Codex login made
+through ChatGPT, install the pinned optional SDK and log in with the provider's
+CLI:
+
+```bash
+uv sync --extra codex
+codex login
+codex login status
+```
+
+Claude subscription support uses the locally installed `claude` executable;
+install Claude Code and run `claude auth login`. The adapter requires Claude
+Code 2.1.278 or newer and verifies `claude.ai` first-party authentication.
+
+Neither backend accepts tokens in optimize-anything configuration. Codex uses
+a private temporary home linked to the provider-owned saved auth file; Claude
+runs with API/cloud environment overrides removed. Both fail closed if the
+required isolation or auth class cannot be verified.
+
 Choose the host integration or standalone runtime you need:
 
 | Method | Skills | Slash commands | Runtime | Prerequisites |

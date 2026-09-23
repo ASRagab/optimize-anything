@@ -1,6 +1,6 @@
 """LLM-as-Judge evaluator factory and analysis tools.
 
-Uses litellm to call a language model as an evaluator. The model receives a
+Uses a provider-neutral completion backend to call a language model as an evaluator. The model receives a
 structured prompt describing the objective, quality dimensions, and hard
 constraints, then returns a JSON score object.
 
@@ -13,6 +13,19 @@ from __future__ import annotations
 import json
 import math
 from typing import Any, Callable
+
+from optimize_anything.llm_backends.base import (
+    CompletionBackend,
+    CompletionRequest,
+    InvalidResponse,
+    Role,
+    SamplingOptions,
+)
+from optimize_anything.llm_backends.litellm_backend import LiteLLMBackend
+from optimize_anything.llm_backends.provenance import completion_event
+from optimize_anything.llm_backends.schema import score_output_schema, strip_code_fences
+
+_strip_code_fences = strip_code_fences
 
 JUDGE_SYSTEM_PROMPT = """\
 You are a careful, objective evaluator. You will be given a text artifact and
@@ -81,17 +94,22 @@ Example:
 def llm_judge_evaluator(
     objective: str,
     *,
-    model: str,
+    model: str | None = None,
     quality_dimensions: list[dict[str, Any]] | None = None,
     hard_constraints: list[str] | None = None,
     timeout: float = 60.0,
     temperature: float | None = None,
     api_base: str | None = None,
     task_model: str | None = None,
+    backend: CompletionBackend | None = None,
+    role: Role = "judge",
 ) -> Callable[[str, Any | None], tuple[float, dict[str, Any]]]:
     """Create an LLM-as-judge evaluator compatible with gepa's evaluator contract."""
     _validate_objective(objective)
-    _validate_model_string(model)
+    use_backend_schema = backend is not None
+    if backend is None:
+        _validate_model_string(model)
+        backend = LiteLLMBackend(model=model, api_base=api_base)
     dims = quality_dimensions or []
     constraints = hard_constraints or []
 
@@ -105,36 +123,36 @@ def llm_judge_evaluator(
             example=example,
         )
         try:
-            import litellm
-
-            completion_kwargs: dict[str, Any] = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                "timeout": timeout,
-                "response_format": {"type": "json_object"},
-            }
-            if temperature is not None:
-                completion_kwargs["temperature"] = temperature
-            if api_base:
-                completion_kwargs["base_url"] = api_base
-
-            response = litellm.completion(**completion_kwargs)
-            raw_content = response.choices[0].message.content
+            result = backend.complete(CompletionRequest(
+                prompt=prompt,
+                role=role,
+                model=model,
+                output_schema=(score_output_schema(
+                    [dim["name"] for dim in dims if isinstance(dim.get("name"), str) and dim["name"]],
+                    include_hard_constraints=bool(dims or constraints),
+                ) if use_backend_schema else None),
+                json_mode=not use_backend_schema,
+                timeout_seconds=timeout,
+                sampling=(SamplingOptions(temperature=temperature) if temperature is not None else None),
+                system_prompt=JUDGE_SYSTEM_PROMPT,
+            ))
+            raw_content = result.text
         except Exception as exc:
             error_side_info: dict[str, Any] = {
                 "error": f"LLM call failed: {type(exc).__name__}: {exc}",
                 "reasoning": "LLM judge call failed; returned fallback score 0.0.",
             }
+            if isinstance(exc, InvalidResponse):
+                error_side_info["raw_response"] = ""
             for dim in dims:
                 name = dim.get("name")
                 if isinstance(name, str) and name:
                     error_side_info.setdefault(name, 0.0)
             return 0.0, error_side_info
 
-        return _parse_judge_response(raw_content, dims, constraints)
+        score, side_info = _parse_judge_response(raw_content, dims, constraints)
+        side_info["llm_provenance"] = completion_event(result)
+        return score, side_info
 
     return evaluate
 
@@ -144,7 +162,7 @@ def _validate_objective(objective: str) -> None:
         raise ValueError("objective must be a non-empty string")
 
 
-def _validate_model_string(model: str) -> None:
+def _validate_model_string(model: str | None) -> None:
     if not isinstance(model, str) or not model.strip():
         raise ValueError("model must be a non-empty string")
 
@@ -194,7 +212,7 @@ def _parse_judge_response(
         return 0.0, {"error": "LLM returned empty response"}
 
     # Strip markdown code fences (e.g. ```json ... ```) that some providers add
-    cleaned = _strip_code_fences(raw_content)
+    cleaned = strip_code_fences(raw_content)
 
     try:
         parsed = json.loads(cleaned)
@@ -304,25 +322,15 @@ Example:
 """
 
 
-def _strip_code_fences(text: str) -> str:
-    """Strip markdown code fences from LLM response text."""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-        cleaned = cleaned[first_newline + 1:]
-        if cleaned.rstrip().endswith("```"):
-            cleaned = cleaned.rstrip()[:-len("```")].rstrip()
-    return cleaned
-
-
 def analyze_for_dimensions(
     artifact: str,
     objective: str,
-    model: str,
+    model: str | None = None,
     *,
     api_base: str | None = None,
     timeout: float = 60.0,
     temperature: float | None = None,
+    backend: CompletionBackend | None = None,
 ) -> dict[str, Any]:
     """Score an artifact then discover quality dimensions for refinement.
 
@@ -330,9 +338,10 @@ def analyze_for_dimensions(
     specific quality dimensions where improvement is possible.
     """
     _validate_objective(objective)
-    _validate_model_string(model)
-
-    import litellm
+    use_backend_schema = backend is not None
+    if backend is None:
+        _validate_model_string(model)
+        backend = LiteLLMBackend(model=model, api_base=api_base)
 
     # --- Call 1: Score the artifact with vague objective ---
     score_prompt = _build_prompt(
@@ -341,23 +350,20 @@ def analyze_for_dimensions(
         quality_dimensions=[],
         hard_constraints=[],
     )
-    completion_kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-            {"role": "user", "content": score_prompt},
-        ],
-        "timeout": timeout,
-        "response_format": {"type": "json_object"},
-    }
-    if temperature is not None:
-        completion_kwargs["temperature"] = temperature
-    if api_base:
-        completion_kwargs["base_url"] = api_base
-
     try:
-        response = litellm.completion(**completion_kwargs)
-        raw_score_content = response.choices[0].message.content
+        response = backend.complete(CompletionRequest(
+            prompt=score_prompt,
+            role="analysis",
+            model=model,
+            output_schema=(score_output_schema([], include_hard_constraints=False)
+                           if use_backend_schema else None),
+            json_mode=not use_backend_schema,
+            timeout_seconds=timeout,
+            sampling=(SamplingOptions(temperature=temperature) if temperature is not None else None),
+            system_prompt=JUDGE_SYSTEM_PROMPT,
+        ))
+        score_result = response
+        raw_score_content = response.text
     except Exception as exc:
         raise RuntimeError(f"Scoring LLM call failed: {type(exc).__name__}: {exc}") from exc
 
@@ -371,23 +377,18 @@ def analyze_for_dimensions(
         objective=objective,
         artifact=artifact,
     )
-    analyze_kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": ANALYZE_SYSTEM_PROMPT},
-            {"role": "user", "content": analyze_prompt},
-        ],
-        "timeout": timeout,
-        "response_format": {"type": "json_object"},
-    }
-    if temperature is not None:
-        analyze_kwargs["temperature"] = temperature
-    if api_base:
-        analyze_kwargs["base_url"] = api_base
-
     try:
-        response = litellm.completion(**analyze_kwargs)
-        raw_dims_content = response.choices[0].message.content
+        response = backend.complete(CompletionRequest(
+            prompt=analyze_prompt,
+            role="analysis",
+            model=model,
+            output_schema=(_dimensions_output_schema() if use_backend_schema else None),
+            json_mode=not use_backend_schema,
+            timeout_seconds=timeout,
+            sampling=(SamplingOptions(temperature=temperature) if temperature is not None else None),
+            system_prompt=ANALYZE_SYSTEM_PROMPT,
+        ))
+        raw_dims_content = response.text
     except Exception as exc:
         raise RuntimeError(
             f"Dimension discovery LLM call failed: {type(exc).__name__}: {exc}"
@@ -409,13 +410,39 @@ def analyze_for_dimensions(
         "reasoning": score_info.get("reasoning", ""),
         "suggested_dimensions": dimensions,
         "intake_json": intake_json_str,
+        "llm_provenance": [completion_event(score_result), completion_event(response)],
         "recommendation": (
             f"Use the suggested dimensions with:\n"
             f"  optimize-anything optimize <artifact> "
-            f"--judge-model {model} "
+            f"--judge-model {model or '<provider-default>'} "
             f"--objective \"{objective}\" "
             f"--intake-json '{intake_json_str}'"
         ),
+    }
+
+
+def _dimensions_output_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "dimensions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "weight": {"type": "number"},
+                        "score": {"type": "number"},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["name", "weight", "score", "description"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["dimensions"],
+        "additionalProperties": False,
     }
 
 
@@ -424,7 +451,7 @@ def _parse_dimensions_response(raw_content: str | None) -> list[dict[str, Any]]:
     if not raw_content:
         raise RuntimeError("Dimension discovery returned empty response")
 
-    cleaned = _strip_code_fences(raw_content)
+    cleaned = strip_code_fences(raw_content)
 
     try:
         parsed = json.loads(cleaned)

@@ -32,6 +32,19 @@ evaluation, invoke `$optimize-prompt` in Claude Code or the namespaced
 `$optimize-anything:optimize-prompt` in Codex. It uses the bundled runtime,
 keeps search output outside the source, and applies only an accepted result.
 
+## Reuse the Host Subscription
+
+When this skill runs in Codex, pass `--proposer-backend codex` and use
+`--judge-backend codex` for built-in judging. When it runs in Claude Code, use
+the corresponding `claude` values. For `analyze`, pass `--analysis-backend`;
+for `validate`, use the reserved provider selector `codex` or `claude`.
+Do not infer a backend in the Python runtime or for an unknown host.
+
+Tell the user before running that subscription calls are serialized by default.
+Eligible availability, authentication, rate-limit, or quota failures may switch
+to a same-vendor API model only when a matching key and fallback model are
+available; pass `--no-api-fallback` when billed fallback is not acceptable.
+
 ## Available Skills
 
 - **optimize-prompt** — Optimize inline prompts, files, embedded regions, or independent batches with fast prompt-quality or rigorous task-output evidence

@@ -40,6 +40,31 @@ class TestLoadSpec:
         assert result["proposer_model"] == "anthropic/claude-sonnet-4-6"
         assert result["judge_model"] == "openai/gpt-4o-mini"
 
+    def test_structured_subscription_model_roles(self, tmp_path: Path):
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text(
+            """
+[model.proposer]
+backend = "codex"
+api_fallback = false
+
+[model.judge]
+backend = "claude"
+model = "sonnet"
+api_fallback_model = "anthropic/claude-sonnet-5"
+"""
+        )
+
+        result = load_spec(spec_file)
+
+        assert result["proposer_backend"] == "codex"
+        assert result["proposer_model"] is None
+        assert result["proposer_api_fallback"] is False
+        assert result["judge_backend"] == "claude"
+        assert result["judge_model"] == "sonnet"
+        assert result["judge_api_fallback"] is True
+        assert result["judge_api_fallback_model"] == "anthropic/claude-sonnet-5"
+
 
     def test_task_model_parsed_from_optimization_section(self, tmp_path: Path):
         spec_file = tmp_path / "opt.toml"
