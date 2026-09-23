@@ -56,6 +56,12 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         "evaluator_cwd": None,
         "judge_model": None,
         "proposer_model": None,
+        "judge_backend": None,
+        "proposer_backend": None,
+        "judge_api_fallback": None,
+        "proposer_api_fallback": None,
+        "judge_api_fallback_model": None,
+        "proposer_api_fallback_model": None,
         "task_model": None,
         "intake": None,
     }
@@ -141,10 +147,37 @@ def _normalize_model_section(model: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
 
     if "judge" in model:
-        normalized["judge_model"] = _require_string(model, "judge", "model")
+        normalized.update(_normalize_model_role(model["judge"], role="judge"))
     if "proposer" in model:
-        normalized["proposer_model"] = _require_string(model, "proposer", "model")
+        normalized.update(_normalize_model_role(model["proposer"], role="proposer"))
 
+    return normalized
+
+
+def _normalize_model_role(value: Any, *, role: str) -> dict[str, Any]:
+    if isinstance(value, str):
+        return {f"{role}_model": value, f"{role}_backend": "api"}
+    if not isinstance(value, dict):
+        raise SpecLoadError(f"model.{role} must be a string or table")
+    unknown = set(value) - {"backend", "model", "api_fallback", "api_fallback_model"}
+    if unknown:
+        raise SpecLoadError(f"model.{role} has unknown keys: {', '.join(sorted(unknown))}")
+    backend = value.get("backend", "api")
+    if backend not in ("api", "codex", "claude"):
+        raise SpecLoadError(f"model.{role}.backend must be api, codex, or claude")
+    normalized: dict[str, Any] = {f"{role}_backend": backend}
+    if "model" in value:
+        normalized[f"{role}_model"] = _require_string(value, "model", f"model.{role}")
+    if "api_fallback" in value:
+        normalized[f"{role}_api_fallback"] = _require_bool(
+            value, "api_fallback", f"model.{role}"
+        )
+    elif backend != "api":
+        normalized[f"{role}_api_fallback"] = True
+    if "api_fallback_model" in value:
+        normalized[f"{role}_api_fallback_model"] = _require_string(
+            value, "api_fallback_model", f"model.{role}"
+        )
     return normalized
 
 

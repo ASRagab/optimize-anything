@@ -6,8 +6,12 @@ import argparse
 import copy
 import json
 import sys
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, cast
+
+from optimize_anything.llm_backends.base import BackendName
 
 from optimize_anything.persist import (
     _copy_cache_from_run,
@@ -27,13 +31,39 @@ OptimizeInputs = tuple[
 ]
 
 
-def _cmd_optimize(args: argparse.Namespace) -> int:
-    from optimize_anything.cli import _resolve_evaluator
+@dataclass(frozen=True)
+class OptimizationBackends:
+    proposer_lm: Any
+    proposer_model: str | None
+    judge: Any
+    judge_name: str
+    coordinator: Any
+    plan: dict[str, Any]
 
+
+def _cmd_optimize(args: argparse.Namespace) -> int:
     prepared = _prepare_optimize_inputs(args)
     if prepared is None:
         return 1
     args, seed, dataset, valset, intake_spec = prepared
+
+    try:
+        with _optimization_backends(args) as backend_state:
+            return _run_optimize(args, seed, dataset, valset, intake_spec, backend_state)
+    except Exception as exc:
+        print(f"Error: backend preflight failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def _run_optimize(
+    args: argparse.Namespace,
+    seed: str | None,
+    dataset: list[dict] | None,
+    valset: list[dict] | None,
+    intake_spec: dict[str, Any] | None,
+    backend_state: OptimizationBackends,
+) -> int:
+    from optimize_anything.cli import _resolve_evaluator
 
     from optimize_anything.result_contract import build_optimize_summary
     from gepa.optimize_anything import optimize_anything
@@ -50,6 +80,8 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         api_base=args.api_base,
         task_model=args.task_model,
         score_range=args.score_range,
+        judge_backend=backend_state.judge_name,
+        completion_backend=backend_state.judge,
     )
     if eval_fn is None:
         print(evaluator_label, file=sys.stderr)
@@ -67,7 +99,7 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
 
-    model = resolve_proposer_model(args.model)
+    model = backend_state.proposer_lm
     config, gepa_run_dir, early_stop_active, runtime_error = _build_optimize_runtime(
         args,
         model=model,
@@ -104,6 +136,10 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         requested_budget=args.budget,
         early_stop_active=early_stop_active,
     )
+    summary["backend_plan"] = backend_state.plan
+    coordinator = backend_state.coordinator
+    if coordinator is not None:
+        summary["llm_provenance"] = coordinator.events()
     best = summary["best_artifact"]
     persist_error = _persist_optimize_outputs(
         args=args,
@@ -122,7 +158,7 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     if summary.get("plateau_detected") and args.judge_model:
         _print_judge_plateau_advisory(
             judge_model=args.judge_model,
-            proposer_model=model,
+            proposer_model=backend_state.proposer_model,
             has_intake=intake_spec is not None,
             file=sys.stderr,
         )
@@ -131,10 +167,116 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
     return 0
 
 
+@contextmanager
+def _optimization_backends(args: argparse.Namespace) -> Iterator[OptimizationBackends]:
+    from optimize_anything.llm_backends.coordination import RunCoordinator
+
+    proposer_name = getattr(args, "proposer_backend", None) or "api"
+    judge_name = getattr(args, "judge_backend", None) or "api"
+    proposer_model = (
+        resolve_proposer_model(args.model) if proposer_name == "api" else args.model
+    )
+    judge_selected = bool(args.judge_model) or judge_name != "api"
+    concurrency = getattr(args, "subscription_concurrency", 1)
+    if concurrency < 1:
+        raise ValueError("--subscription-concurrency must be at least 1")
+    # Generated evaluator processes may select either subscription backend even
+    # when the parent proposer and judge use API models.
+    coordinator = RunCoordinator.create({"codex": concurrency, "claude": concurrency})
+    try:
+        environment = coordinator.exported_environment()
+        with environment:
+            yield from _configured_optimization_backends(
+                args,
+                proposer_name=proposer_name,
+                judge_name=judge_name,
+                proposer_model=proposer_model,
+                judge_selected=judge_selected,
+                concurrency=concurrency,
+                coordinator=coordinator,
+            )
+    finally:
+        coordinator.close()
+
+
+def _configured_optimization_backends(
+    args: argparse.Namespace,
+    *,
+    proposer_name: str,
+    judge_name: str,
+    proposer_model: str | None,
+    judge_selected: bool,
+    concurrency: int,
+    coordinator: Any,
+) -> Iterator[OptimizationBackends]:
+    from optimize_anything.llm_backends.factory import (
+        BackendLanguageModel,
+        create_backend,
+        resolve_backend_spec,
+    )
+
+    def role_spec(role: str, backend: str, model: str | None):
+        role_fallback = getattr(args, f"{role}_api_fallback", None)
+        role_fallback_model = getattr(args, f"{role}_api_fallback_model", None)
+        openai_fallback = getattr(args, "openai_api_fallback_model", None)
+        anthropic_fallback = getattr(args, "anthropic_api_fallback_model", None)
+        if role_fallback_model and backend == "codex" and openai_fallback is None:
+            openai_fallback = role_fallback_model
+        if role_fallback_model and backend == "claude" and anthropic_fallback is None:
+            anthropic_fallback = role_fallback_model
+        return resolve_backend_spec(
+            backend=cast(BackendName, backend),
+            model=model,
+            api_base=args.api_base,
+            no_api_fallback=(
+                getattr(args, "no_api_fallback", False) or role_fallback is False
+            ),
+            openai_api_fallback_model=openai_fallback,
+            anthropic_api_fallback_model=anthropic_fallback,
+            max_concurrency=concurrency,
+        )
+
+    proposer_spec = role_spec("proposer", proposer_name, proposer_model)
+    proposer_backend = create_backend(
+        proposer_spec, role="proposer", coordinator=coordinator
+    )
+    proposer_lm: Any = proposer_model
+    if proposer_name != "api":
+        proposer_backend.preflight()
+        proposer_lm = BackendLanguageModel(proposer_backend, model=proposer_model)
+
+    judge_backend = None
+    if judge_selected:
+        judge_spec = role_spec("judge", judge_name, args.judge_model)
+        judge_backend = create_backend(judge_spec, role="judge", coordinator=coordinator)
+        if judge_name != "api":
+            judge_backend.preflight()
+
+    plan = {
+        "proposer": {"backend": proposer_name, "model": proposer_model},
+        "judge": {
+            "backend": judge_name if judge_selected else None,
+            "model": args.judge_model,
+        },
+        "api_fallback": not getattr(args, "no_api_fallback", False),
+        "subscription_concurrency": concurrency,
+        "custom_api_base": bool(args.api_base),
+    }
+    print(f"Backend plan: {json.dumps(plan, sort_keys=True)}", file=sys.stderr)
+    yield OptimizationBackends(
+        proposer_lm=proposer_lm,
+        proposer_model=proposer_model,
+        judge=judge_backend,
+        judge_name=judge_name,
+        coordinator=coordinator,
+        plan=plan,
+    )
+
+
 def _build_optimize_runtime(
     args: argparse.Namespace,
     *,
-    model: str,
+    model: Any,
 ) -> tuple[Any, str | None, bool, str | None]:
     """Build GEPA runtime config plus run-dir state for optimize."""
     from optimize_anything.stop import plateau_stop_callback
@@ -277,9 +419,16 @@ def _resolve_optimize_seed(args: argparse.Namespace) -> tuple[bool, str | None]:
     if not args.no_seed:
         print("Error: provide seed_file or pass --no-seed", file=sys.stderr)
         return False, None
-    if not args.objective or not args.model:
+    if not args.objective or (
+        (getattr(args, "proposer_backend", None) or "api") == "api" and not args.model
+    ):
+        message = (
+            "Error: seedless mode (--no-seed) requires both --objective and --model"
+            if (getattr(args, "proposer_backend", None) or "api") == "api"
+            else "Error: seedless mode (--no-seed) requires --objective"
+        )
         print(
-            "Error: seedless mode (--no-seed) requires both --objective and --model",
+            message,
             file=sys.stderr,
         )
         return False, None
@@ -366,6 +515,12 @@ def _apply_spec_to_args(
         "budget",
         "proposals_per_iteration",
         "judge_model",
+        "proposer_backend",
+        "judge_backend",
+        "proposer_api_fallback",
+        "judge_api_fallback",
+        "proposer_api_fallback_model",
+        "judge_api_fallback_model",
     )
     _apply_spec_alias_if_missing(args, spec, arg_key="model", spec_key="proposer_model")
     _apply_parallel_from_spec(args, spec)

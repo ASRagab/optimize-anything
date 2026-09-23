@@ -50,6 +50,9 @@ Generate an evaluator that scores candidate artifacts for optimization with gepa
 ## Generation Flags
 - `--evaluator-type judge|command|http|composite`
 - `--model <litellm-model>`: hardcodes judge model into judge/composite scripts.
+- `--judge-backend api|codex|claude`: configures the installed evaluator runtime.
+- In Codex use `--judge-backend codex`; in Claude Code use `--judge-backend claude`.
+  Add `--no-api-fallback` when billed API fallback is not acceptable.
 - `--dataset`: generate dataset-aware templates that read `example` and show how to use it in scoring.
 - `--intake-json` / `--intake-file`: embed rubric/quality dimensions.
 

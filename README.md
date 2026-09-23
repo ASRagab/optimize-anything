@@ -178,6 +178,56 @@ commands, expected report fields, acceptance criteria, and troubleshooting.
 - `analyze`
 - `validate`
 
+## Codex and Claude subscription backends
+
+Local Codex and Claude Code logins can power proposer and built-in evaluator
+roles without API keys. Selection is explicit; omitting backend flags preserves
+the existing LiteLLM API behavior.
+
+```bash
+# Install the pinned Codex SDK adapter, then authenticate with ChatGPT.
+uv sync --extra codex
+codex login
+
+# Codex subscription: proposer plus built-in judge.
+optimize-anything optimize seed.txt \
+  --proposer-backend codex --judge-backend codex \
+  --objective "Improve clarity"
+
+# Claude Code subscription. Install/sign in to the claude CLI first.
+optimize-anything optimize seed.txt \
+  --proposer-backend claude --judge-backend claude \
+  --objective "Improve clarity"
+```
+
+Subscription calls are serialized per provider by default. The CLI may switch
+an eligible failure to a same-vendor API only when a matching key and fallback
+model are available, and prints a billing warning first. Use
+`--no-api-fallback` to prohibit that switch. Claude support is local-only and
+experimental; neither adapter initiates login or copies credential contents.
+
+Single-role commands use `--analysis-backend` (`analyze`) or
+`--judge-backend` (`score`). `validate --providers` also accepts `codex`,
+`codex:<model>`, `claude`, and `claude:<model>`. Structured TOML uses role
+tables such as:
+
+```toml
+[model.proposer]
+backend = "codex"
+api_fallback = false
+
+[model.judge]
+backend = "claude"
+api_fallback_model = "anthropic/claude-sonnet-5"
+```
+
+Opt-in live gates consume local subscription quota:
+
+```bash
+OPTIMIZE_ANYTHING_RUN_SUBSCRIPTION_LIVE=1 \
+  uv run pytest tests/test_subscription_live.py
+```
+
 ## Agent Plugins
 
 The Claude Code plugin and Codex plugin share the same `skills/` tree and
@@ -380,7 +430,7 @@ optimize-anything optimize seed.txt \
 
 ### `optimize` flags (complete)
 
-Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-url` OR `--judge-model`.
+Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-url` OR a built-in judge selected by `--judge-model`/`--judge-backend`.
 
 | Flag | Description | Default |
 |---|---|---|
@@ -397,7 +447,13 @@ Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-
 | `--budget <int>` | Max evaluator calls | `100` |
 | `--output, -o <file>` | Write best artifact to file | -- |
 | `--model <model>` | Proposer model (or env fallback) | `OPTIMIZE_ANYTHING_MODEL`, then `openai/gpt-5.6-sol` |
+| `--proposer-backend api\|codex\|claude` | Proposal backend | `api` |
 | `--judge-model <model>` | Built-in LLM judge evaluator model | -- |
+| `--judge-backend api\|codex\|claude` | Built-in judge backend | `api` |
+| `--subscription-concurrency <int>` | Concurrent calls allowed per subscription provider | `1` |
+| `--no-api-fallback` | Prohibit subscription-to-API fallback | `false` |
+| `--openai-api-fallback-model <model>` | Same-vendor API fallback for Codex | -- |
+| `--anthropic-api-fallback-model <model>` | Same-vendor API fallback for Claude | -- |
 | `--judge-objective <text>` | Judge objective override | falls back to `--objective` |
 | `--api-base <url>` | Override LiteLLM API base | -- |
 | `--diff` | Print unified diff (seed vs best) to stderr | `false` |

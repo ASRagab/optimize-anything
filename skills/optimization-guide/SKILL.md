@@ -65,6 +65,22 @@ single proposal.
 
 ### 5. Run Optimization
 
+If the workflow is executing inside Codex or Claude Code, reuse that host's
+logged-in subscription explicitly:
+
+```bash
+# Codex host
+optimize-anything optimize seed.txt --proposer-backend codex --judge-backend codex ...
+
+# Claude Code host
+optimize-anything optimize seed.txt --proposer-backend claude --judge-backend claude ...
+```
+
+Subscription calls default to one concurrent call per provider. Announce the
+backend and possible billed API fallback before execution; add
+`--no-api-fallback` to prohibit it. Unknown hosts omit backend flags and keep
+the API defaults.
+
 **Via CLI:**
 ```bash
 optimize-anything optimize seed.txt --evaluator-command bash evaluators/eval.sh --budget 100 --objective "maximize clarity" -o result.txt

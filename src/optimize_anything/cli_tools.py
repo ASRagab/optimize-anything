@@ -6,7 +6,8 @@ import argparse
 import json
 import statistics
 import sys
-from typing import Any, cast
+from contextlib import contextmanager
+from typing import Any, Iterator, cast
 
 from optimize_anything.cli import (
     EvaluatorFn,
@@ -14,6 +15,7 @@ from optimize_anything.cli import (
     _read_seed,
     _resolve_evaluator,
 )
+from optimize_anything.llm_backends.base import BackendName, Role
 
 
 def _cmd_intake(args: argparse.Namespace) -> int:
@@ -83,13 +85,26 @@ def _cmd_generate_evaluator(args: argparse.Namespace) -> int:
 
     from optimize_anything.evaluator_generator import generate_evaluator_script
 
+    from optimize_anything.model_defaults import DEFAULT_EVALUATOR_MODEL
+
+    backend_name = args.judge_backend or "api"
+    model = args.model or (DEFAULT_EVALUATOR_MODEL if backend_name == "api" else None)
     script = generate_evaluator_script(
         seed=seed,
         objective=args.objective,
         evaluator_type=args.evaluator_type,
         intake=intake_spec,
-        model=args.model,
+        model=model,
         dataset=args.dataset,
+        backend=backend_name,
+        api_base=args.api_base,
+        api_fallback=not args.no_api_fallback,
+        api_fallback_model=(
+            args.openai_api_fallback_model
+            if args.judge_backend == "codex"
+            else args.anthropic_api_fallback_model
+        ),
+        max_concurrency=args.subscription_concurrency,
     )
     print(script, end="")
     return 0
@@ -145,32 +160,37 @@ def _cmd_score(args: argparse.Namespace) -> int:
     if intake_requested and intake_spec is None:
         return 1
 
-    eval_fn, error = _resolve_evaluator(
-        evaluator_command=args.evaluator_command,
-        evaluator_url=args.evaluator_url,
-        judge_model=args.judge_model,
-        judge_objective=args.judge_objective,
-        objective=args.objective,
-        evaluator_cwd=args.evaluator_cwd,
-        intake_spec=intake_spec,
-        allow_intake_fallback=False,
-        api_base=args.api_base,
-        task_model=args.task_model,
-        score_range=args.score_range,
-    )
-    if eval_fn is None:
-        print(error, file=sys.stderr)
-        return 1
-
-    if args.evaluator_url and args.evaluator_cwd:
-        print(
-            "Warning: --evaluator-cwd has no effect when using --evaluator-url. "
-            "The HTTP evaluator runs in the server's own working directory.",
-            file=sys.stderr,
-        )
-
+    judge_name = cast(BackendName, args.judge_backend or "api")
     try:
-        score, side_info = eval_fn(artifact)
+        with _completion_backend(args, judge_name, args.judge_model, "score") as backend:
+            eval_fn, error = _resolve_evaluator(
+                evaluator_command=args.evaluator_command,
+                evaluator_url=args.evaluator_url,
+                judge_model=args.judge_model,
+                judge_objective=args.judge_objective,
+                objective=args.objective,
+                evaluator_cwd=args.evaluator_cwd,
+                intake_spec=intake_spec,
+                allow_intake_fallback=False,
+                api_base=args.api_base,
+                task_model=args.task_model,
+                score_range=args.score_range,
+                judge_backend=judge_name,
+                completion_backend=backend,
+                completion_role="score",
+            )
+            if eval_fn is None:
+                print(error, file=sys.stderr)
+                return 1
+
+            if args.evaluator_url and args.evaluator_cwd:
+                print(
+                    "Warning: --evaluator-cwd has no effect when using --evaluator-url. "
+                    "The HTTP evaluator runs in the server's own working directory.",
+                    file=sys.stderr,
+                )
+
+            score, side_info = eval_fn(artifact)
     except Exception as exc:
         print(f"Error: evaluator call failed: {exc}", file=sys.stderr)
         return 1
@@ -203,13 +223,17 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     provider_results: list[dict[str, object]] = []
     successful_scores: list[float] = []
     for provider in args.providers:
+        backend_name, model = _parse_validation_provider(provider)
         result, numeric_score = _validate_provider(
             artifact=artifact,
             provider=provider,
+            backend_name=backend_name,
+            model=model,
             objective=args.objective,
             quality_dimensions=quality_dimensions,
             hard_constraints=hard_constraints,
             api_base=args.api_base,
+            args=args,
         )
         provider_results.append(result)
         if numeric_score is not None:
@@ -259,20 +283,23 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     from optimize_anything.llm_judge import analyze_for_dimensions
 
     print(
-        f"Analyzing artifact with {args.judge_model}...",
+        f"Analyzing artifact with {args.analysis_backend or 'api'}:{args.judge_model or 'provider default'}...",
         file=sys.stderr,
     )
 
     try:
-        result = analyze_for_dimensions(
-            artifact=artifact,
-            objective=args.objective,
-            model=args.judge_model,
-            api_base=args.api_base,
-            timeout=args.timeout,
-            temperature=args.temperature,
-        )
-    except (ValueError, RuntimeError) as exc:
+        backend_name = cast(BackendName, args.analysis_backend or "api")
+        with _completion_backend(args, backend_name, args.judge_model, "analysis") as backend:
+            result = analyze_for_dimensions(
+                artifact=artifact,
+                objective=args.objective,
+                model=args.judge_model,
+                api_base=args.api_base,
+                timeout=args.timeout,
+                temperature=args.temperature,
+                backend=backend,
+            )
+    except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -284,25 +311,31 @@ def _validate_provider(
     *,
     artifact: str,
     provider: str,
+    backend_name: BackendName,
+    model: str | None,
     objective: str,
     quality_dimensions: Any,
     hard_constraints: Any,
     api_base: str | None,
+    args: argparse.Namespace,
 ) -> tuple[dict[str, object], float | None]:
     from optimize_anything.llm_judge import llm_judge_evaluator
 
     try:
-        evaluator = cast(
-            EvaluatorFn,
-            llm_judge_evaluator(
-                objective,
-                model=provider,
-                quality_dimensions=quality_dimensions,
-                hard_constraints=hard_constraints,
-                api_base=api_base,
-            ),
-        )
-        score, side_info = evaluator(artifact)
+        with _completion_backend(args, backend_name, model, "validation") as backend:
+            evaluator = cast(
+                EvaluatorFn,
+                llm_judge_evaluator(
+                    objective,
+                    model=model,
+                    quality_dimensions=quality_dimensions,
+                    hard_constraints=hard_constraints,
+                    api_base=api_base,
+                    backend=backend,
+                    role="validation",
+                ),
+            )
+            score, side_info = evaluator(artifact)
         numeric_score = float(score)
     except Exception as exc:
         return {
@@ -318,3 +351,38 @@ def _validate_provider(
     if isinstance(side_info, dict):
         result.update(side_info)
     return result, numeric_score
+
+
+def _parse_validation_provider(provider: str) -> tuple[BackendName, str | None]:
+    if provider == "codex" or provider.startswith("codex:"):
+        return "codex", provider.partition(":")[2] or None
+    if provider == "claude" or provider.startswith("claude:"):
+        return "claude", provider.partition(":")[2] or None
+    return "api", provider
+
+
+@contextmanager
+def _completion_backend(
+    args: argparse.Namespace,
+    backend_name: BackendName,
+    model: str | None,
+    role: Role,
+) -> Iterator[Any]:
+    from optimize_anything.llm_backends.factory import create_backend, resolve_backend_spec
+
+    concurrency = getattr(args, "subscription_concurrency", 1)
+    if concurrency < 1:
+        raise ValueError("--subscription-concurrency must be at least 1")
+    spec = resolve_backend_spec(
+        backend=backend_name,
+        model=model,
+        api_base=getattr(args, "api_base", None),
+        no_api_fallback=getattr(args, "no_api_fallback", False),
+        openai_api_fallback_model=getattr(args, "openai_api_fallback_model", None),
+        anthropic_api_fallback_model=getattr(args, "anthropic_api_fallback_model", None),
+        max_concurrency=concurrency,
+    )
+    backend = create_backend(spec, role=role)
+    if backend_name != "api":
+        backend.preflight()
+    yield backend

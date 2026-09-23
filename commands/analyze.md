@@ -2,6 +2,10 @@
 name: analyze
 description: Discover quality dimensions for an artifact and objective
 ---
+When running in Codex, pass `--analysis-backend codex`; in Claude Code, pass
+`--analysis-backend claude`. A subscription backend may omit `--judge-model`.
+Unknown hosts use the existing API model. Announce possible same-vendor billed
+API fallback, or pass `--no-api-fallback` when it is not acceptable.
 
 # analyze
 
@@ -20,6 +24,9 @@ Use an LLM to discover relevant quality dimensions for a given artifact and opti
   --judge-model openai/gpt-5.6-luna \
   --objective "Score for clarity and persuasiveness"
 ```
+
+In Codex or Claude Code, replace `--judge-model ...` with
+`--analysis-backend codex` or `--analysis-backend claude`, respectively.
 
 ## Next Step: optimize with discovered dimensions
 After dimension discovery, proceed directly to optimization using the returned `intake_json`:

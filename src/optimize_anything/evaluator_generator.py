@@ -15,8 +15,13 @@ def generate_evaluator_script(
     objective: str,
     evaluator_type: str | None = None,
     intake: Mapping[str, Any] | None = None,
-    model: str = DEFAULT_EVALUATOR_MODEL,
+    model: str | None = DEFAULT_EVALUATOR_MODEL,
     dataset: bool = False,
+    backend: str = "api",
+    api_base: str | None = None,
+    api_fallback: bool = False,
+    api_fallback_model: str | None = None,
+    max_concurrency: int = 1,
 ) -> str:
     """Generate an evaluator script that reads input JSON and outputs score JSON."""
     normalized_intake = _normalize_intake_if_provided(intake)
@@ -37,6 +42,24 @@ def generate_evaluator_script(
             quality_dimensions=quality_dimensions,
             dataset=dataset,
         )
+    if resolved_evaluator_type in {"judge", "composite"} and backend != "api":
+        return _generate_runtime_evaluator(
+            objective,
+            evaluator_type=resolved_evaluator_type,
+            template_family=template_family,
+            rubric_summary=rubric_summary,
+            quality_dimensions=quality_dimensions,
+            hard_constraints=list((normalized_intake or {}).get("hard_constraints", [])),
+            model=model,
+            dataset=dataset,
+            backend=backend,
+            api_base=api_base,
+            api_fallback=api_fallback,
+            api_fallback_model=api_fallback_model,
+            max_concurrency=max_concurrency,
+        )
+    if model is None:
+        raise ValueError("API judge evaluators require a model")
     if resolved_evaluator_type == "judge":
         return _generate_judge_evaluator(
             seed,
@@ -625,6 +648,69 @@ def _generate_composite_evaluator(
             result["hard_constraints_satisfied"] = True
             print(json.dumps(result))
             return 0
+
+        if __name__ == "__main__":
+            raise SystemExit(main())
+    """).lstrip()
+
+
+def _generate_runtime_evaluator(
+    objective: str,
+    *,
+    evaluator_type: str,
+    template_family: str,
+    rubric_summary: str,
+    quality_dimensions: list[tuple[str, float]],
+    hard_constraints: list[str],
+    model: str | None,
+    dataset: bool,
+    backend: str,
+    api_base: str | None,
+    api_fallback: bool,
+    api_fallback_model: str | None,
+    max_concurrency: int,
+) -> str:
+    """Generate a configuration wrapper for a subscription evaluator runtime."""
+    from optimize_anything.evaluator_runtime import RUNTIME_CONTRACT_VERSION
+
+    config = {
+        "min_runtime_contract_version": RUNTIME_CONTRACT_VERSION,
+        "evaluator_type": evaluator_type,
+        "objective": objective,
+        "template_family": template_family,
+        "rubric_summary": rubric_summary,
+        "quality_dimensions": quality_dimensions,
+        "hard_constraints": hard_constraints,
+        "model": model,
+        "dataset": dataset,
+        "backend": backend,
+        "api_base": api_base,
+        "api_fallback": api_fallback,
+        "api_fallback_model": api_fallback_model,
+        "max_concurrency": max_concurrency,
+    }
+    return textwrap.dedent(f"""\
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        MODEL = {model!r}
+        EVALUATOR_METADATA = {{"min_runtime_contract_version": {RUNTIME_CONTRACT_VERSION}}}
+        CONFIG = {config!r}
+
+        def main() -> int:
+            try:
+                from optimize_anything.evaluator_runtime import run_generated_evaluator
+            except ImportError:
+                for line in sys.stdin:
+                    if line.strip():
+                        print(json.dumps({{
+                            "score": 0.0,
+                            "error": "runtime_unavailable",
+                            "reasoning": "Install or upgrade optimize-anything to run this evaluator.",
+                        }}))
+                return 0
+            return run_generated_evaluator(CONFIG)
 
         if __name__ == "__main__":
             raise SystemExit(main())
