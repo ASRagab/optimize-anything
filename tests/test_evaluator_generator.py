@@ -64,6 +64,9 @@ def test_generated_judge_validates_selected_provider_environment(
     environment_key: str,
     expected: bool,
 ) -> None:
+    """R13/R5: the runtime must check the selected provider's credentials, not a
+    hard-coded vendor, before an API judge call — otherwise users of other
+    providers get a false missing-key error or a doomed provider call."""
     for name in (
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
@@ -80,10 +83,25 @@ def test_generated_judge_validates_selected_provider_environment(
         model=model,
     )
     namespace: dict[str, Any] = {"__name__": "generated_evaluator"}
-
     exec(compile(script, "<generated-judge-evaluator>", "exec"), namespace)
+    dispatched = []
 
-    assert namespace["_api_key_available"]() is expected
+    class Backend:
+        def complete(self, request):
+            dispatched.append(request)
+            return SimpleNamespace(structured={"score": 0.5, "reasoning": "ok"})
+
+    output = io.StringIO()
+    evaluator_runtime.run_generated_evaluator(
+        namespace["CONFIG"],
+        backend_resolver=lambda config, *, role: Backend(),
+        input_stream=io.StringIO(json.dumps({"candidate": "hello"}) + "\n"),
+        output_stream=output,
+    )
+
+    result = json.loads(output.getvalue())
+    assert (result.get("error") != "missing_api_key") is expected
+    assert bool(dispatched) is expected
 
 
 def test_generated_judge_uses_provider_sampling_defaults() -> None:
@@ -172,9 +190,17 @@ class TestGenerateEvaluatorScript:
         assert "8000" in script
 
     def test_default_is_judge(self):
+        """R13: default API judges use the installed runtime without embedding LiteLLM."""
         script = generate_evaluator_script(seed="x", objective="y")
         assert script.startswith("#!/usr/bin/env python3")
-        assert "from litellm import completion" in script
+        assert "run_generated_evaluator" in script
+        assert "litellm" not in script
+
+    def test_default_api_composite_uses_runtime(self):
+        """R13: composite wrappers also contain no direct LiteLLM import."""
+        script = generate_evaluator_script(seed="x", objective="y", evaluator_type="composite")
+        assert "run_generated_evaluator" in script
+        assert "litellm" not in script
 
     def test_judge_evaluator_contains_runtime_config_and_objective(self):
         objective = "assess clarity and usefulness"

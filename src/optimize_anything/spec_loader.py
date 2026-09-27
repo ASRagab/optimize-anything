@@ -25,6 +25,25 @@ def load_spec(spec_path: str | Path) -> dict[str, Any]:
         with open(spec_path, "rb") as f:
             raw = tomllib.load(f)
     except tomllib.TOMLDecodeError as exc:
+        if "Cannot overwrite a value" in str(exc):
+            section = ""
+            scalar_roles: set[str] = set()
+            table_roles: set[str] = set()
+            for line in spec_path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("[") and "]" in stripped:
+                    section = stripped[1:stripped.index("]")]
+                    if section in {"model.proposer", "model.judge"}:
+                        table_roles.add(section.removeprefix("model."))
+                elif section == "model" and "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip()
+                    if key in {"proposer", "judge"}:
+                        scalar_roles.add(key)
+            for role in ("proposer", "judge"):
+                if role in scalar_roles & table_roles:
+                    raise SpecLoadError(
+                        f"model.{role} scalar conflicts with [model.{role}] table; choose one"
+                    ) from exc
         raise SpecLoadError(f"invalid TOML in spec file '{spec_path}': {exc}") from exc
 
     spec_dir = spec_path.parent

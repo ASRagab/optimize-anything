@@ -8,10 +8,14 @@ import pytest
 from optimize_anything.llm_backends import (
     AuthenticationError,
     BackendUnavailable,
+    Cancelled,
     CompletionRequest,
     CompletionResult,
+    ConfigurationError,
     FallbackBackend,
     InvalidResponse,
+    QuotaExceeded,
+    RateLimitError,
     RunCoordinator,
     Timeout,
 )
@@ -131,3 +135,152 @@ def test_queued_call_rechecks_circuit_after_acquiring_slot():
 
     assert result.actual_backend == "api"
     assert primary.calls == 0
+
+
+@pytest.mark.parametrize("error", [Cancelled("user cancelled"), ConfigurationError("bad config")])
+def test_cancelled_and_configuration_error_never_fall_back(error, capsys):
+    """R12: Cancelled and ConfigurationError must never fall back — a user cancel or a
+    misconfiguration must not silently turn into a billed API call."""
+    primary = FakeBackend("claude", error)
+    api = FakeBackend("api", _result("api", "anthropic/fallback", "api", "anthropic_api"))
+    wrapper = FallbackBackend(primary=primary, fallback=api, source_backend="claude",
+                              fallback_model="anthropic/fallback", fallback_ready=lambda: True)
+    with pytest.raises(type(error)) as excinfo:
+        wrapper.complete(CompletionRequest(prompt="x", role="judge"))
+    assert excinfo.value is error
+    assert primary.calls == 1
+    assert api.calls == 0
+    assert "API billing may apply" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("error", [RateLimitError("rate limited"), QuotaExceeded("quota exceeded")])
+def test_rate_limit_and_quota_exceeded_are_eligible_for_fallback(error, capsys):
+    """R12: RateLimitError and QuotaExceeded are eligible failures — a busy or exhausted
+    subscription must still complete the run through the approved API fallback rather
+    than failing the run outright."""
+    primary = FakeBackend("codex", error)
+    api = FakeBackend("api", _result("api", "openai/fallback", "api", "openai_api"))
+    wrapper = FallbackBackend(primary=primary, fallback=api, source_backend="codex",
+                              fallback_model="openai/fallback", fallback_ready=lambda: True)
+    result = wrapper.complete(CompletionRequest(prompt="x", role="judge"))
+    assert api.calls == 1
+    assert result.actual_backend == "api"
+    assert result.fallback.reason == error.category
+    assert "API billing may apply" in capsys.readouterr().err
+
+
+class _WarnOrderCheckingBackend:
+    """Fake API backend that asserts the billing warning is ALREADY on stderr the moment
+    it is dispatched, proving `_warn` runs strictly before the fallback backend is called."""
+
+    def __init__(self, capsys, result):
+        self._capsys = capsys
+        self._result = result
+        self.calls = 0
+
+    def preflight(self):
+        return None
+
+    def complete(self, request):
+        self.calls += 1
+        captured_err = self._capsys.readouterr().err
+        assert "API billing may apply" in captured_err, (
+            "the billing warning must be printed before the fallback backend is dispatched"
+        )
+        return replace(self._result, requested_model=request.model)
+
+
+def test_warning_is_printed_before_fallback_backend_is_dispatched(capsys):
+    """R12: the API-billing warning must land on stderr strictly before the fallback
+    backend is dispatched, not merely before complete() returns — a caller watching
+    stderr to gate billed calls must never observe the call before the warning."""
+    primary = FakeBackend("codex", BackendUnavailable("unavailable"))
+    api = _WarnOrderCheckingBackend(capsys, _result("api", "openai/fallback", "api", "openai_api"))
+    wrapper = FallbackBackend(primary=primary, fallback=api, source_backend="codex",
+                              fallback_model="openai/fallback", fallback_ready=lambda: True)
+    result = wrapper.complete(CompletionRequest(prompt="x", role="judge"))
+    assert result.actual_backend == "api"
+    assert api.calls == 1
+
+
+_FAKE_CREDENTIAL = "fake-credential-for-tests-not-a-real-key"
+_VENDOR_READINESS_CASES = [
+    pytest.param("codex", "openai/gpt-fallback", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+                 "openai_api", id="codex-openai"),
+    pytest.param("claude", "anthropic/claude-fallback", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+                 "anthropic_api", id="claude-anthropic"),
+]
+
+
+@pytest.mark.parametrize(
+    "source_backend,fallback_model,own_key,other_key,auth_source", _VENDOR_READINESS_CASES
+)
+def test_real_fallback_ready_allows_fallback_when_matching_vendor_key_present(
+    source_backend, fallback_model, own_key, other_key, auth_source, monkeypatch, capsys,
+):
+    """R12: with no injected fallback_ready stub, the REAL readiness check (fallback.py:33)
+    must permit fallback once the matching vendor's API key is present — that presence
+    check is the readiness gate behind `_can_fallback`, and no test exercised the real
+    function before this one."""
+    monkeypatch.delenv(other_key, raising=False)
+    monkeypatch.setenv(own_key, _FAKE_CREDENTIAL)
+    primary = FakeBackend(source_backend, BackendUnavailable("unavailable"))
+    api = FakeBackend("api", _result("api", fallback_model, "api", auth_source))
+    wrapper = FallbackBackend(primary=primary, fallback=api, source_backend=source_backend,
+                              fallback_model=fallback_model)
+    result = wrapper.complete(CompletionRequest(prompt="x", role="judge"))
+    assert result.actual_backend == "api"
+    assert result.fallback.reason == "backend_unavailable"
+    assert api.calls == 1
+    assert "API billing may apply" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "source_backend,fallback_model,own_key,other_key,auth_source", _VENDOR_READINESS_CASES
+)
+def test_real_fallback_ready_blocks_fallback_when_vendor_key_absent(
+    source_backend, fallback_model, own_key, other_key, auth_source, monkeypatch, capsys,
+):
+    """R12: with no injected fallback_ready stub, a missing vendor key must block fallback
+    for real — the primary's own error must propagate unchanged and the fallback backend
+    must never be dispatched, so a logged-out user is not silently billed."""
+    monkeypatch.delenv(own_key, raising=False)
+    monkeypatch.delenv(other_key, raising=False)
+    err = BackendUnavailable("unavailable")
+    primary = FakeBackend(source_backend, err)
+    api = FakeBackend("api", _result("api", fallback_model, "api", auth_source))
+    wrapper = FallbackBackend(primary=primary, fallback=api, source_backend=source_backend,
+                              fallback_model=fallback_model)
+    with pytest.raises(BackendUnavailable) as excinfo:
+        wrapper.complete(CompletionRequest(prompt="x", role="judge"))
+    assert excinfo.value is err
+    assert api.calls == 0
+    assert "API billing may apply" not in capsys.readouterr().err
+    with pytest.raises(BackendUnavailable):
+        wrapper.complete(CompletionRequest(prompt="x", role="judge"))
+    assert primary.calls == 2
+    assert api.calls == 0
+
+
+@pytest.mark.parametrize(
+    "source_backend,fallback_model,own_key,other_key,auth_source", _VENDOR_READINESS_CASES
+)
+def test_real_fallback_ready_blocks_fallback_when_only_other_vendor_key_present(
+    source_backend, fallback_model, own_key, other_key, auth_source, monkeypatch, capsys,
+):
+    """R12: with no injected fallback_ready stub, the real readiness gate must key off
+    the SOURCE backend's own vendor — fallback_ready() only ever reads the env var
+    matching `source_backend`, so the other vendor's API key existing in the
+    environment must not unlock this vendor's fallback."""
+    monkeypatch.delenv(own_key, raising=False)
+    monkeypatch.setenv(other_key, _FAKE_CREDENTIAL)
+    err = BackendUnavailable("unavailable")
+    primary = FakeBackend(source_backend, err)
+    api = FakeBackend("api", _result("api", fallback_model, "api", auth_source))
+    wrapper = FallbackBackend(primary=primary, fallback=api, source_backend=source_backend,
+                              fallback_model=fallback_model)
+    with pytest.raises(BackendUnavailable) as excinfo:
+        wrapper.complete(CompletionRequest(prompt="x", role="judge"))
+    assert excinfo.value is err
+    assert api.calls == 0
+    assert "API billing may apply" not in capsys.readouterr().err

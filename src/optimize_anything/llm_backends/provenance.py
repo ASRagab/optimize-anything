@@ -26,8 +26,7 @@ def completion_event(result: CompletionResult, *, call_id: str | None = None) ->
         "prompt_contract_version": result.prompt_contract_version,
         "schema_contract_version": result.schema_contract_version,
     }
-    if call_id:
-        event["call_id"] = call_id
+    event["call_id"] = call_id or result.call_id
     if result.usage:
         event.update({
             "input_tokens": result.usage.input_tokens,

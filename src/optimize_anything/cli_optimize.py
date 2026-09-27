@@ -139,7 +139,11 @@ def _run_optimize(
     summary["backend_plan"] = backend_state.plan
     coordinator = backend_state.coordinator
     if coordinator is not None:
-        summary["llm_provenance"] = coordinator.events()
+        from optimize_anything.llm_backends.provenance import aggregate_provenance
+
+        events = coordinator.events()
+        summary["llm_provenance"] = events
+        summary["llm_provenance_summary"] = aggregate_provenance(events)
     best = summary["best_artifact"]
     persist_error = _persist_optimize_outputs(
         args=args,
@@ -240,10 +244,12 @@ def _configured_optimization_backends(
     proposer_backend = create_backend(
         proposer_spec, role="proposer", coordinator=coordinator
     )
-    proposer_lm: Any = proposer_model
+    proposer_lm: Any = BackendLanguageModel(
+        proposer_backend, model=proposer_model,
+        timeout_seconds=None if proposer_name == "api" else 120.0,
+    )
     if proposer_name != "api":
         proposer_backend.preflight()
-        proposer_lm = BackendLanguageModel(proposer_backend, model=proposer_model)
 
     judge_backend = None
     if judge_selected:

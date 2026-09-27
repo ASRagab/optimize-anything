@@ -17,6 +17,13 @@ from optimize_anything.llm_judge import (
     _parse_dimensions_response,
     _strip_code_fences,
 )
+from optimize_anything.llm_backends.base import (
+    BackendCapabilities,
+    BackendStatus,
+    CompletionRequest,
+    CompletionResult,
+    InvalidResponse,
+)
 
 
 class TestLlmJudgeEvaluatorUnit:
@@ -700,3 +707,179 @@ class TestAnalyzeForDimensions:
         with patch("litellm.completion", return_value=bad_response):
             with pytest.raises(RuntimeError, match="Scoring failed"):
                 analyze_for_dimensions("text", "obj", "openai/gpt-4o-mini")
+
+
+class _FakeSubscriptionBackend:
+    """Minimal CompletionBackend fake reporting subscription provenance.
+
+    Implements the CompletionBackend contract (capabilities/preflight/complete
+    from llm_backends/base.py) with no network, provider binary, or credential
+    of any kind. Records every CompletionRequest it receives so tests can
+    assert on role/schema, and returns queued structured payloads as JSON
+    text (or raises a queued error) so tests can assert that results flow
+    from the backend rather than from litellm.
+    """
+
+    capabilities = BackendCapabilities()
+
+    def __init__(
+        self,
+        payloads: list[dict[str, Any]] | None = None,
+        *,
+        error: Exception | None = None,
+        actual_backend: str = "codex",
+        auth_source: str = "chatgpt",
+    ) -> None:
+        self._payloads = list(payloads) if payloads else []
+        self._error = error
+        self.actual_backend = actual_backend
+        self.auth_source = auth_source
+        self.requests: list[CompletionRequest] = []
+
+    def preflight(self) -> BackendStatus:
+        return BackendStatus(
+            ready=True,
+            backend=self.actual_backend,
+            auth_class="subscription",
+            auth_source=self.auth_source,
+        )
+
+    def complete(self, request: CompletionRequest) -> CompletionResult:
+        self.requests.append(request)
+        if self._error is not None:
+            raise self._error
+        payload = self._payloads.pop(0)
+        return CompletionResult(
+            text=json.dumps(payload),
+            structured=payload,
+            requested_backend=self.actual_backend,
+            actual_backend=self.actual_backend,
+            requested_model=request.model,
+            actual_model=request.model or "gpt-5-codex",
+            auth_class="subscription",
+            auth_source=self.auth_source,
+            role=request.role,
+        )
+
+
+class TestLlmJudgeEvaluatorSubscriptionBackend:
+    """R1 (gaps R1a, R1c): llm_judge_evaluator(backend=...) must route the
+    judge role through a subscription backend (e.g. Codex/ChatGPT) instead
+    of LiteLLM."""
+
+    def test_r1a_judge_role_uses_backend_structured_output_and_skips_litellm(self):
+        """R1: a host already authenticated via ChatGPT/Codex must be able to
+        run the judge role on that subscription with no OpenAI API key (gap
+        R1a). If the code ever fell through to litellm.completion here, it
+        would silently bill the user's API key instead of using their
+        subscription.
+        """
+        fake = _FakeSubscriptionBackend(
+            [{"score": 0.81, "reasoning": "Clear and well-organized."}]
+        )
+        evaluator = llm_judge_evaluator("Score technical writing quality.", backend=fake)
+
+        with patch("litellm.completion") as mock_completion:
+            mock_completion.side_effect = AssertionError(
+                "litellm.completion must not be called when a backend is supplied"
+            )
+            score, side_info = evaluator("Some candidate artifact text.")
+
+        assert len(fake.requests) == 1
+        request = fake.requests[0]
+        assert request.role == "judge"
+        assert request.json_mode is False
+        assert request.output_schema is not None
+        assert set(request.output_schema["required"]) == {"score", "reasoning"}
+
+        assert score == pytest.approx(0.81)
+        assert side_info["reasoning"] == "Clear and well-organized."
+
+        provenance = side_info["llm_provenance"]
+        assert provenance["requested_backend"] == "codex"
+        assert provenance["actual_backend"] == "codex"
+        assert provenance["auth_class"] == "subscription"
+        assert provenance["auth_source"] == "chatgpt"
+        assert provenance["role"] == "judge"
+
+        mock_completion.assert_not_called()
+
+    def test_r1c_invalid_response_from_backend_sets_empty_raw_response(self):
+        """R1: llm_judge_evaluator has an InvalidResponse-specific branch (gap
+        R1c) that sets raw_response="" (a generic exception does not set that
+        key). This proves the backend-specific invalid-structured-output
+        handling in llm_judge.py actually runs, rather than only the generic
+        except clause.
+        """
+        fake = _FakeSubscriptionBackend(error=InvalidResponse("schema validation failed"))
+        evaluator = llm_judge_evaluator("Score quality.", backend=fake)
+
+        with patch("litellm.completion") as mock_completion:
+            mock_completion.side_effect = AssertionError(
+                "litellm.completion must not be called when a backend is supplied"
+            )
+            score, side_info = evaluator("candidate")
+
+        assert len(fake.requests) == 1
+        assert score == 0.0
+        assert side_info["raw_response"] == ""
+        assert side_info["error"] == "LLM call failed: InvalidResponse: schema validation failed"
+        mock_completion.assert_not_called()
+
+
+class TestAnalyzeForDimensionsSubscriptionBackend:
+    """R1 (gap R1b): analyze_for_dimensions(backend=...) must route the
+    analysis role through a subscription backend instead of LiteLLM."""
+
+    def test_r1b_analysis_role_uses_backend_structured_output_and_skips_litellm(self):
+        """R1: a host already authenticated via ChatGPT/Codex must be able to
+        run dimension analysis (both LLM calls) on that subscription with no
+        OpenAI API key (gap R1b), and the returned dimensions must come from
+        the backend's structured payload rather than any hardcoded fallback.
+        """
+        score_payload = {
+            "score": 0.77,
+            "reasoning": "Solid but could be more specific.",
+        }
+        dims_payload = {
+            "dimensions": [
+                {
+                    "name": "specificity",
+                    "weight": 0.6,
+                    "score": 0.5,
+                    "description": "How concretely the artifact names details.",
+                },
+                {
+                    "name": "brevity",
+                    "weight": 0.4,
+                    "score": 0.7,
+                    "description": "How concise the artifact is.",
+                },
+            ]
+        }
+        fake = _FakeSubscriptionBackend([score_payload, dims_payload])
+
+        with patch("litellm.completion") as mock_completion:
+            mock_completion.side_effect = AssertionError(
+                "litellm.completion must not be called when a backend is supplied"
+            )
+            result = analyze_for_dimensions(
+                "Some artifact text.", "Improve technical clarity.", backend=fake,
+            )
+
+        assert len(fake.requests) == 2
+        assert [r.role for r in fake.requests] == ["analysis", "analysis"]
+
+        score_request, dims_request = fake.requests
+        assert score_request.output_schema is not None
+        assert set(score_request.output_schema["required"]) == {"score", "reasoning"}
+        assert dims_request.output_schema is not None
+        assert "dimensions" in dims_request.output_schema["properties"]
+
+        assert result["current_score"] == pytest.approx(0.77)
+        assert [d["name"] for d in result["suggested_dimensions"]] == [
+            "specificity",
+            "brevity",
+        ]
+
+        mock_completion.assert_not_called()

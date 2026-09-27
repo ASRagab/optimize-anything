@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import sys
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
 
 from optimize_anything.cli import main
+from optimize_anything.cli_tools import _parse_validation_provider
+from optimize_anything.llm_backends.base import BackendCapabilities, BackendStatus, CompletionResult
+from optimize_anything.llm_backends.fallback import FallbackBackend
+from optimize_anything.llm_backends.litellm_backend import LiteLLMBackend
 
 
 class TestCLI:
@@ -793,6 +798,7 @@ class TestCLI:
     def test_optimize_model_flag_passes_through_to_gepa(
         self, tmp_path: Path, capsys, monkeypatch
     ):
+        """R4/R5: the API proposer keeps the chosen model through the completion adapter."""
         seed_file = tmp_path / "seed.txt"
         seed_file.write_text("test")
         captured_config = {}
@@ -826,7 +832,52 @@ class TestCLI:
         ])
         assert result == 0
         cfg = captured_config["config"]
-        assert cfg.reflection.reflection_lm == "openai/gpt-4o-mini"
+        assert cfg.reflection.reflection_lm.model == "openai/gpt-4o-mini"
+
+    def test_api_proposer_contributes_to_aggregate_run_provenance(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        """R4: the API proposer appears in both events and the run aggregate."""
+        from optimize_anything.llm_backends.base import CompletionResult
+        from optimize_anything.llm_backends.litellm_backend import LiteLLMBackend
+
+        seed_file = tmp_path / "seed.txt"
+        seed_file.write_text("seed")
+
+        class DummyResult:
+            best_candidate = "improved"
+            total_metric_calls = 1
+
+        def fake_complete(self, request):
+            assert request.timeout_seconds is None
+            return CompletionResult(
+                text="improved", structured=None,
+                requested_backend="api", actual_backend="api",
+                requested_model=request.model, actual_model=request.model,
+                auth_class="api", auth_source="openai_api", role=request.role,
+            )
+
+        def fake_optimize(**kwargs):
+            assert kwargs["config"].reflection.reflection_lm("proposal") == "improved"
+            return DummyResult()
+
+        monkeypatch.setattr(LiteLLMBackend, "complete", fake_complete)
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+        monkeypatch.setattr("optimize_anything.cli._preflight_command_evaluator", lambda command, cwd=None: None)
+        monkeypatch.setattr(
+            "optimize_anything.evaluators.command_evaluator",
+            lambda command, cwd=None, **kwargs: lambda candidate: (0.5, {}),
+        )
+
+        rc = main([
+            "optimize", str(seed_file), "--model", "openai/test", "--budget", "1",
+            "--evaluator-command", "bash", "eval.sh",
+        ])
+
+        assert rc == 0
+        summary = json.loads(capsys.readouterr().out)
+        assert summary["llm_provenance"][0]["actual_backend"] == "api"
+        assert summary["llm_provenance_summary"]["counts"]["role"] == {"proposer": 1}
 
     def test_optimize_model_env_var_fallback(
         self, tmp_path: Path, capsys, monkeypatch
@@ -864,7 +915,7 @@ class TestCLI:
         ])
         assert result == 0
         cfg = captured_config["config"]
-        assert cfg.reflection.reflection_lm == "gemini/gemini-2.0-flash"
+        assert cfg.reflection.reflection_lm.model == "gemini/gemini-2.0-flash"
 
     def test_optimize_uses_default_proposer_model(
         self, tmp_path: Path, capsys, monkeypatch
@@ -902,7 +953,7 @@ class TestCLI:
         ])
         assert result == 0
         cfg = captured_config["config"]
-        assert cfg.reflection.reflection_lm == "openai/gpt-5.6-sol"
+        assert cfg.reflection.reflection_lm.model == "openai/gpt-5.6-sol"
 
     def test_optimize_prints_progress_to_stderr(
         self, tmp_path: Path, capsys, monkeypatch
@@ -3102,3 +3153,659 @@ class TestJudgePlateauAdvisory:
         assert "Plateau detected with LLM judge" in err
         # Should NOT suggest --intake-json since user already provided it
         assert "Try --intake-json" not in err
+
+
+# ---------------------------------------------------------------------------
+# Shared fakes for the create_backend seam (R1, R2, R6, R7 gap-closing tests)
+# ---------------------------------------------------------------------------
+
+
+class _FakeSubscriptionBackend:
+    """A minimal CompletionBackend stand-in that records every request it
+    receives and returns a canned, schema-shaped CompletionResult, so tests
+    can prove a command reached the seam without ever touching a real
+    Codex/Claude process or litellm."""
+
+    capabilities = BackendCapabilities(usage_reporting=False)
+
+    _AUTH = {
+        "codex": ("subscription", "chatgpt"),
+        "claude": ("subscription", "claude_subscription"),
+        "api": ("api", "other_api"),
+    }
+
+    def __init__(self, backend_name, requests):
+        self.backend_name = backend_name
+        self._requests = requests
+
+    def preflight(self):
+        auth_class, auth_source = self._AUTH[self.backend_name]
+        return BackendStatus(
+            ready=True, backend=self.backend_name, auth_class=auth_class, auth_source=auth_source,
+        )
+
+    def complete(self, request):
+        self._requests.append(request)
+        properties = (request.output_schema or {}).get("properties", {})
+        if "dimensions" in properties:
+            text = json.dumps({
+                "dimensions": [
+                    {"name": "clarity", "weight": 1.0, "score": 0.9, "description": "fake dimension"},
+                ],
+            })
+        else:
+            text = json.dumps({"score": 0.91, "reasoning": "fake backend response"})
+        auth_class, auth_source = self._AUTH[self.backend_name]
+        return CompletionResult(
+            text=text,
+            structured=None,
+            requested_backend=self.backend_name,
+            actual_backend=self.backend_name,
+            requested_model=request.model,
+            actual_model=request.model,
+            auth_class=auth_class,
+            auth_source=auth_source,
+            role=request.role,
+        )
+
+
+class _BackendCallRecorder:
+    """Fake for optimize_anything.llm_backends.factory.create_backend.
+
+    Matches the real signature `(spec, *, role, coordinator=None)` used by
+    both call sites (cli_tools._completion_backend omits coordinator;
+    cli_optimize._configured_optimization_backends passes it), records the
+    (spec, role) pair, and hands back a _FakeSubscriptionBackend that
+    shares one requests list across every call.
+    """
+
+    def __init__(self):
+        self.calls: list = []
+        self.requests: list = []
+        self.stray_calls: list = []
+
+    def __call__(self, spec, *, role, coordinator=None):
+        self.calls.append((spec, role))
+        return _FakeSubscriptionBackend(spec.backend, self.requests)
+
+
+@pytest.fixture
+def fake_backend_seam(monkeypatch):
+    """R1/R2/R6/R7: intercept create_backend at the seam cli_tools and
+    cli_optimize both use, and make litellm.completion raise if reached, so
+    every test using this fixture proves its command routed through the
+    fake subscription backend rather than any stray real API call.
+    """
+    recorder = _BackendCallRecorder()
+    monkeypatch.setattr("optimize_anything.llm_backends.factory.create_backend", recorder)
+
+    def _tripwire(**kwargs):
+        recorder.stray_calls.append(kwargs)
+        raise AssertionError(
+            "litellm.completion must not be called while the create_backend fake is active"
+        )
+
+    monkeypatch.setattr("litellm.completion", _tripwire)
+    return recorder
+
+
+def _spy_and_capture(monkeypatch, target):
+    """Patch a _cmd_* dispatch target with a spy that records the parsed
+    argparse.Namespace it receives and returns 0, so flag-parsing tests can
+    assert on real parser output without running any command logic."""
+    captured: list = []
+
+    def spy(args):
+        captured.append(args)
+        return 0
+
+    monkeypatch.setattr(target, spy)
+    return captured
+
+
+def _capture_prepared_optimize_args(monkeypatch):
+    """R6b: stub _optimization_backends and _run_optimize so optimize's
+    real argument-preparation path -- including _apply_spec_to_args, which
+    implements CLI-over-TOML precedence -- runs to completion, and the
+    resulting args Namespace can be inspected directly without
+    constructing any backend or running the optimization loop."""
+    captured: list = []
+    monkeypatch.setattr(
+        "optimize_anything.cli_optimize._optimization_backends",
+        lambda args: nullcontext(None),
+    )
+
+    def fake_run_optimize(args, seed, dataset, valset, intake_spec, backend_state):
+        captured.append(args)
+        return 0
+
+    monkeypatch.setattr("optimize_anything.cli_optimize._run_optimize", fake_run_optimize)
+    return captured
+
+
+class TestSubscriptionBackendSeam:
+    """R1, R2: score, analyze, and validate must route completions through
+    the codex/claude subscription backend selected via CLI flags, each
+    command labeling its completions with its own distinct role -- "score",
+    "analysis", or "validation" -- so provenance and per-role concurrency
+    tracking never conflate one command's calls with another's.
+
+    Every test here intercepts optimize_anything.llm_backends.factory.
+    create_backend, the seam cli_tools._completion_backend uses to turn a
+    BackendSpec into a live backend, and monkeypatches litellm.completion
+    to raise. This proves the fake -- not a real CodexSdkBackend,
+    ClaudeCliBackend, or litellm call -- served every completion.
+    """
+
+    @pytest.mark.parametrize("backend_name", ["codex", "claude"])
+    def test_r1a_score_uses_selected_subscription_backend(
+        self, tmp_path, capsys, fake_backend_seam, backend_name,
+    ):
+        """R1a: score --judge-backend codex/claude must reach the selected
+        subscription backend with completion role "score", and the
+        command's JSON output must reflect the backend's structured
+        result -- not a silently-substituted API call."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("hello world")
+
+        rc = main([
+            "score", str(artifact),
+            "--objective", "Score quality",
+            "--judge-backend", backend_name,
+        ])
+        assert rc == 0
+        assert fake_backend_seam.stray_calls == []
+        assert [spec.backend for spec, _role in fake_backend_seam.calls] == [backend_name]
+        assert [role for _spec, role in fake_backend_seam.calls] == ["score"]
+        assert [req.role for req in fake_backend_seam.requests] == ["score"]
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["score"] == pytest.approx(0.91)
+        assert "error" not in payload
+
+    @pytest.mark.parametrize("backend_name", ["codex", "claude"])
+    def test_r1b_analyze_uses_selected_subscription_backend(
+        self, tmp_path, fake_backend_seam, backend_name,
+    ):
+        """R1b: analyze --analysis-backend codex/claude must reach the
+        selected subscription backend for both of its completions, both
+        labeled "analysis" -- distinct from score's "score" label -- so
+        analyze's provenance is never mistaken for a score call."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("# Title\nSome content.")
+
+        rc = main([
+            "analyze", str(artifact),
+            "--objective", "Optimize for OSS quality",
+            "--analysis-backend", backend_name,
+        ])
+        assert rc == 0
+        assert fake_backend_seam.stray_calls == []
+        assert [spec.backend for spec, _role in fake_backend_seam.calls] == [backend_name]
+        assert [role for _spec, role in fake_backend_seam.calls] == ["analysis"]
+        assert [req.role for req in fake_backend_seam.requests] == ["analysis", "analysis"]
+
+    def test_r2a_validate_reserved_selectors_use_subscription_backends(
+        self, tmp_path, capsys, fake_backend_seam,
+    ):
+        """R2a: validate --providers must recognize codex:<model> and bare
+        claude as reserved subscription selectors, route each through its
+        own create_backend call labeled "validation" -- distinct from
+        score's "score" and analyze's "analysis" -- and pass the
+        per-provider model string through to the completion request."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "validate", str(artifact),
+            "--objective", "Score quality",
+            "--providers", "codex:gpt-5.6-mini", "claude",
+        ])
+        assert rc == 0
+        assert fake_backend_seam.stray_calls == []
+        assert [spec.backend for spec, _role in fake_backend_seam.calls] == ["codex", "claude"]
+        assert [role for _spec, role in fake_backend_seam.calls] == ["validation", "validation"]
+        assert [req.role for req in fake_backend_seam.requests] == ["validation", "validation"]
+        assert fake_backend_seam.requests[0].model == "gpt-5.6-mini"
+        assert fake_backend_seam.requests[1].model is None
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["providers"][0]["score"] == pytest.approx(0.91)
+        assert payload["providers"][1]["score"] == pytest.approx(0.91)
+        assert "error" not in payload["providers"][0]
+        assert "error" not in payload["providers"][1]
+
+    def test_r2b_validate_mixed_subscription_and_api_providers(
+        self, tmp_path, capsys, fake_backend_seam,
+    ):
+        """R2b: validate must accept a mix of a reserved subscription
+        selector and an ordinary LiteLLM model string in the same
+        --providers list, routing one through the subscription BackendSpec
+        and the other through the api BackendSpec, and reporting both
+        results rather than treating them as mutually exclusive modes."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "validate", str(artifact),
+            "--objective", "Score quality",
+            "--providers", "codex", "openai/gpt-5.6-luna",
+        ])
+        assert rc == 0
+        assert fake_backend_seam.stray_calls == []
+        assert [spec.backend for spec, _role in fake_backend_seam.calls] == ["codex", "api"]
+
+        payload = json.loads(capsys.readouterr().out)
+        assert len(payload["providers"]) == 2
+        assert payload["providers"][0]["llm_provenance"]["actual_backend"] == "codex"
+        assert payload["providers"][1]["llm_provenance"]["actual_backend"] == "api"
+        assert payload["providers"][0]["score"] == pytest.approx(0.91)
+        assert payload["providers"][1]["score"] == pytest.approx(0.91)
+
+
+class TestSubscriptionFlagParsing:
+    """R6a: every subscription-related flag must parse to the exact value
+    the user passed, using the subcommand that actually defines it, and an
+    unrecognized backend name must be rejected by argparse rather than
+    silently defaulting to api."""
+
+    def test_r6a_optimize_backend_and_subscription_flags_parsed(self, tmp_path, monkeypatch):
+        """R6a: optimize's --proposer-backend, --judge-backend,
+        --subscription-concurrency, --no-api-fallback,
+        --openai-api-fallback-model, and --anthropic-api-fallback-model
+        must all reach args with the exact values passed on the CLI."""
+        captured = _spy_and_capture(monkeypatch, "optimize_anything.cli_optimize._cmd_optimize")
+        seed = tmp_path / "seed.txt"
+        seed.write_text("seed")
+
+        rc = main([
+            "optimize", str(seed),
+            "--proposer-backend", "codex",
+            "--judge-backend", "claude",
+            "--subscription-concurrency", "7",
+            "--no-api-fallback",
+            "--openai-api-fallback-model", "openai/gpt-5.6-fallback",
+            "--anthropic-api-fallback-model", "anthropic/claude-fallback",
+        ])
+        assert rc == 0
+        assert len(captured) == 1
+        args = captured[0]
+        assert args.proposer_backend == "codex"
+        assert args.judge_backend == "claude"
+        assert args.subscription_concurrency == 7
+        assert args.no_api_fallback is True
+        assert args.openai_api_fallback_model == "openai/gpt-5.6-fallback"
+        assert args.anthropic_api_fallback_model == "anthropic/claude-fallback"
+
+    def test_r6a_analyze_analysis_backend_flag_parsed(self, tmp_path, monkeypatch):
+        """R6a: analyze's --analysis-backend must reach args with the exact
+        value passed on the CLI; this flag only exists on analyze, so it
+        must be exercised through analyze's own parser rather than
+        optimize's or score's."""
+        captured = _spy_and_capture(monkeypatch, "optimize_anything.cli_tools._cmd_analyze")
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "analyze", str(artifact),
+            "--objective", "x",
+            "--analysis-backend", "codex",
+        ])
+        assert rc == 0
+        assert captured[0].analysis_backend == "codex"
+
+    @pytest.mark.parametrize(
+        "command,flag",
+        [
+            ("optimize", "--proposer-backend"),
+            ("optimize", "--judge-backend"),
+            ("analyze", "--analysis-backend"),
+        ],
+    )
+    def test_r6a_invalid_backend_choice_rejected(self, tmp_path, capsys, command, flag):
+        """R6a: an unrecognized backend name must be rejected by argparse
+        itself (exit code 2) rather than silently falling through to the
+        api backend, since a typo should never quietly bill the API
+        provider instead of the subscription backend the user asked for."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("seed")
+        argv = [command, str(seed), flag, "not-a-real-backend"]
+        if command == "analyze":
+            argv += ["--objective", "x"]
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(argv)
+        assert exc_info.value.code == 2
+        err = capsys.readouterr().err
+        assert "invalid choice" in err
+        assert "not-a-real-backend" in err
+
+
+class TestSpecCliPrecedence:
+    """R6b: CLI flags must override TOML [model.judge]/[model.proposer]
+    role tables so a one-off run can't be hijacked by a stale checked-in
+    spec, while a flag the CLI omits must still inherit the spec's value
+    so spec files remain useful for repeatable configuration."""
+
+    def test_r6b_spec_role_backend_and_model_used_when_cli_omits_flags(
+        self, tmp_path, monkeypatch,
+    ):
+        """R6b: when the CLI omits --judge-backend, --judge-model, and
+        --model, the spec file's [model.judge]/[model.proposer] tables
+        must supply them -- otherwise a spec file would be useless for
+        selecting a run's backends and models."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("seed")
+        spec_file = tmp_path / "spec.toml"
+        spec_file.write_text(
+            '[model.judge]\n'
+            'backend = "codex"\n'
+            'model = "gpt-5.6-judge-spec"\n'
+            '\n'
+            '[model.proposer]\n'
+            'model = "openai/gpt-5.6-proposer-spec"\n'
+        )
+        captured = _capture_prepared_optimize_args(monkeypatch)
+
+        rc = main(["optimize", str(seed), "--spec-file", str(spec_file)])
+        assert rc == 0
+        assert len(captured) == 1
+        args = captured[0]
+        assert args.judge_backend == "codex"
+        assert args.judge_model == "gpt-5.6-judge-spec"
+        assert args.model == "openai/gpt-5.6-proposer-spec"
+
+    def test_r6b_cli_flag_overrides_spec_role_backend_and_model(
+        self, tmp_path, monkeypatch,
+    ):
+        """R6b: an explicit CLI --judge-backend/--model must win over the
+        spec file's role tables per field -- a stale spec must never
+        silently redirect a one-off run's billing route -- while a field
+        the CLI does not override still inherits the spec's value."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("seed")
+        spec_file = tmp_path / "spec.toml"
+        spec_file.write_text(
+            '[model.judge]\n'
+            'backend = "codex"\n'
+            'model = "gpt-5.6-judge-spec"\n'
+            '\n'
+            '[model.proposer]\n'
+            'model = "openai/gpt-5.6-proposer-spec"\n'
+        )
+        captured = _capture_prepared_optimize_args(monkeypatch)
+
+        rc = main([
+            "optimize", str(seed), "--spec-file", str(spec_file),
+            "--judge-backend", "claude",
+            "--model", "openai/gpt-5.6-cli-override",
+        ])
+        assert rc == 0
+        args = captured[0]
+        assert args.judge_backend == "claude"
+        assert args.model == "openai/gpt-5.6-cli-override"
+        # judge_model was not overridden on the CLI, so the spec value survives.
+        assert args.judge_model == "gpt-5.6-judge-spec"
+
+
+class TestJudgeBackendMutualExclusion:
+    """R6c: a judge backend (codex/claude) is a judge-model source just
+    like --judge-model, so combining it with --evaluator-command or
+    --evaluator-url must be rejected with the exact same message the
+    built-in API judge uses -- otherwise a user could accidentally pay for
+    both a command/HTTP evaluator and an idle subscription backend at
+    once."""
+
+    _MESSAGE = (
+        "Error: provide only one of --evaluator-command, --evaluator-url, "
+        "--judge-model, or --judge-backend"
+    )
+
+    def test_r6c_score_evaluator_command_with_judge_backend_rejected(
+        self, tmp_path, capsys, fake_backend_seam,
+    ):
+        """R6c: score --evaluator-command combined with --judge-backend
+        codex must fail with the mutual-exclusion error, not a
+        Codex-preflight error -- proving the check fires regardless of
+        which subscription backend was requested."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "score", str(artifact),
+            "--evaluator-command", "bash", "eval.sh",
+            "--judge-backend", "codex",
+        ])
+        assert rc == 1
+        assert capsys.readouterr().err.strip() == self._MESSAGE
+
+    def test_r6c_score_evaluator_url_with_judge_backend_rejected(
+        self, tmp_path, capsys, fake_backend_seam,
+    ):
+        """R6c: score --evaluator-url combined with --judge-backend claude
+        must fail with the same mutual-exclusion error as
+        --evaluator-command, proving the check treats both evaluator
+        sources identically."""
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "score", str(artifact),
+            "--evaluator-url", "http://eval.invalid/score",
+            "--judge-backend", "claude",
+        ])
+        assert rc == 1
+        assert capsys.readouterr().err.strip() == self._MESSAGE
+
+    def test_r6c_optimize_evaluator_command_with_judge_backend_rejected(
+        self, tmp_path, capsys, fake_backend_seam,
+    ):
+        """R6c: optimize --evaluator-command combined with --judge-backend
+        codex must also fail with the mutual-exclusion error. Optimize
+        builds and preflights its judge backend before evaluator
+        resolution ever runs, so this proves the fake seam is required and
+        that the check still fires correctly on the optimize path too."""
+        seed = tmp_path / "seed.txt"
+        seed.write_text("seed")
+
+        rc = main([
+            "optimize", str(seed),
+            "--evaluator-command", "bash", "eval.sh",
+            "--judge-backend", "codex",
+        ])
+        assert rc == 1
+        assert fake_backend_seam.stray_calls == []
+        assert self._MESSAGE in capsys.readouterr().err
+
+
+class TestParseValidationProvider:
+    """R6d: _parse_validation_provider must recognize codex, codex:<model>,
+    claude, and claude:<model> as reserved subscription selectors before
+    treating anything as an ordinary LiteLLM model string, and that
+    recognition must be exact-match-or-prefix-with-colon only -- never a
+    bare substring/startswith check -- so a string like "claude-sonnet-5"
+    or "openai/codex-mini-latest" is never misrouted to a subscription
+    backend it never asked for."""
+
+    @pytest.mark.parametrize(
+        "provider,expected_backend,expected_model",
+        [
+            ("codex", "codex", None),
+            ("codex:gpt-5.6-mini", "codex", "gpt-5.6-mini"),
+            ("claude", "claude", None),
+            ("claude:claude-opus-99", "claude", "claude-opus-99"),
+            ("codex:openai/gpt-5.6-luna", "codex", "openai/gpt-5.6-luna"),
+            ("openai/gpt-5.6-luna", "api", "openai/gpt-5.6-luna"),
+            ("anthropic/claude-sonnet-5", "api", "anthropic/claude-sonnet-5"),
+            ("openai/codex-mini-latest", "api", "openai/codex-mini-latest"),
+            ("claude-sonnet-5", "api", "claude-sonnet-5"),
+        ],
+    )
+    def test_r6d_reserved_selectors_resolve_before_model_strings(
+        self, provider, expected_backend, expected_model,
+    ):
+        """R6d: reserved selectors must parse to their subscription backend
+        (and optional model suffix) while ordinary LiteLLM strings --
+        including adversarial ones that merely contain "codex"/"claude" as
+        a substring -- must parse to the api backend unchanged."""
+        backend, model = _parse_validation_provider(provider)
+        assert backend == expected_backend
+        assert model == expected_model
+
+
+class TestApiBaseFallbackWiring:
+    """R6e: a custom --api-base must reach the real API fallback
+    LiteLLMBackend wrapping a subscription primary, without ever being
+    echoed into the stderr backend-plan log -- the plan is meant to be
+    safe to paste into a bug report, so it must show only whether a
+    custom base was set (a bool), never the base itself."""
+
+    def test_r6e_api_base_reaches_fallback_without_being_logged(
+        self, tmp_path, capsys, monkeypatch,
+    ):
+        """R6e: --api-base combined with a subscription proposer backend
+        and an API fallback model must produce a real FallbackBackend
+        whose fallback LiteLLMBackend carries the exact api_base value,
+        while the printed backend plan exposes only a custom_api_base
+        boolean and never the sentinel URL itself."""
+        import optimize_anything.llm_backends.factory as llm_backend_factory
+
+        seed = tmp_path / "seed.txt"
+        seed.write_text("seed")
+        sentinel = "http://sentinel-api-base.invalid"
+
+        real_create_backend = llm_backend_factory.create_backend
+        built_backends: list = []
+
+        def spy_create_backend(spec, *, role, coordinator=None):
+            # Build the real backend so its structure can be inspected, but
+            # hand the caller a harmless fake so no real preflight/complete
+            # ever runs against Codex, Claude, or litellm.
+            backend = real_create_backend(spec, role=role, coordinator=coordinator)
+            built_backends.append((role, backend))
+            return _FakeSubscriptionBackend(spec.backend, [])
+
+        monkeypatch.setattr(
+            "optimize_anything.llm_backends.factory.create_backend", spy_create_backend,
+        )
+
+        def _tripwire(**kwargs):
+            raise AssertionError("litellm.completion must not be called in this test")
+
+        monkeypatch.setattr("litellm.completion", _tripwire)
+
+        def fake_run_optimize(args, seed_, dataset, valset, intake_spec, backend_state):
+            return 0
+
+        monkeypatch.setattr("optimize_anything.cli_optimize._run_optimize", fake_run_optimize)
+
+        rc = main([
+            "optimize", str(seed),
+            "--proposer-backend", "codex",
+            "--openai-api-fallback-model", "openai/gpt-5.6-fallback",
+            "--api-base", sentinel,
+        ])
+        assert rc == 0
+        assert len(built_backends) == 1
+        role, backend = built_backends[0]
+        assert role == "proposer"
+        assert isinstance(backend, FallbackBackend)
+        assert isinstance(backend.fallback, LiteLLMBackend)
+        assert backend.fallback.api_base == sentinel
+
+        output = capsys.readouterr()
+        assert sentinel not in output.out
+        assert sentinel not in output.err
+        plan_line = next(
+            line for line in output.err.splitlines() if line.startswith("Backend plan:")
+        )
+        plan = json.loads(plan_line[len("Backend plan: "):])
+        assert plan["custom_api_base"] is True
+
+
+class TestHostMarkersNeverInferBackend:
+    """R7a: the runtime must decide which backend to bill against only
+    from explicit CLI flags, never by sniffing which coding assistant's
+    shell it happens to run inside. Ambient markers like CLAUDECODE or
+    CODEX_HOME come from the user's own terminal environment, not this
+    tool's configuration -- inferring from them would silently bill a
+    subscription account whenever this CLI runs inside another agent's
+    shell, with no flag the user could point to as the cause."""
+
+    def _set_host_markers(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CLAUDECODE", "1")
+        monkeypatch.setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
+        monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+        monkeypatch.setenv("CODEX_SANDBOX", "seatbelt")
+
+    def test_r7a_score_ignores_host_markers_without_backend_flags(
+        self, tmp_path, monkeypatch, fake_backend_seam,
+    ):
+        """R7a: score with CLAUDECODE/CODEX_HOME/etc. set but no
+        --judge-backend flag must still resolve the judge role to the api
+        backend -- host markers must never substitute for an explicit
+        backend selection."""
+        self._set_host_markers(monkeypatch, tmp_path)
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "score", str(artifact),
+            "--objective", "Score quality",
+            "--judge-model", "openai/gpt-5.6-luna",
+        ])
+        assert rc == 0
+        assert fake_backend_seam.stray_calls == []
+        assert [spec.backend for spec, _role in fake_backend_seam.calls] == ["api"]
+
+    def test_r7a_analyze_ignores_host_markers_without_backend_flags(
+        self, tmp_path, monkeypatch, fake_backend_seam,
+    ):
+        """R7a: analyze with the same host markers set but no
+        --analysis-backend flag must still resolve to the api backend."""
+        self._set_host_markers(monkeypatch, tmp_path)
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        rc = main([
+            "analyze", str(artifact),
+            "--objective", "x",
+            "--judge-model", "openai/gpt-5.6-luna",
+        ])
+        assert rc == 0
+        assert fake_backend_seam.stray_calls == []
+        assert [spec.backend for spec, _role in fake_backend_seam.calls] == ["api"]
+
+    def test_r7a_optimize_backend_plan_ignores_host_markers(
+        self, tmp_path, capsys, monkeypatch, fake_backend_seam,
+    ):
+        """R7a: optimize's backend plan for both the proposer and judge
+        roles must show "api" when host markers are set but no
+        --proposer-backend/--judge-backend flag was passed -- the plan
+        that gets logged and inspected must reflect only explicit flags,
+        never the environment it happens to run inside."""
+        self._set_host_markers(monkeypatch, tmp_path)
+        seed = tmp_path / "seed.txt"
+        seed.write_text("seed")
+
+        def fake_run_optimize(args, seed_, dataset, valset, intake_spec, backend_state):
+            print(json.dumps({"backend_plan": backend_state.plan}))
+            return 0
+
+        monkeypatch.setattr("optimize_anything.cli_optimize._run_optimize", fake_run_optimize)
+
+        rc = main([
+            "optimize", str(seed),
+            "--model", "openai/gpt-5.6-sol",
+            "--judge-model", "openai/gpt-5.6-luna",
+            "--objective", "x",
+        ])
+        assert rc == 0
+        assert fake_backend_seam.stray_calls == []
+        assert [(role, spec.backend) for spec, role in fake_backend_seam.calls] == [
+            ("proposer", "api"),
+            ("judge", "api"),
+        ]
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["backend_plan"]["proposer"]["backend"] == "api"
+        assert payload["backend_plan"]["judge"]["backend"] == "api"

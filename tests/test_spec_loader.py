@@ -65,6 +65,21 @@ api_fallback_model = "anthropic/claude-sonnet-5"
         assert result["judge_api_fallback"] is True
         assert result["judge_api_fallback_model"] == "anthropic/claude-sonnet-5"
 
+    def test_scalar_table_model_conflict_names_both_keys(self, tmp_path: Path):
+        """R6: a TOML role conflict must identify the scalar and table selectors."""
+        spec_file = tmp_path / "opt.toml"
+        spec_file.write_text(
+            '[model]\nproposer = "openai/gpt-5.6-sol"\n'
+            '[model.proposer]\nbackend = "codex"\n'
+        )
+
+        with pytest.raises(SpecLoadError) as exc_info:
+            load_spec(spec_file)
+
+        message = str(exc_info.value)
+        assert "model.proposer" in message
+        assert "[model.proposer]" in message
+
 
     def test_task_model_parsed_from_optimization_section(self, tmp_path: Path):
         spec_file = tmp_path / "opt.toml"

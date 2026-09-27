@@ -59,6 +59,31 @@ def test_litellm_text_preserves_existing_kwargs_and_provenance() -> None:
         result.text = "changed"  # type: ignore[misc]
 
 
+def test_api_proposer_preserves_chat_messages_and_stable_call_id() -> None:
+    """R4/R5: API proposal messages keep their roles and one completion ID."""
+    from optimize_anything.llm_backends.provenance import completion_event
+
+    calls = []
+    def completion(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+
+    backend = LiteLLMBackend(model="openai/test", completion=completion)
+    messages = [
+        {"role": "system", "content": "Follow rubric"},
+        {"role": "user", "content": "Improve text"},
+    ]
+    request = CompletionRequest(prompt="private prompt", role="proposer", messages=tuple(messages))
+
+    result = backend.complete(request)
+
+    assert calls[0]["messages"] == messages
+    assert calls[0]["num_retries"] == 3
+    assert calls[0]["drop_params"] is True
+    assert "timeout" not in calls[0]
+    assert completion_event(result)["call_id"] == completion_event(result)["call_id"]
+
+
 def test_litellm_schema_is_validated_locally() -> None:
     def completion(**_kwargs):
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"score": "bad"}'))])

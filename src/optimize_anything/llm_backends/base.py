@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Protocol
 
@@ -62,6 +63,7 @@ class CompletionRequest:
     timeout_seconds: float | None = None
     sampling: SamplingOptions | None = None
     system_prompt: str | None = None
+    messages: tuple[Mapping[str, Any], ...] | None = None
     prompt_contract_version: str = "1"
     schema_contract_version: str = "1"
 
@@ -84,6 +86,12 @@ class CompletionRequest:
             raise ConfigurationError("json_mode must be a boolean")
         if self.sampling is not None and not isinstance(self.sampling, SamplingOptions):
             raise ConfigurationError("sampling must be SamplingOptions")
+        if self.messages is not None:
+            if not isinstance(self.messages, (list, tuple)) or not self.messages:
+                raise ConfigurationError("messages must be a non-empty sequence")
+            if any(not isinstance(message, Mapping) for message in self.messages):
+                raise ConfigurationError("each message must be a mapping")
+            object.__setattr__(self, "messages", tuple(_freeze(message) for message in self.messages))
 
 
 @dataclass(frozen=True)
@@ -119,6 +127,7 @@ class CompletionResult:
     retry_count: int = 0
     prompt_contract_version: str = "1"
     schema_contract_version: str = "1"
+    call_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
     def __post_init__(self) -> None:
         if self.structured is not None:
