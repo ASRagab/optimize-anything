@@ -60,7 +60,30 @@ related:
 
 ## Claude
 
-*Pending: Step 9 tests and explicit CLI run*
+**Structured Completion Test**: PASS
+- Requested backend: claude, Actual backend: claude
+- Auth class: subscription, Auth source: claude_subscription
+- Fallback used: false
+
+**Seedless Budget-1 Proposer Test**: PASS
+- Requested backend: claude, Actual backend: claude
+- Auth class: subscription, Auth source: claude_subscription
+- Fallback used: false
+
+**Generated Judge Evaluator Test**: PASS
+- Requested backend: claude, Actual backend: claude
+- Auth class: subscription, Auth source: claude_subscription
+- Fallback used: false
+
+**Explicit CLI Optimize Run**: PASS
+- Command: `optimize --no-seed --objective "Write a concise friendly greeting." --budget 1 --proposer-backend claude --no-api-fallback`
+- Requested backend: claude, Actual backend: claude
+- Auth class: subscription, Auth source: claude_subscription
+- Fallback used: false (retry_count: 0)
+- Wall time: 2.40 seconds
+- Input tokens: 2, Output tokens: 27, Total tokens: 29
+- Run directory: `.maestro/playbooks/Initiation/Working/live-claude/run-20260927-050352`
+- Generated artifact: "Hi there! It's great to see you. I hope your day is going well!"
 
 ## Judge canaries
 
