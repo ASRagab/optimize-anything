@@ -35,6 +35,107 @@ launcher runs the repository project directly, so neither plugin requires a
 separately installed global CLI. The CLI installer does not install either
 plugin.
 
+### Supported versions
+
+| Component | Requirement | Tested (2026-09-26) |
+|---|---|---|
+| `openai-codex` Python SDK | `>=0.156.0,<0.157.0` (the `codex` extra); the adapter refuses any other SDK version | 0.156.0 |
+| Codex CLI | Any CLI that can `codex login` with ChatGPT | 0.155.1 |
+| Claude Code (`claude`) | 2.1.278 or newer, `claude.ai` first-party auth | 2.1.283 |
+| Platform | macOS, local machine only | macOS 26.6.2 arm64, Python 3.12.14 |
+
+Other platforms, hosted runners, and newer SDK releases are untested; the
+adapters fail closed rather than guessing when a required control is missing.
+
+### Experimental Claude scope
+
+Claude subscription support is experimental, opt-in, and local-only. It is not
+supported for hosted services, CI, shared daemons, or any setup where one
+login serves other people. Using a Claude subscription through a third-party
+tool carries a provider-policy risk that is separate from whether it works
+technically; review Anthropic's current terms before relying on it. The
+adapter never starts a login flow, extracts tokens, or reuses a host
+conversation.
+
+### Billing and API fallback
+
+Subscription backends never switch to an API silently. A failure can move a
+role to the same-vendor API only when all of these hold:
+
+- the failure category is `backend_unavailable`, `authentication`,
+  `rate_limit`, or `quota_exceeded`;
+- a same-vendor fallback model is set (`--openai-api-fallback-model` for Codex,
+  `--anthropic-api-fallback-model` for Claude, a role table's
+  `api_fallback_model`, or a same-vendor role model such as `openai/...` for
+  Codex);
+- the matching key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) is present;
+- `--no-api-fallback` (or `api_fallback = false` in the role table) is not set.
+
+`timeout`, `cancelled`, `invalid_response`, and `configuration` failures never
+fall back; they fail the call. Codex only falls back to `openai/` models and
+Claude only to `anthropic/` models.
+
+The first eligible failure opens a sticky circuit for that role (for example
+`proposer` or `judge`) and prints a warning to stderr before the API request is
+dispatched:
+
+```text
+Warning: judge switched from claude to API model anthropic/claude-sonnet-5 after rate_limit; API billing may apply.
+```
+
+The role stays on the API for the rest of the run, including generated
+evaluator child processes; other roles keep their own circuits. Pass
+`--no-api-fallback` to make every subscription failure terminal.
+
+### Data handling
+
+- Each request runs in a new, empty temporary workspace that is deleted
+  afterwards. No repository files, project instructions (`AGENTS.md`,
+  `CLAUDE.md`), or user settings are loaded.
+- Tools are disabled: Codex runs read-only with approvals denied, shell/patch
+  tools off, no MCP servers, and web search disabled; Claude runs with
+  `--tools ""`, an empty strict MCP config, slash commands disabled, and no
+  session persistence.
+- Prompts reach Claude on stdin and Codex through the SDK request body, never
+  as command-line arguments.
+- Each call records content-free provenance: role, requested/actual backend and
+  model, auth class and source (for example `chatgpt`), timing, retry count,
+  token usage, contract versions, and any fallback source and reason. Optimize
+  output includes these as `llm_provenance` alongside `backend_plan`. Account
+  identity, email, prompts, and secrets are never recorded.
+- Cross-process coordination state (provider slots, role circuits, provenance
+  events) lives in a private (`0700`) `optimize-anything-run-*` directory under
+  the system temp dir, is bound to one run ID, and is removed when the run
+  ends.
+
+### Preflight and concurrency
+
+Selected subscription roles are preflighted once before any model request:
+Claude checks version, flags, and auth class; Codex checks SDK version,
+isolation controls, and the saved login. A failed preflight stops the run
+unless an eligible, ready fallback is configured. Then `optimize` prints the
+resolved plan to stderr, for example:
+
+```text
+Backend plan: {"api_fallback": true, "custom_api_base": false, "judge": {"backend": "claude", "model": null}, "proposer": {"backend": "claude", "model": null}, "subscription_concurrency": 1}
+```
+
+`--subscription-concurrency` defaults to `1`, so calls to each subscription
+provider are serialized across the whole run, including evaluator
+subprocesses. Any other value prints a warning such as
+`Warning: codex subscription concurrency set to 2.`
+
+### Disable or remove
+
+- Return to API defaults by omitting `--proposer-backend`, `--judge-backend`,
+  and `--analysis-backend` (or passing `api`), and removing `backend` entries
+  from `[model.proposer]` / `[model.judge]` tables in TOML spec files.
+- Drop the Codex SDK with a plain `uv sync` (without `--extra codex`).
+- Remove the plugins with the `claude plugin uninstall` and
+  `codex plugin remove` commands below. Provider logins belong to the provider
+  CLIs; use `codex logout` or `claude auth logout` if you also want to sign
+  out.
+
 ## Claude Code Plugin
 
 Add the Git marketplace and install:

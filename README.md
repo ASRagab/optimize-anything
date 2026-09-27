@@ -221,6 +221,35 @@ backend = "claude"
 api_fallback_model = "anthropic/claude-sonnet-5"
 ```
 
+Rollout notes (details in [install.md](install.md#optional-local-subscription-backends)):
+
+- **Supported versions:** `openai-codex>=0.156.0,<0.157.0` via
+  `uv sync --extra codex`; Claude Code 2.1.278 or newer; macOS local
+  machines only. Tested 2026-09-26 with openai-codex 0.156.0, Codex CLI
+  0.155.1, and Claude Code 2.1.283 on macOS 26.6.2.
+- **Claude scope:** experimental, opt-in, and local-only. Not supported for
+  hosted services, CI, or shared daemons; subscription use through a
+  third-party tool carries a provider-policy risk separate from technical
+  support.
+- **Billing and fallback:** only `backend_unavailable`, `authentication`,
+  `rate_limit`, and `quota_exceeded` can fall back; `timeout`, `cancelled`,
+  `invalid_response`, and `configuration` never do. Fallback stays with the
+  same vendor, needs its key plus `--openai-api-fallback-model` /
+  `--anthropic-api-fallback-model` (or a same-vendor role model), warns before
+  dispatch, and opens a sticky per-role circuit for the rest of the run.
+- **Data handling:** each call runs in an empty temporary workspace with no
+  repository context, user instructions, tools, or MCP servers; prompts go
+  over stdin or the SDK request body. Output records content-free
+  `llm_provenance` (backend, model, auth class, usage, fallback reason), never
+  account identity or secrets. Coordination state is a private run-scoped temp
+  directory removed when the run ends.
+- **Preflight and concurrency:** subscription roles are preflighted once and
+  `optimize` prints a `Backend plan:` line. `--subscription-concurrency`
+  defaults to `1`; other values print a warning.
+- **Disable or remove:** omit the backend flags and TOML role tables to return
+  to API defaults, run `uv sync` without `--extra codex` to drop the SDK, and
+  use the plugin removal commands in [install.md](install.md).
+
 Opt-in live gates consume local subscription quota:
 
 ```bash
