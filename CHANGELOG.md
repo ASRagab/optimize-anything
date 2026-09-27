@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Subscription-backed LLM backends
+- Added support for Codex and Claude as subscription-backed proposer, judge, analysis, score, and validation roles
+- Integrated optional `codex` extras with secure auth isolation and no API key exposure on host
+- Claude support marked experimental and local-only, with child-process isolation and all tools/MCP disabled
+- Added CLI flags `--proposer-backend`, `--judge-backend`, `--analysis-backend` for per-role backend selection
+- Added `--subscription-concurrency` flag for concurrent subscription requests in parallel mode
+- Added `--no-api-fallback` flag to disable fallback to API-key auth, and `--openai-api-fallback-model` and `--anthropic-api-fallback-model` flags to override fallback model selection
+- Added optional `[optimization.proposer_backend]`, `[optimization.judge_backend]`, and `[optimization.analysis_backend]` TOML role tables for spec defaults
+- Versioned generated evaluator runtime (`evaluator_runtime` field) for backward-compatible schema changes in judge and composite evaluators
+- Run-scoped coordination with same-vendor conservative fallback (Codex falls back to OpenAI, Claude to Anthropic)
+- Provenance field (`llm_provenance`) in evaluation results capturing backend, auth class, and fallback decisions
+- Opt-in live gates for subscription backend verification with no impact on default CI or offline workflows
+- No version bump to pyproject.toml, plugin metadata, or Codex plugin in this release
+
 ## v0.5.1 - 2026-07-28
 
 ### Prompt optimization workflow
