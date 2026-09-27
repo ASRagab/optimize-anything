@@ -110,7 +110,30 @@ related:
 
 ## Negative cases (fakes)
 
-*Pending: Step 5 negative auth tests*
+**API-key/Auth rejection tests:**
+- test_codex_backend.py::test_api_key_auth_is_rejected_before_thread_dispatch - PASS
+  - Expected behavior: API-key auth type rejected before thread dispatch
+  - Result: AuthenticationError raised, no thread created
+- test_claude_backend.py::test_external_schema_ref_is_rejected_before_completion - PASS
+  - Expected behavior: External schema refs blocked before completion
+  - Result: ConfigurationError raised, no process call made
+- test_claude_backend.py::test_external_dynamic_schema_ref_is_rejected_before_completion - PASS
+  - Expected behavior: Dynamic schema refs blocked before completion
+  - Result: ConfigurationError raised, no process call made
+
+**Fallback and invalid result tests:**
+- test_llm_fallback.py::test_no_fallback_for_ambiguous_or_invalid_result[error0] - PASS (Timeout)
+  - Expected behavior: No fallback to API on timeout
+  - Result: Timeout raised, API not called
+- test_llm_fallback.py::test_no_fallback_for_ambiguous_or_invalid_result[error1] - PASS (InvalidResponse)
+  - Expected behavior: No fallback to API on invalid response
+  - Result: InvalidResponse raised, API not called
+
+**Coverage verification:**
+All expected scenarios from plan U4/U5 test lists are covered by existing fake tests:
+- U4: ChatGPT/API-key distinction, structured output validation, timeout cleanup
+- U5: Subscription auth requirement, sentinel scrubbing, timeout termination
+- Fallback: Invalid result handling, timeout blocking, auth error blocking
 
 ## Isolation and leakage assertions
 
