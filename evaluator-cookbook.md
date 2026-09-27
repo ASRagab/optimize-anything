@@ -403,6 +403,39 @@ uv run optimize-anything generate-evaluator seed.txt --objective "maximize clari
 
 Outcome: You get a starter script tailored to your seed and objective. Edit scoring logic to match your real constraints.
 
+### Subscription-backed generated evaluators (versioned runtime)
+
+With the default `--judge-backend api`, `judge` and `composite` scripts stay standalone LiteLLM scripts, as before. With `--judge-backend codex` or `--judge-backend claude`, the generator instead writes a **thin wrapper**: the script holds only a `CONFIG` dict (objective, rubric, dimensions, hard constraints, backend, fallback settings) and calls `optimize_anything.evaluator_runtime.run_generated_evaluator`. Backend dispatch, isolation, and API fallback live in the installed package, so the script needs `optimize-anything` importable in the Python that runs it.
+
+```bash
+# Codex subscription judge
+uv run optimize-anything generate-evaluator seed.txt \
+  --objective "Score clarity" --judge-backend codex > eval.py
+
+# Claude subscription composite evaluator, never fall back to a billed API call
+uv run optimize-anything generate-evaluator seed.txt \
+  --objective "Score clarity" --evaluator-type composite \
+  --judge-backend claude --no-api-fallback > eval.py
+```
+
+The subscription flags `--subscription-concurrency`, `--no-api-fallback`, `--openai-api-fallback-model`, and `--anthropic-api-fallback-model` are baked into `CONFIG`. See [install.md](install.md) for supported versions, fallback rules, and data handling.
+
+**Runtime contract version.** Each wrapper records `EVALUATOR_METADATA = {"min_runtime_contract_version": 1}`, the `RUNTIME_CONTRACT_VERSION` of the generator that wrote it. The installed runtime refuses a script that requires a newer contract than it provides.
+
+**Unchanged:**
+
+- `command` and `http` evaluators, and all deterministic evaluators, remain standalone scripts with no runtime import.
+- The JSON-lines score contract ([§1](#1-evaluator-contract), `PROTOCOL.md` §1.5) is unchanged: one JSON object per input line, `score` required, every other key is side information. Runtime evaluators add an `llm_provenance` side-info key (role, requested/actual backend and model, auth class/source, timing, token usage, and fallback source/reason when a fallback happened). It never contains account identity or secrets.
+
+**Actionable errors.** Runtime failures are returned as a `score: 0.0` line with an `error` key instead of a crash:
+
+| `error` | Cause | Fix |
+|---|---|---|
+| `runtime_unavailable` | `optimize_anything.evaluator_runtime` cannot be imported | Install or upgrade `optimize-anything` in the evaluator's Python |
+| `incompatible_runtime` | Script's `min_runtime_contract_version` is missing, invalid, or newer than the installed runtime | Upgrade `optimize-anything`, or regenerate the evaluator |
+| `runtime_backend_unavailable` | The installed package's backend modules fail to import (partial or broken install) | Reinstall or upgrade `optimize-anything` |
+| `evaluator_failed` | The backend call itself failed with no eligible API fallback (for example, the `codex` extra or the `claude` CLI is missing and `--no-api-fallback` is set) | `uv sync --extra codex`, install Claude Code, or allow API fallback |
+
 ---
 
 ## 8. Evaluator Factories (Python API)
