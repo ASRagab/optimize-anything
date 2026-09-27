@@ -405,36 +405,36 @@ Outcome: You get a starter script tailored to your seed and objective. Edit scor
 
 ### Subscription-backed generated evaluators (versioned runtime)
 
-With the default `--judge-backend api`, `judge` and `composite` scripts stay standalone LiteLLM scripts, as before. With `--judge-backend codex` or `--judge-backend claude`, the generator instead writes a **thin wrapper**: the script holds only a `CONFIG` dict (objective, rubric, dimensions, hard constraints, backend, fallback settings) and calls `optimize_anything.evaluator_runtime.run_generated_evaluator`. Backend dispatch, isolation, and API fallback live in the installed package, so the script needs `optimize-anything` importable in the Python that runs it.
+With the default `--judge-backend api`, `judge` and `composite` scripts stay standalone LiteLLM scripts. With `--judge-backend codex|claude`, the generator writes a **thin wrapper**: a `CONFIG` dict (objective, rubric, backend, fallback settings) plus a call to `optimize_anything.evaluator_runtime.run_generated_evaluator`. Dispatch, isolation, and fallback live in the package, so `optimize-anything` must be importable by the evaluator.
+
+Codex judge, then a Claude composite that never falls back to billed API:
 
 ```bash
-# Codex subscription judge
 uv run optimize-anything generate-evaluator seed.txt \
   --objective "Score clarity" --judge-backend codex > eval.py
 
-# Claude subscription composite evaluator, never fall back to a billed API call
 uv run optimize-anything generate-evaluator seed.txt \
   --objective "Score clarity" --evaluator-type composite \
   --judge-backend claude --no-api-fallback > eval.py
 ```
 
-The subscription flags `--subscription-concurrency`, `--no-api-fallback`, `--openai-api-fallback-model`, and `--anthropic-api-fallback-model` are baked into `CONFIG`. See [install.md](install.md) for supported versions, fallback rules, and data handling.
+Subscription flags (`--subscription-concurrency`, `--no-api-fallback`, `--openai-api-fallback-model`, `--anthropic-api-fallback-model`) are baked into `CONFIG`. See [install.md](install.md) for versions, fallback, and data handling.
 
-**Runtime contract version.** Each wrapper records `EVALUATOR_METADATA = {"min_runtime_contract_version": 1}`, the `RUNTIME_CONTRACT_VERSION` of the generator that wrote it. The installed runtime refuses a script that requires a newer contract than it provides.
+**Contract version.** Each wrapper records `EVALUATOR_METADATA = {"min_runtime_contract_version": 1}` (the generator's `RUNTIME_CONTRACT_VERSION`). The runtime refuses scripts requiring a newer contract.
 
 **Unchanged:**
 
-- `command` and `http` evaluators, and all deterministic evaluators, remain standalone scripts with no runtime import.
-- The JSON-lines score contract ([§1](#1-evaluator-contract), `PROTOCOL.md` §1.5) is unchanged: one JSON object per input line, `score` required, every other key is side information. Runtime evaluators add an `llm_provenance` side-info key (role, requested/actual backend and model, auth class/source, timing, token usage, and fallback source/reason when a fallback happened). It never contains account identity or secrets.
+- `command`, `http`, and deterministic evaluators remain standalone scripts with no runtime import.
+- The JSON-lines score contract ([§1](#1-evaluator-contract), `PROTOCOL.md` §1.5) is unchanged: one JSON object per line, `score` required, other keys are side info. Runtime evaluators add `llm_provenance` (role, requested/actual backend and model, auth class/source, timing, token usage, fallback source/reason). It never contains account identity or secrets.
 
-**Actionable errors.** Runtime failures are returned as a `score: 0.0` line with an `error` key instead of a crash:
+**Actionable errors.** Runtime failures return a `score: 0.0` line with an `error` key instead of crashing:
 
 | `error` | Cause | Fix |
 |---|---|---|
-| `runtime_unavailable` | `optimize_anything.evaluator_runtime` cannot be imported | Install or upgrade `optimize-anything` in the evaluator's Python |
-| `incompatible_runtime` | Script's `min_runtime_contract_version` is missing, invalid, or newer than the installed runtime | Upgrade `optimize-anything`, or regenerate the evaluator |
-| `runtime_backend_unavailable` | The installed package's backend modules fail to import (partial or broken install) | Reinstall or upgrade `optimize-anything` |
-| `evaluator_failed` | The backend call itself failed with no eligible API fallback (for example, the `codex` extra or the `claude` CLI is missing and `--no-api-fallback` is set) | `uv sync --extra codex`, install Claude Code, or allow API fallback |
+| `runtime_unavailable` | `optimize_anything.evaluator_runtime` not importable | Install `optimize-anything` in the evaluator's Python |
+| `incompatible_runtime` | `min_runtime_contract_version` missing, invalid, or newer than installed runtime | Upgrade `optimize-anything` or regenerate |
+| `runtime_backend_unavailable` | Backend modules fail to import (broken install) | Reinstall `optimize-anything` |
+| `evaluator_failed` | Backend call failed with no eligible API fallback (e.g. `codex` extra or `claude` CLI missing with `--no-api-fallback`) | `uv sync --extra codex`, install Claude Code, or allow API fallback |
 
 ---
 
