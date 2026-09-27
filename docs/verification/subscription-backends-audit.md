@@ -333,7 +333,15 @@ Raw outputs saved to `.maestro/playbooks/Initiation/Working/offline-gates/`:
 - `step-4-smoke-harness.txt`: Smoke harness output
 - `step-5-score-check.txt`: Score check output
 
-Step 6 (CLI help and generated-evaluator compilation): Not yet run (Task 4).
+Step 6 (CLI help and generated-evaluator compilation):
+- ✅ All CLI help (`optimize`, `score`, `analyze`, `validate`, `generate-evaluator`) shows backend flags (`--*-backend`, `--subscription-concurrency`, `--no-api-fallback`, fallback model overrides) with no API keys or account identity exposed
+- ✅ Generated evaluators compiled successfully:
+  - `judge --backend api`: contains `from litellm` (R13 violation already noted in Gaps)
+  - `judge --backend codex`: uses `optimize_anything.evaluator_runtime.run_generated_evaluator`
+  - `judge --backend claude`: uses `optimize_anything.evaluator_runtime.run_generated_evaluator`
+  - `command` evaluator: standalone bash with no imports
+- ✅ Subscription-backend judge scripts correctly route through runtime, not direct LiteLLM
+
 Step 7 (secret/prompt leakage assertions): Not yet run (Task 5).
 
 ## Preserved Phase-05 record
