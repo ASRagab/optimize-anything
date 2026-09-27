@@ -312,6 +312,30 @@ grep -n 'shell=' src/optimize_anything/llm_backends/codex_backend.py src/optimiz
   - The prompt, which carries the user schema, goes through `self._run(argv, stdin=prompt_bytes, ...)` (:284-285).
   - This matches `tests/test_claude_backend.py::test_schema_and_user_content_stay_off_argv_and_are_locally_validated`.
 
+## Offline Gate Results
+
+Phase-01 Tasks 3-5 ran the Verification Contract steps 1-7 offline on 2026-09-27. All gates passed with zero failures.
+
+| Step | Command | Exit Code | Result |
+|---|---|---|---|
+| 1 | `uv run pytest tests/test_llm_backend_contract.py tests/test_codex_backend.py tests/test_claude_backend.py tests/test_llm_fallback.py tests/test_llm_coordination.py tests/test_llm_factory.py tests/test_evaluator_runtime.py -v` | 0 | 37 passed in 0.49s |
+| 2 | `uv run pytest -m "not integration"` | 0 | 443 passed, 18 deselected in 9.68s |
+| 3 | `uv run python scripts/check.py --skip-smoke` | 0 | 447 passed, 14 skipped in 17.06s; all gates passed |
+| 4 | `uv run python scripts/smoke_harness.py --budget 1` | 0 | cli=PASS overall=PASS |
+| 5 | `uv run python scripts/score_check.py` | 0 | PASS (3 skill docs checked) |
+
+**Verdict:** Offline contract green: yes (2026-09-27)
+
+Raw outputs saved to `.maestro/playbooks/Initiation/Working/offline-gates/`:
+- `step-1-backend-tests.txt`: Focused backend unit tests
+- `step-2-full-offline-suite.txt`: Full offline test suite output
+- `step-3-check-script.txt`: Check script output (pytest + score checks)
+- `step-4-smoke-harness.txt`: Smoke harness output
+- `step-5-score-check.txt`: Score check output
+
+Step 6 (CLI help and generated-evaluator compilation): Not yet run (Task 4).
+Step 7 (secret/prompt leakage assertions): Not yet run (Task 5).
+
 ## Preserved Phase-05 record
 
 > Phase-05 (CI and Definition of Done) ran before this Phase-01 audit and wrote the sections below into this file. They are kept verbatim, one heading level lower.
