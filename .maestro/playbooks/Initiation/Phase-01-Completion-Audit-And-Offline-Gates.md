@@ -20,7 +20,7 @@ Verify that units U1-U7 of `docs/plans/2026-09-22-1841-feature-subscription-back
   - `uv run python scripts/score_check.py` (step 5)
   - Save raw output under `.maestro/playbooks/Initiation/Working/offline-gates/` (one file per command) and add a "Offline Gate Results" section to `docs/verification/subscription-backends-audit.md` with command, exit code, and the decisive summary line for each. Any failure is a hard stop for this task: record it, do not mark the gate as passing.
 
-- [ ] Run Verification Contract step 6 (CLI help and generated-evaluator compilation/contract checks):
+- [x] Run Verification Contract step 6 (CLI help and generated-evaluator compilation/contract checks):
   - `uv run optimize-anything optimize --help`, `score --help`, `analyze --help`, `validate --help`, `generate-evaluator --help`; confirm each shows its backend flags (`--proposer-backend`, `--judge-backend`, `--analysis-backend`, `--subscription-concurrency`, `--no-api-fallback`, `--openai-api-fallback-model`, `--anthropic-api-fallback-model`) and that `--help` output contains no provider secrets or account identity.
   - Generate one `judge` and one `composite` evaluator via `uv run optimize-anything generate-evaluator` with `--backend codex`, `--backend claude`, and no backend flag; `python -m py_compile` each; assert none contain `import litellm` and each calls `optimize_anything.evaluator_runtime`. Generate one deterministic (command-style) evaluator and confirm it remains standalone (no `evaluator_runtime` import).
   - Record commands and outcomes in the "Offline Gate Results" section.
