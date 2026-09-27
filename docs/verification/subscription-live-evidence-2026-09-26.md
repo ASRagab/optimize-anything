@@ -12,6 +12,35 @@ related:
   - "[[Subscription-Backends-U1-U7-Completion-Audit]]"
 ---
 
+## Verdict
+
+### Gates
+
+| Gate | Result | Notes |
+|------|--------|-------|
+| Codex structured completion | PASS | auth_class=subscription, fallback=false |
+| Codex budget-1 proposer | PASS | auth_class=subscription, fallback=false |
+| Codex generated evaluator | PASS | auth_class=subscription, fallback=false |
+| Claude structured completion | PASS | auth_class=subscription, fallback=false |
+| Claude budget-1 proposer | PASS | auth_class=subscription, fallback=false |
+| Claude generated evaluator | PASS | auth_class=subscription, fallback=false |
+| Codex judge canary | PASS | auth_class=subscription, fallback=false |
+| Claude judge canary | PASS | auth_class=subscription, fallback=false |
+| Leak scan | PASS | No secrets, identity, or leakage in 17 retained files |
+| Negative cases (fakes) | PASS | All 5 expected scenarios pass: auth rejection, timeout, invalid response |
+
+### Required Fields Summary
+
+- **Versions**: uv 0.12.5, Python 3.12.14, openai-codex 0.156.0, codex-cli 0.155.1, claude CLI 2.1.283 (meets minimum 2.1.278)
+- **OS**: macOS 26.6.2 (Build 25G83), Darwin 25.6.0 aarch64
+- **Auth Class**: Codex: subscription (ChatGPT), Claude: subscription (claude_subscription)
+- **Requested/Actual Models**: Codex: gpt-5.6-terra (confirmed in all runs), Claude: claude (confirmed in all runs)
+- **Isolation Assertions**: No secret leakage, no identity leakage, no objective text in cache/coordination state, Claude child process with all tools/MCP disabled, environment variables scrubbed
+
+### Summary
+
+All subscription live gates pass. Both Codex and Claude complete requests using saved subscriptions (ChatGPT and Claude subscription respectively) with no API fallback. No leaked secrets, tokens, account identity, or objectives in retained artifacts or coordination state. Claude child process runs with all tools and MCP disabled, parent environment variables scrubbed, and safe mode enforced.
+
 ## Environment
 
 | Field | Value |
@@ -158,20 +187,3 @@ All expected scenarios from plan U4/U5 test lists are covered by existing fake t
 - Environment scrubbing: `CLAUDECODE`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, paid-auth env vars removed ✓ (`_subscription_env()`, test line 66)
 
 **Assertion confirmed:** No tools, MCP servers, or slash commands available in Claude subscription child process. Paid-auth environment variables scrubbed before execution.
-
-## Verdict
-
-| Gate | Result | Notes |
-|------|--------|-------|
-| Codex structured completion | PASS | auth_class=subscription, fallback=false |
-| Codex budget-1 proposer | PASS | auth_class=subscription, fallback=false |
-| Codex generated evaluator | PASS | auth_class=subscription, fallback=false |
-| Claude structured completion | PASS | auth_class=subscription, fallback=false |
-| Claude budget-1 proposer | PASS | auth_class=subscription, fallback=false |
-| Claude generated evaluator | PASS | auth_class=subscription, fallback=false |
-| Codex judge canary | PASS | auth_class=subscription, fallback=false |
-| Claude judge canary | PASS | auth_class=subscription, fallback=false |
-| Artifact isolation scan | PASS | No secrets, identity, or leakage in 17 retained files |
-| Negative cases (fakes) | PASS | All 5 expected scenarios pass: auth rejection, timeout, invalid response |
-
-**Summary:** All subscription live gates pass. Both Codex and Claude complete requests using saved subscriptions (ChatGPT and Claude subscription respectively) with no API fallback. No leaked secrets, tokens, account identity, or objectives in retained artifacts or coordination state. Claude child process runs with all tools and MCP disabled, parent environment variables scrubbed, and safe mode enforced.
