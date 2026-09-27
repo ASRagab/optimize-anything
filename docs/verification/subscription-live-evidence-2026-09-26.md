@@ -29,7 +29,34 @@ related:
 
 ## Codex
 
-*Pending: Step 8 tests and explicit CLI run*
+**Structured Completion Test**: PASS
+- Requested backend: codex, Actual backend: codex
+- Actual model: gpt-5.6-terra
+- Auth class: subscription, Auth source: chatgpt
+- Fallback used: false
+
+**Seedless Budget-1 Proposer Test**: PASS
+- Requested backend: codex, Actual backend: codex
+- Actual model: gpt-5.6-terra
+- Auth class: subscription, Auth source: chatgpt
+- Fallback used: false
+
+**Generated Judge Evaluator Test**: PASS
+- Requested backend: codex, Actual backend: codex
+- Actual model: gpt-5.6-terra
+- Auth class: subscription, Auth source: chatgpt
+- Fallback used: false
+
+**Explicit CLI Optimize Run**: PASS
+- Command: `optimize --no-seed --objective "Write a concise friendly greeting." --budget 1 --proposer-backend codex --no-api-fallback`
+- Requested backend: codex, Actual backend: codex
+- Actual model: gpt-5.6-terra
+- Auth class: subscription, Auth source: chatgpt
+- Fallback used: false (retry_count: 0)
+- Wall time: 3.75 seconds
+- Input tokens: 6788, Output tokens: 14, Total tokens: 6802
+- Run directory: `.maestro/playbooks/Initiation/Working/live-codex/run-20260927-050159`
+- Generated artifact: "Hello! Nice to meet you."
 
 ## Claude
 

@@ -1,0 +1,58 @@
+{
+  "best_artifact": "Hello! Nice to meet you.",
+  "total_metric_calls": 1,
+  "score_summary": {
+    "initial": 0.2134,
+    "latest": 0.2134,
+    "best": 0.2134,
+    "delta_latest_vs_initial": 0.0,
+    "delta_best_vs_initial": 0.0,
+    "num_candidates": 1
+  },
+  "top_diagnostics": [
+    {
+      "name": "overall_score",
+      "value": 0.2134
+    }
+  ],
+  "plateau_detected": false,
+  "plateau_guidance": "Run more optimization iterations before assessing plateau behavior.",
+  "budget_utilization": {
+    "requested": 1,
+    "evaluator_calls": 1,
+    "candidates_accepted": 1,
+    "efficiency": 1.0
+  },
+  "backend_plan": {
+    "proposer": {
+      "backend": "codex",
+      "model": null
+    },
+    "judge": {
+      "backend": null,
+      "model": null
+    },
+    "api_fallback": false,
+    "subscription_concurrency": 1,
+    "custom_api_base": false
+  },
+  "llm_provenance": [
+    {
+      "actual_backend": "codex",
+      "actual_model": "gpt-5.6-terra",
+      "auth_class": "subscription",
+      "auth_source": "chatgpt",
+      "duration_seconds": 3.7533029159530997,
+      "input_tokens": 6788,
+      "output_tokens": 14,
+      "prompt_contract_version": "1",
+      "requested_backend": "codex",
+      "retry_count": 0,
+      "role": "proposer",
+      "run_id": "eb2f718632d449b1a7b92af988d45b8d",
+      "schema_contract_version": "1",
+      "started_at": "2026-09-27T05:01:59.022777+00:00",
+      "total_tokens": 6802
+    }
+  ]
+}
