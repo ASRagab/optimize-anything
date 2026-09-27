@@ -12,7 +12,7 @@ Verify that units U1-U7 of `docs/plans/2026-09-22-1841-feature-subscription-back
 
 <!-- MAESTRO:MODEL tier="low" effort="low" reason="Running existing test and check commands and recording their output is mechanical. No design judgment is needed until a failure appears, and failures are handled by the fix task below." -->
 
-- [ ] Run Verification Contract steps 1-5 offline and record results:
+- [x] Run Verification Contract steps 1-5 offline and record results:
   - `uv run pytest tests/test_llm_backend_contract.py tests/test_codex_backend.py tests/test_claude_backend.py tests/test_llm_fallback.py tests/test_llm_coordination.py tests/test_llm_factory.py tests/test_evaluator_runtime.py -v` (step 1, focused unit tests)
   - `uv run pytest -m "not integration"` (step 2, full offline suite; note count of passed/skipped/failed)
   - `uv run python scripts/check.py --skip-smoke` (step 3)
