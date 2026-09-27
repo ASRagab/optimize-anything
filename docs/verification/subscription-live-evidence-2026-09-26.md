@@ -137,8 +137,41 @@ All expected scenarios from plan U4/U5 test lists are covered by existing fake t
 
 ## Isolation and leakage assertions
 
-*Pending: Step 7 artifact scan*
+**Artifact scan results:** Scanned 17 files across `Working/live-codex/` (8 files) and `Working/live-claude/` (9 files) for secret/identity leakage.
+
+| Pattern | Hits | Locations | Status |
+|---------|------|-----------|--------|
+| `deliberately-invalid-live-gate` | 0 | - | PASS |
+| `sk-` token prefix | 0 | - | PASS |
+| Email patterns (@) | 0 | - | PASS |
+| `account` word | 0 | - | PASS |
+| Objective text in structured files | 0 | - | PASS |
+| `CLAUDECODE` variable | 0 | - | PASS |
+
+**Claude isolation verification:** Claude child process argv construction verified in `tests/test_claude_backend.py`:
+- `--safe-mode` ✓ (line 273)
+- `--tools ""` (empty tools list) ✓ (line 273)
+- `--disable-slash-commands` ✓ (line 274)
+- `--strict-mcp-config --mcp-config <path>` with `{"mcpServers":{}}` ✓ (lines 268-271, 275)
+- `--no-session-persistence` ✓ (line 276)
+- `--permission-mode dontAsk --permission-prompts none` ✓ (lines 276-277)
+- Environment scrubbing: `CLAUDECODE`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, paid-auth env vars removed ✓ (`_subscription_env()`, test line 66)
+
+**Assertion confirmed:** No tools, MCP servers, or slash commands available in Claude subscription child process. Paid-auth environment variables scrubbed before execution.
 
 ## Verdict
 
-*Pending: All gates*
+| Gate | Result | Notes |
+|------|--------|-------|
+| Codex structured completion | PASS | auth_class=subscription, fallback=false |
+| Codex budget-1 proposer | PASS | auth_class=subscription, fallback=false |
+| Codex generated evaluator | PASS | auth_class=subscription, fallback=false |
+| Claude structured completion | PASS | auth_class=subscription, fallback=false |
+| Claude budget-1 proposer | PASS | auth_class=subscription, fallback=false |
+| Claude generated evaluator | PASS | auth_class=subscription, fallback=false |
+| Codex judge canary | PASS | auth_class=subscription, fallback=false |
+| Claude judge canary | PASS | auth_class=subscription, fallback=false |
+| Artifact isolation scan | PASS | No secrets, identity, or leakage in 17 retained files |
+| Negative cases (fakes) | PASS | All 5 expected scenarios pass: auth rejection, timeout, invalid response |
+
+**Summary:** All subscription live gates pass. Both Codex and Claude complete requests using saved subscriptions (ChatGPT and Claude subscription respectively) with no API fallback. No leaked secrets, tokens, account identity, or objectives in retained artifacts or coordination state. Claude child process runs with all tools and MCP disabled, parent environment variables scrubbed, and safe mode enforced.
