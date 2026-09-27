@@ -33,6 +33,8 @@ This report audits units U1-U7 of `docs/plans/2026-09-22-1841-feature-subscripti
 - `partial`: the behavior is implemented, but an element named in the R-text or in the owning unit's plan test scenarios has no test, or is only partly implemented.
 - `gap`: the behavior is missing, or the code contradicts it.
 
+The requirement matrix and the detailed Gaps list below record the **pre-fix audit**. See "Gap Resolution" for the 2026-09-27 changes. The next offline contract run will refresh the matrix and gate totals.
+
 ## Requirement Matrix
 
 | R-ID | Unit(s) | Implementing symbol(s) | Covering test(s) | Status | Notes |
@@ -252,6 +254,34 @@ Each item lists the missing behavior for one `gap` or `partial` row.
   - The tests exercise only `BackendUnavailable` and `AuthenticationError` as eligible errors; `RateLimitError` and `QuotaExceeded` never appear.
   - The warning-before-dispatch order is not proven. `test_fallback_is_same_vendor_sticky_per_role_and_warns_before_api` reads stderr only after the call returns.
   - Every fallback test injects `fallback_ready=lambda: True` (`tests/test_llm_fallback.py:46`, :63, :73, :84, :98, :126). The real `fallback_ready` (`fallback.py:33-38`) and the not-ready path are never tested, despite the name `test_no_fallback_to_other_vendor_or_without_readiness`.
+
+## Gap Resolution (2026-09-27)
+
+The follow-up tests in `tests/test_claude_backend.py`, `test_cli.py`, `test_codex_backend.py`, `test_llm_coordination.py`, `test_llm_fallback.py`, `test_llm_judge.py`, and `test_prompt_plugin_contract.py` exercise the missing offline scenarios. `uv run pytest -m "not integration" -q -o addopts=''` passed with **542 passed, 18 deselected** after the fixes.
+
+| R-ID | Current result | Fix and evidence |
+|---|---|---|
+| R1, R2 | Closed | Subscription judge, analysis, score, and validation roles have fake-backed CLI and judge tests, including mixed-provider validation. See `test_cli.py::test_r1a_score_uses_selected_subscription_backend`, `::test_r1b_analyze_uses_selected_subscription_backend`, `::test_r2b_validate_mixed_subscription_and_api_providers`, and `test_llm_judge.py::test_r1a_judge_role_uses_backend_structured_output_and_skips_litellm`. |
+| R3 | Closed | Codex symlink/refusal and no-login tests plus Claude logged-out/no-auth-flow tests cover the missing authentication paths. |
+| R4 | Partial; see Deferred | API calls now enter the coordinator event stream; the API proposer uses `BackendLanguageModel` and `LiteLLMBackend`; every `CompletionResult` has a stable call ID; optimize adds `llm_provenance_summary` using `aggregate_provenance`. `test_llm_factory.py::test_api_role_records_provenance_in_shared_run` and `test_cli.py::test_api_proposer_contributes_to_aggregate_run_provenance` prove the path. GEPA's evaluator cache still lacks route-aware keys. |
+| R5 | Covered with regression checks | API proposer model defaults, chat-message roles, retry/drop-parameter defaults, and API-base behavior remain tested after the callable migration. Command and HTTP evaluator templates remain standalone. |
+| R6 | Partial; see Deferred | New CLI tests cover backend flags, CLI-over-TOML precedence, command/HTTP rejection, reserved selectors, and API-base fallback. `test_spec_loader.py::test_scalar_table_model_conflict_names_both_keys` proves the diagnostic now names both selectors. A table cannot override a scalar in one TOML document. |
+| R7 | Closed | Host-scoped command and shared-skill tests cover Codex, Claude, and unknown hosts; CLI tests prove ambient host markers do not select a backend. |
+| R8 | Closed | Codex size-cap, override, and prompt-log tests plus Claude schema-`const` argv and prompt-log tests cover the isolation assertions. |
+| R9 | Closed | Child handoff, capacity warning, and crashed-child tests cover the remaining coordination scenarios. |
+| R10 | Closed | Claude preflight tests cover cloud auth, logged-out state, missing/old CLI, missing flags, and nonzero/error-result mapping. Unsupported safe mode still fails closed at completion because some CLI versions hide that flag from `--help`. |
+| R11 | Closed | Codex tests cover missing SDK extra, missing isolation controls, and structured success. |
+| R12 | Closed | Fallback tests cover cancelled/configuration exclusions, rate/quota eligibility, billing-warning order, and actual vendor-key readiness. `_ELIGIBLE` was unchanged. |
+| R13 | Closed | Every judge/composite backend now emits a versioned `evaluator_runtime` wrapper. The legacy embedded LiteLLM templates were removed. `test_evaluator_generator.py::TestGenerateEvaluatorScript::test_default_is_judge` and `::test_default_api_composite_uses_runtime` cover the default API path; generated scripts retain the JSON-lines and missing-key behavior. The cookbook and CLI help now describe the runtime requirement. |
+
+### Deferred
+
+- **R4, GEPA evaluator cache identity.** `cache_fingerprint` is tested, but GEPA owns the `fitness_cache` key and does not expose an in-repository callback for including each completion's actual route. A fallback can change that route after the evaluator is invoked. Disabling cache reuse for such runs would change existing `--cache` behavior (R5); changing GEPA's key needs an upstream hook or a local integration design. Choose the cache policy before marking R4 fully covered.
+- **R6, table-over-scalar precedence.** TOML rejects a document containing both `model.proposer = "..."` and `[model.proposer]` before normalization. The loader now reports both keys. Supporting an override requires a defined multi-file layering rule or a nonstandard TOML parser; choose that syntax and precedence before marking the U2 scenario fully covered.
+
+### Post-fix source isolation
+
+The source search for `import litellm`, `from litellm`, and `litellm.` now finds only `llm_backends/litellm_backend.py` (credential inspection and completion dispatch). Generated judge/composite wrappers contain no LiteLLM import; command and HTTP templates remain standalone. The hit list below records the **initial** audit that exposed R13.
 
 ### U6 source-isolation check (Phase-01 Task 2)
 

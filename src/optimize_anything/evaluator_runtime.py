@@ -77,6 +77,20 @@ def run_generated_evaluator(
                 })
                 continue
 
+        if config.get("backend", "api") == "api":
+            from optimize_anything.llm_backends.litellm_backend import model_environment
+
+            environment = model_environment(str(config.get("model") or ""))
+            if not environment.get("keys_in_environment"):
+                missing_keys = environment.get("missing_keys", [])
+                required = " or ".join(missing_keys) or "the provider's required credentials"
+                _emit(destination, {
+                    "score": 0.0,
+                    "reasoning": f"Missing API key or model authentication for {config.get('model')}. Set {required}.",
+                    "error": "missing_api_key",
+                })
+                continue
+
         try:
             if backend is None:
                 backend = resolver(config, role="judge")

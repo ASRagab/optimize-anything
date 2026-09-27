@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         "--evaluator-type",
         choices=["judge", "command", "http", "composite"],
         default="judge",
-        help="Script type: 'judge' (Python litellm), 'command' (bash), 'http' (Python server), or 'composite'",
+        help="Script type: 'judge' (Python runtime), 'command' (bash), 'http' (Python server), or 'composite'",
     )
     gen_parser.add_argument(
         "--model",

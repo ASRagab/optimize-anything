@@ -59,11 +59,11 @@ def create_backend(
     coordinator: RunCoordinator | None = None,
 ) -> CompletionBackend:
     """Create one role backend without probing or dispatching it."""
-    if spec.backend == "api":
-        return LiteLLMBackend(model=spec.model, api_base=spec.api_base)
-
     if coordinator is None:
         coordinator = RunCoordinator.from_environment()
+    if spec.backend == "api":
+        api_backend = LiteLLMBackend(model=spec.model, api_base=spec.api_base)
+        return _CoordinatedBackend(api_backend, None, coordinator) if coordinator else api_backend
     if spec.backend == "codex":
         from .codex_backend import CodexSdkBackend
 
@@ -91,7 +91,7 @@ class _CoordinatedBackend:
     """Apply provider slots even when API fallback is disabled."""
 
     backend: CompletionBackend
-    provider: str
+    provider: str | None
     coordinator: RunCoordinator | None
     capabilities: BackendCapabilities = field(init=False)
 
@@ -104,8 +104,11 @@ class _CoordinatedBackend:
     def complete(self, request: CompletionRequest) -> CompletionResult:
         if self.coordinator is None:
             return self.backend.complete(request)
-        with self.coordinator.slot(self.provider, timeout_seconds=request.timeout_seconds):
+        if self.provider is None:
             result = self.backend.complete(request)
+        else:
+            with self.coordinator.slot(self.provider, timeout_seconds=request.timeout_seconds):
+                result = self.backend.complete(request)
         self.coordinator.record_event(completion_event(result))
         return result
 
@@ -118,14 +121,16 @@ class BackendLanguageModel:
         backend: CompletionBackend,
         *,
         model: str | None = None,
-        timeout_seconds: float = 120.0,
+        timeout_seconds: float | None = 120.0,
     ) -> None:
         self.backend = backend
         self.model = model
         self.timeout_seconds = timeout_seconds
 
     def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
+        messages = None
         if not isinstance(prompt, str):
+            messages = tuple(prompt)
             prompt = json.dumps(prompt, ensure_ascii=False)
         return self.backend.complete(
             CompletionRequest(
@@ -133,5 +138,6 @@ class BackendLanguageModel:
                 role="proposer",
                 model=self.model,
                 timeout_seconds=self.timeout_seconds,
+                messages=messages,
             )
         ).text

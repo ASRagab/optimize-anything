@@ -405,7 +405,7 @@ Outcome: You get a starter script tailored to your seed and objective. Edit scor
 
 ### Subscription-backed generated evaluators (versioned runtime)
 
-With the default `--judge-backend api`, `judge` and `composite` scripts stay standalone LiteLLM scripts. With `--judge-backend codex|claude`, the generator writes a **thin wrapper**: a `CONFIG` dict (objective, rubric, backend, fallback settings) plus a call to `optimize_anything.evaluator_runtime.run_generated_evaluator`. Dispatch, isolation, and fallback live in the package, so `optimize-anything` must be importable by the evaluator.
+For every judge backend (`api`, `codex`, or `claude`), `judge` and `composite` scripts use a **thin wrapper**: a `CONFIG` dict (objective, rubric, backend, fallback settings) plus a call to `optimize_anything.evaluator_runtime.run_generated_evaluator`. Dispatch, isolation, and fallback live in the package, so `optimize-anything` must be importable by the evaluator. Command and HTTP evaluators remain standalone.
 
 Codex judge, then a Claude composite that never falls back to billed API:
 

@@ -42,7 +42,9 @@ def generate_evaluator_script(
             quality_dimensions=quality_dimensions,
             dataset=dataset,
         )
-    if resolved_evaluator_type in {"judge", "composite"} and backend != "api":
+    if resolved_evaluator_type in {"judge", "composite"} and backend == "api" and model is None:
+        raise ValueError("API judge evaluators require a model")
+    if resolved_evaluator_type in {"judge", "composite"}:
         return _generate_runtime_evaluator(
             objective,
             evaluator_type=resolved_evaluator_type,
@@ -57,28 +59,6 @@ def generate_evaluator_script(
             api_fallback=api_fallback,
             api_fallback_model=api_fallback_model,
             max_concurrency=max_concurrency,
-        )
-    if model is None:
-        raise ValueError("API judge evaluators require a model")
-    if resolved_evaluator_type == "judge":
-        return _generate_judge_evaluator(
-            seed,
-            objective,
-            template_family=template_family,
-            rubric_summary=rubric_summary,
-            quality_dimensions=quality_dimensions,
-            model=model,
-            dataset=dataset,
-        )
-    if resolved_evaluator_type == "composite":
-        return _generate_composite_evaluator(
-            seed,
-            objective,
-            template_family=template_family,
-            rubric_summary=rubric_summary,
-            quality_dimensions=quality_dimensions,
-            model=model,
-            dataset=dataset,
         )
     return _generate_command_evaluator(
         seed,
@@ -432,228 +412,6 @@ def _generate_http_evaluator(
     """).lstrip()
 
 
-def _generate_judge_evaluator(
-    seed: str,
-    objective: str,
-    *,
-    template_family: str,
-    rubric_summary: str,
-    quality_dimensions: list[tuple[str, float]],
-    model: str,
-    dataset: bool = False,
-) -> str:
-    """Generate a Python LLM-judge evaluator script using litellm."""
-    from optimize_anything.llm_judge import JUDGE_SYSTEM_PROMPT
-
-    return textwrap.dedent(f"""\
-        #!/usr/bin/env python3
-        import json
-        import sys
-        from litellm import completion, validate_environment
-
-        MODEL = {model!r}
-        OBJECTIVE = {objective!r}
-        TEMPLATE_FAMILY = {template_family!r}
-        RUBRIC_SUMMARY = {rubric_summary!r}
-        QUALITY_DIMENSIONS = {quality_dimensions!r}
-        JUDGE_SYSTEM_PROMPT = {JUDGE_SYSTEM_PROMPT!r}
-
-        def _build_prompt(candidate: str, example: object | None) -> str:
-            dimensions_text = "\\n".join([f"- {{name}} (weight={{weight}})" for name, weight in QUALITY_DIMENSIONS])
-            example_text = json.dumps(example, ensure_ascii=False, indent=2) if example is not None else "(none)"
-            return f\"\"\"## Objective\\n{{OBJECTIVE}}\\n\\n## Template Family\\n{{TEMPLATE_FAMILY}}\\n\\n## Rubric Summary\\n{{RUBRIC_SUMMARY}}\\n\\n## Quality Dimensions\\n{{dimensions_text}}\\n\\n## Example Context (optional)\\n{{example_text}}\\n\\n## Artifact to Evaluate\\n```\\n{{candidate}}\\n```\\n\\nReturn JSON with keys: score, reasoning, and one key per quality dimension name. score must be in [0,1].\"\"\"
-
-        def _model_environment() -> dict:
-            return validate_environment(MODEL)
-
-        def _api_key_available() -> bool:
-            return bool(_model_environment().get("keys_in_environment"))
-
-        def _strip_code_fences(text: str) -> str:
-            cleaned = text.strip()
-            if cleaned.startswith("```"):
-                first_newline = cleaned.index("\\n") if "\\n" in cleaned else len(cleaned)
-                cleaned = cleaned[first_newline + 1:]
-                if cleaned.rstrip().endswith("```"):
-                    cleaned = cleaned.rstrip()[:-len("```")].rstrip()
-            return cleaned
-
-        def main() -> int:
-            try:
-                data = json.load(sys.stdin)
-            except json.JSONDecodeError:
-                print(json.dumps({{"score": 0.0, "reasoning": "Input must be valid JSON."}}))
-                return 0
-
-            candidate = str(data.get("candidate", ""))
-            example = data.get("example") if {dataset} else None
-
-            if not _api_key_available():
-                missing_keys = _model_environment().get("missing_keys", [])
-                required = " or ".join(missing_keys) or "the provider's required credentials"
-                print(json.dumps({{
-                    "score": 0.0,
-                    "reasoning": f"Missing API key or model authentication for {{MODEL}}. Set {{required}}.",
-                    "error": "missing_api_key"
-                }}))
-                return 0
-
-            prompt = _build_prompt(candidate, example)
-            try:
-                response = completion(
-                    model=MODEL,
-                    messages=[
-                        {{"role": "system", "content": JUDGE_SYSTEM_PROMPT}},
-                        {{"role": "user", "content": prompt}},
-                    ],
-                    timeout=60.0,
-                    response_format={{"type": "json_object"}},
-                )
-                raw_content = response.choices[0].message.content
-                cleaned_content = _strip_code_fences(raw_content) if raw_content else ""
-                parsed = json.loads(cleaned_content) if cleaned_content else {{}}
-            except Exception as exc:
-                print(json.dumps({{"score": 0.0, "reasoning": f"LLM call failed: {{type(exc).__name__}}: {{exc}}"}}))
-                return 0
-
-            score = parsed.get("score", 0.0)
-            try:
-                score = float(score)
-            except (TypeError, ValueError):
-                score = 0.0
-            score = max(0.0, min(1.0, score))
-
-            result = {{
-                "score": score,
-                "reasoning": str(parsed.get("reasoning", "No reasoning provided.")),
-                "dimension_scores": {{name: parsed.get(name, 0.0) for name, _ in QUALITY_DIMENSIONS}},
-            }}
-            for name, _ in QUALITY_DIMENSIONS:
-                value = parsed.get(name, result["dimension_scores"][name])
-                try:
-                    value = float(value)
-                except (TypeError, ValueError):
-                    value = 0.0
-                result[name] = max(0.0, min(1.0, value))
-
-            print(json.dumps(result))
-            return 0
-
-        if __name__ == "__main__":
-            raise SystemExit(main())
-    """).lstrip()
-
-
-def _generate_composite_evaluator(
-    seed: str,
-    objective: str,
-    *,
-    template_family: str,
-    rubric_summary: str,
-    quality_dimensions: list[tuple[str, float]],
-    model: str,
-    dataset: bool = False,
-) -> str:
-    """Generate composite evaluator with hard constraints + judge scoring."""
-    judge_script = _generate_judge_evaluator(
-        seed,
-        objective,
-        template_family=template_family,
-        rubric_summary=rubric_summary,
-        quality_dimensions=quality_dimensions,
-        model=model,
-        dataset=dataset,
-    )
-    return textwrap.dedent(f"""\
-        #!/usr/bin/env python3
-        import json
-        import re
-        import sys
-
-        # Composite evaluator: hard constraints first, then LLM judge.
-        MODEL = {model!r}
-
-        def _constraint_non_empty(candidate: str) -> tuple[bool, str]:
-            if candidate.strip():
-                return True, ""
-            return False, "candidate must not be empty"
-
-        def _constraint_max_len(candidate: str, max_len: int = 12000) -> tuple[bool, str]:
-            if len(candidate) <= max_len:
-                return True, ""
-            return False, f"candidate exceeds max_len={{max_len}}"
-
-        def _constraint_no_placeholder(candidate: str) -> tuple[bool, str]:
-            if re.search(r"TODO|TBD|\\[FILL\\]", candidate):
-                return False, "candidate contains placeholder tokens"
-            return True, ""
-
-        JUDGE_SCRIPT = {judge_script!r}
-
-        def _strip_code_fences(text: str) -> str:
-            cleaned = text.strip()
-            if cleaned.startswith("```"):
-                first_newline = cleaned.index("\\n") if "\\n" in cleaned else len(cleaned)
-                cleaned = cleaned[first_newline + 1:]
-                if cleaned.rstrip().endswith("```"):
-                    cleaned = cleaned.rstrip()[:-len("```")].rstrip()
-            return cleaned
-
-        def _run_judge(payload: dict[str, object]) -> dict[str, object]:
-            import subprocess
-            proc = subprocess.run(
-                [sys.executable, "-c", JUDGE_SCRIPT],
-                input=json.dumps(payload),
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            if proc.returncode != 0:
-                return {{"score": 0.0, "reasoning": f"judge subprocess failed: {{proc.stderr.strip()}}"}}
-            try:
-                raw_output = proc.stdout.strip()
-                cleaned_output = _strip_code_fences(raw_output) if raw_output else ""
-                return json.loads(cleaned_output or "{{}}")
-            except json.JSONDecodeError:
-                return {{"score": 0.0, "reasoning": "judge returned invalid JSON"}}
-
-        def main() -> int:
-            try:
-                data = json.load(sys.stdin)
-            except json.JSONDecodeError:
-                print(json.dumps({{"score": 0.0, "reasoning": "Input must be valid JSON"}}))
-                return 0
-
-            candidate = str(data.get("candidate", ""))
-            checks = [_constraint_non_empty, _constraint_max_len, _constraint_no_placeholder]
-            failures = []
-            for check in checks:
-                ok, reason = check(candidate)
-                if not ok:
-                    failures.append(reason)
-
-            if failures:
-                print(json.dumps({{
-                    "score": 0.0,
-                    "reasoning": "Hard constraints failed",
-                    "hard_constraint_failures": failures,
-                    "hard_constraints_satisfied": False,
-                }}))
-                return 0
-
-            payload = {{"candidate": candidate}}
-            if {dataset}:
-                payload["example"] = data.get("example")
-            result = _run_judge(payload)
-            result["hard_constraints_satisfied"] = True
-            print(json.dumps(result))
-            return 0
-
-        if __name__ == "__main__":
-            raise SystemExit(main())
-    """).lstrip()
-
-
 def _generate_runtime_evaluator(
     objective: str,
     *,
@@ -670,7 +428,7 @@ def _generate_runtime_evaluator(
     api_fallback_model: str | None,
     max_concurrency: int,
 ) -> str:
-    """Generate a configuration wrapper for a subscription evaluator runtime."""
+    """Generate a configuration wrapper for the installed evaluator runtime."""
     from optimize_anything.evaluator_runtime import RUNTIME_CONTRACT_VERSION
 
     config = {

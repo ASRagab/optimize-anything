@@ -23,6 +23,7 @@ from .base import (
     RateLimitError,
     Timeout,
     Usage,
+    thaw_json,
     validate_capabilities,
 )
 from .schema import strip_code_fences
@@ -155,6 +156,13 @@ def _usage(response: Any) -> Usage | None:
     )
 
 
+def model_environment(model: str) -> dict[str, Any]:
+    """Inspect provider credentials within the LiteLLM adapter boundary."""
+    import litellm
+
+    return litellm.validate_environment(model)
+
+
 class LiteLLMBackend:
     """Preserve LiteLLM model and API-base behavior behind the shared contract."""
 
@@ -187,11 +195,16 @@ class LiteLLMBackend:
             raise ConfigurationError("API model is required")
         if request.output_schema is not None:
             _check_schema(request.output_schema)
-        messages = []
-        if request.system_prompt is not None:
-            messages.append({"role": "system", "content": request.system_prompt})
-        messages.append({"role": "user", "content": request.prompt})
+        if request.messages is not None:
+            messages = thaw_json(request.messages)
+        else:
+            messages = []
+            if request.system_prompt is not None:
+                messages.append({"role": "system", "content": request.system_prompt})
+            messages.append({"role": "user", "content": request.prompt})
         kwargs: dict[str, Any] = {"model": model, "messages": messages}
+        if request.role == "proposer":
+            kwargs.update(num_retries=3, drop_params=True)
         if request.timeout_seconds is not None:
             kwargs["timeout"] = request.timeout_seconds
         if request.output_schema is not None or request.json_mode:
