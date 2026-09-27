@@ -159,7 +159,7 @@ Each item lists the missing behavior for one `gap` or `partial` row.
   - `evaluator-cookbook.md:408` ("With the default `--judge-backend api`, `judge` and `composite` scripts stay standalone LiteLLM scripts");
   - `tests/test_evaluator_generator.py::TestGenerateEvaluatorScript::test_default_is_judge` (:177).
 
-  The plan, the design and this playbook's Task 2 all count the embedded import as an R13 violation, and the plan and design are the source of truth, so they win. Update the cookbook paragraph and `test_default_is_judge` in the same fix.
+  The plan, the design and this playbook's Task 2 all count the embedded import as an R13 violation, and the plan and design are the source of truth, so they win. Update the cookbook paragraph, `test_default_is_judge` and the `--type` help text in `cli.py:224` ("'judge' (Python litellm)") in the same fix.
 - **R5 is preserved by the fix path.** `evaluator_runtime._resolve_backend` (:16-29) already defaults to `backend="api"` and builds a `LiteLLMBackend` through `create_backend`. Routing `api` scripts through the runtime therefore keeps LiteLLM as the transport.
 
 ### R1 / R2 (partial): subscription judge, analysis, score and validation roles are untested offline
@@ -252,6 +252,61 @@ Each item lists the missing behavior for one `gap` or `partial` row.
   - The tests exercise only `BackendUnavailable` and `AuthenticationError` as eligible errors; `RateLimitError` and `QuotaExceeded` never appear.
   - The warning-before-dispatch order is not proven. `test_fallback_is_same_vendor_sticky_per_role_and_warns_before_api` reads stderr only after the call returns.
   - Every fallback test injects `fallback_ready=lambda: True` (`tests/test_llm_fallback.py:46`, :63, :73, :84, :98, :126). The real `fallback_ready` (`fallback.py:33-38`) and the not-ready path are never tested, despite the name `test_no_fallback_to_other_vendor_or_without_readiness`.
+
+### U6 source-isolation check (Phase-01 Task 2)
+
+**Result.**
+
+- **Runtime code: isolation holds.** Every LiteLLM import or call in `src/optimize_anything/` lives in `llm_backends/litellm_backend.py`.
+- **Generated scripts: isolation fails.** The judge and composite template strings emit a LiteLLM import. This is the R13 gap above; the check found no new code gap.
+- **Adapter argv: holds.** Neither `codex_backend.py` nor `claude_backend.py` passes prompt text through argv.
+
+The playbook's two literal patterns (`import litellm`, `litellm.`) do not match `from litellm import ...`. Run alone, they would have reported full isolation. The added `from litellm` and whole-word searches are what found the template violation.
+
+**LiteLLM searches** (run from the repository root):
+
+```bash
+grep -rn --include=*.py 'import litellm' src/optimize_anything
+grep -rnF --include=*.py 'litellm.' src/optimize_anything
+grep -rn --include=*.py 'from litellm' src/optimize_anything
+grep -rnw --include=*.py litellm src/optimize_anything | grep -v 'llm_backends/litellm_backend.py'
+grep -rn --include=*.py -E 'import_module|__import__' src/optimize_anything
+```
+
+| Search | Hit | Classification |
+|---|---|---|
+| `import litellm` | `llm_backends/litellm_backend.py:210` `import litellm` | Allowed: lazy import inside `LiteLLMBackend` |
+| `litellm.` | `llm_backends/litellm_backend.py:211` `completion = litellm.completion` | Allowed |
+| `litellm.` | `evaluator_generator.py:445` (docstring: "...evaluator script using litellm.") | Text only, not code |
+| `from litellm` | `evaluator_generator.py:452` `from litellm import completion, validate_environment` | **R13 violation.** The line sits inside the `textwrap.dedent(f"""...""")` template (:448) that `_generate_judge_evaluator` emits as the generated judge script. `_generate_composite_evaluator` embeds that script as `JUDGE_SCRIPT` (:591) and runs it with `subprocess.run([sys.executable, "-c", JUDGE_SCRIPT])` (:602-605), so composite scripts import LiteLLM at run time too. |
+| whole word `litellm` | `cli.py:121`, `:328`, `:377`, `:407` (`--api-base` help: "Override API base URL for litellm calls") | Help text only, no import |
+| whole word `litellm` | `cli.py:224` (`--type` help: "'judge' (Python litellm)") | Help text that describes the R13-violating behavior; update it with the R13 fix |
+| `import_module\|__import__` | `llm_backends/codex_backend.py:67` `importlib.import_module("openai_codex")` | Not LiteLLM |
+
+The exemption for deterministic templates holds. The command (bash) and HTTP templates and `_generate_runtime_evaluator` (:657) produce no hits; the only generator hits are :445 and :452, both in `_generate_judge_evaluator`.
+
+**Adapter argv searches:**
+
+```bash
+grep -n -E 'subprocess|argv|args =' src/optimize_anything/llm_backends/codex_backend.py src/optimize_anything/llm_backends/claude_backend.py
+grep -n 'shell=' src/optimize_anything/llm_backends/codex_backend.py src/optimize_anything/llm_backends/claude_backend.py
+```
+
+- **`codex_backend.py`: zero hits for both searches.**
+  - The adapter starts no process of its own.
+  - The prompt reaches the SDK as a call argument: `thread.turn(` (:187) on a thread from `client.thread_start(` (:178).
+  - The only configuration passed is the static `_ISOLATION_OVERRIDES` (:38) and the environment in `_client` (:110).
+  - **Boundary:** how `openai-codex` 0.156.0 carries a turn to the Codex runtime is SDK-internal. The SDK is an optional extra and is not installed in this `.venv`, so its transport was not audited.
+- **`claude_backend.py`: one process spawn, no `shell=`.**
+  - `_run_bounded` (:121) calls `subprocess.Popen(argv, ..., stdin=subprocess.PIPE, ...)` (:126-128) with a list argv.
+  - Preflight argv holds constants only: `--version` (:218), `--help` (:222), `auth status` (:228).
+  - The `complete` argv (:272-283) holds:
+    - constant flags;
+    - the path of the temporary `mcp.json`;
+    - the configured `--model` name;
+    - the static `_TRANSPORT_SCHEMA` constant (:40).
+  - The prompt, which carries the user schema, goes through `self._run(argv, stdin=prompt_bytes, ...)` (:284-285).
+  - This matches `tests/test_claude_backend.py::test_schema_and_user_content_stay_off_argv_and_are_locally_validated`.
 
 ## Preserved Phase-05 record
 
