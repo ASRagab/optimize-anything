@@ -97,6 +97,14 @@ apparent task fitness with the built-in prompt-text judge.
   --intake-file "$INTAKE_FILE"
 ```
 
+When running inside Codex or Claude Code, reuse that host's subscription
+explicitly: replace `--judge-model "$JUDGE_MODEL"` with `--analysis-backend`
+(for `analyze`) or `--judge-backend` (for `score` and `optimize`), and replace
+`--model "$PROPOSER_MODEL"` with `--proposer-backend`, using `codex` or
+`claude` for the current host. Unknown hosts keep the API model flags shown.
+Announce possible same-vendor billed API fallback, or add `--no-api-fallback`
+to prohibit it.
+
 Use identical scoring arguments for baseline and candidate. Label every result
 as **prompt-quality evidence**. Never claim that downstream task performance
 improved from fast-mode scores alone.
