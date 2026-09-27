@@ -87,7 +87,26 @@ related:
 
 ## Judge canaries
 
-*Pending: Step 10 canary runs*
+**Codex Judge Canary**: PASS
+- Command: `score examples/seeds/sample_seed.txt --judge-backend codex --no-api-fallback --objective "Score clarity"`
+- Score: 1.0
+- Requested backend: codex, Actual backend: codex
+- Actual model: gpt-5.6-terra
+- Role: score (judge)
+- Auth class: subscription, Auth source: chatgpt
+- Fallback used: false (retry_count: 0)
+- Wall time: 4.15 seconds
+- Input tokens: 6909, Output tokens: 29, Total tokens: 6938
+
+**Claude Judge Canary**: PASS
+- Command: `score examples/seeds/sample_seed.txt --judge-backend claude --no-api-fallback --objective "Score clarity"`
+- Score: 0.8
+- Requested backend: claude, Actual backend: claude
+- Role: score (judge)
+- Auth class: subscription, Auth source: claude_subscription
+- Fallback used: false (retry_count: 0)
+- Wall time: 3.82 seconds
+- Input tokens: 2, Output tokens: 196, Total tokens: 198
 
 ## Negative cases (fakes)
 
