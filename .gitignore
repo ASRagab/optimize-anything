@@ -18,7 +18,9 @@ node_modules/
 
 # miscellaneous files
 seed.txt
-docs/
+docs/*
+# Exception: allow verification evidence to be committed
+!docs/verification/
 smoke_outputs/
 artifacts/
 integration_runs/
@@ -30,3 +32,5 @@ PROMPT.md
 run.log
 ROADMAP*
 runs/
+.codegraph/
+todos/
