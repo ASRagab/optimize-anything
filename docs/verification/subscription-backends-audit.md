@@ -342,7 +342,18 @@ Step 6 (CLI help and generated-evaluator compilation):
   - `command` evaluator: standalone bash with no imports
 - ✅ Subscription-backend judge scripts correctly route through runtime, not direct LiteLLM
 
-Step 7 (secret/prompt leakage assertions): Not yet run (Task 5).
+Step 7 (secret/prompt leakage assertions):
+- ✅ Secret/leakage test suite passes: 3 passed (argv, scrub, prompt checks)
+  - Command: `uv run pytest tests/test_codex_backend.py tests/test_claude_backend.py tests/test_llm_coordination.py tests/test_llm_fallback.py -k "argv or leak or secret or sentinel or scrub or prompt or cache" -v`
+  - Result: 3 passed, 20 deselected
+- ✅ End-to-end leakage scan with fake-backed optimize:
+  - Sentinel value (LEAKSENTINEL-9f3a) set as OPENAI_API_KEY and ANTHROPIC_API_KEY
+  - Objective text ("Make it shorter") used for run
+  - Command: `optimize examples/seeds/sample_seed.txt --objective "Make it shorter" --evaluator-command bash examples/evaluators/echo_score.sh --budget 2 --run-dir .maestro/playbooks/Initiation/Working/leak-scan`
+  - Sentinel hits in run artifacts: 0 (expected)
+  - Objective text hits in caches/keys: 0 (expected)
+  - Run dir contains: seed.txt, best_artifact.txt, summary.json, candidates.json, run_log.* (no secrets retained)
+- ✅ Verification result: **No credential leakage detected in offline gates or caches**
 
 ## Preserved Phase-05 record
 
