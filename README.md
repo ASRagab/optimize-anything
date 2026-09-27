@@ -221,11 +221,15 @@ backend = "claude"
 api_fallback_model = "anthropic/claude-sonnet-5"
 ```
 
-Opt-in live gates consume local subscription quota:
+Opt-in live gates consume local subscription quota. The separate
+`OPTIMIZE_ANYTHING_RUN_PAID_FALLBACK_LIVE` gate bills the OpenAI and Anthropic
+API accounts behind `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`:
 
 ```bash
 OPTIMIZE_ANYTHING_RUN_SUBSCRIPTION_LIVE=1 \
   uv run pytest tests/test_subscription_live.py
+OPTIMIZE_ANYTHING_RUN_PAID_FALLBACK_LIVE=1 \
+  uv run pytest tests/test_api_fallback_live.py
 ```
 
 ## Agent Plugins
