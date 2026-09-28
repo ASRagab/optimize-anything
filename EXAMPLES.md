@@ -1,10 +1,14 @@
 # EXAMPLES
 
-Worked examples for optimize-anything v2.
+Illustrative CLI examples for optimize-anything v2. Replace seed, evaluator,
+and dataset paths with your files. These commands assume the global CLI installer
+from [install.md](install.md); use `uv run optimize-anything` from a source
+checkout. The shown API models can incur provider charges. `--budget` counts
+evaluator calls, not dollars, and an iteration can exceed the requested count.
 
 ## Result JSON shape (current contract)
 
-Optimization output examples should follow this structure:
+An abbreviated optimization output has this structure:
 
 ```json
 {
@@ -165,7 +169,8 @@ optimize-anything optimize strategy.md \
   --evaluator-command bash eval_unbounded.sh \
   --model openai/gpt-5.6-sol \
   --objective "Maximize reward" \
-  --score-range any
+  --score-range any \
+  --budget 20
 ```
 
 Use when your evaluator emits finite scores outside `[0,1]`.

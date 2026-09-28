@@ -1394,7 +1394,7 @@ wheels = [
 
 [[package]]
 name = "optimize-anything"
-version = "0.5.1"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "cloudpickle" },
@@ -1424,7 +1424,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "litellm", specifier = "!=1.82.7,!=1.82.8,>=1.83.0,<1.92" },
-    { name = "openai-codex", marker = "extra == 'codex'", specifier = ">=0.156.0,<0.157.0" },
+    { name = "openai-codex", marker = "extra == 'codex'", specifier = "==0.156.0" },
 ]
 provides-extras = ["codex"]
 

@@ -17,6 +17,12 @@ EXPECTED_RESOURCES = (
     Path("skills/optimize-prompt/scripts/prompt_execution_evaluator.py"),
     Path("scripts/run-optimize-anything"),
 )
+CLI_SUBCOMMANDS = (
+    "optimize", "generate-evaluator", "intake", "explain", "budget", "score", "validate", "analyze"
+)
+GLOBAL_CLI_RE = re.compile(
+    r"(?<!run-)optimize-anything\s+(?:" + "|".join(CLI_SUBCOMMANDS) + r")\b"
+)
 
 
 def _read(path: str | Path) -> str:
@@ -85,14 +91,25 @@ def test_claude_commands_use_the_bundled_launcher():
     offenders = []
     for path in sorted((REPO_ROOT / "commands").glob("*.md")):
         text = path.read_text(encoding="utf-8")
-        global_invocation = re.search(
-            r"(?<!run-)optimize-anything\s+"
-            r"(?:optimize|generate-evaluator|intake|explain|budget|score|validate|analyze)\b",
-            text,
-        )
+        global_invocation = GLOBAL_CLI_RE.search(text)
         if global_invocation or ("optimize-anything" in text and launcher not in text):
             offenders.append(path.name)
     assert not offenders, f"commands bypass bundled launcher: {offenders}"
+
+
+def test_shared_skills_resolve_the_bundled_launcher_for_cli_examples():
+    expected = {path.parent.name for path in SKILL_FILES}
+    skill_dirs = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()}
+    assert skill_dirs == expected
+    for name in expected:
+        skill = _read(f"skills/{name}/SKILL.md")
+        assert re.match(
+            rf"^---\nname: {name}\ndescription: [^\n]+\n(?:  [^\n]+\n)*---\n",
+            skill,
+        )
+        if GLOBAL_CLI_RE.search(skill):
+            pytest.fail(f"{name} assumes a global CLI")
+        assert "scripts/run-optimize-anything" in skill
 
 
 def test_prompt_workflow_documentation_covers_both_hosts_and_evidence_modes():

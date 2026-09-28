@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.6.0 - 2026-09-27
+
+### Plugin and documentation repairs
+- Made shared skills use the bundled runtime in plugin installs, including the compatible Codex SDK extra
+- Fixed the default installer on macOS Bash 3.2 and repaired dataset and LiteLLM evaluator examples
+- Clarified subscription backend prerequisites, API fallback behavior, evaluator generation, and current smoke gates across active guides
+- Aligned Python, Claude Code, and Codex plugin metadata at 0.6.0
+
 ### Subscription-backed LLM backends
 - Added support for Codex and Claude as subscription-backed proposer, judge, analysis, score, and validation roles
 - Integrated optional `codex` extras with secure auth isolation and no API key exposure on host
@@ -14,7 +22,6 @@
 - Run-scoped coordination with same-vendor conservative fallback (Codex falls back to OpenAI, Claude to Anthropic)
 - Provenance field (`llm_provenance`) in evaluation results capturing backend, auth class, and fallback decisions
 - Opt-in live gates for subscription backend verification with no impact on default CI or offline workflows
-- No version bump to pyproject.toml, plugin metadata, or Codex plugin in this release
 
 ## v0.5.1 - 2026-07-28
 

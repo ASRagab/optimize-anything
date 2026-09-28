@@ -66,12 +66,13 @@ User-facing documentation SHALL provide verified Claude Code and Codex installat
 - **AND** does not imply that plugin metadata or skills are installed with the CLI
 
 ### Requirement: Release versions remain aligned
-Release metadata SHALL keep the Python package, Claude plugin, Claude marketplace entry, Codex plugin, and Codex marketplace entry on the same release version.
+Release metadata SHALL keep the Python package, Claude plugin manifest, active Claude marketplace version fields, and Codex plugin manifest on the same release version. The Codex repository marketplace entry identifies the plugin source and has no version field.
 
 #### Scenario: Release contract test runs
 - **WHEN** release metadata tests inspect all package and plugin manifests
-- **THEN** every active version field has the same value
-- **AND** a mismatch fails the test with the differing sources identified
+- **THEN** every active version field in the Python package and plugin manifests has the same value
+- **AND** the Codex marketplace source resolves to the repository plugin root
+- **AND** a version mismatch fails the test with the differing sources identified
 
 ### Requirement: Distribution has offline and optional live verification
 The repository SHALL provide offline contract checks for both plugin packages and SHALL retain optional live host scenarios for confirming skill discovery, runtime launch, inline prompt return, and repository prompt application.

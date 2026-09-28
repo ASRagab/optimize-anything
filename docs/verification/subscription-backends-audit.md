@@ -20,7 +20,7 @@ This report audits units U1-U7 of `docs/plans/2026-09-22-1841-feature-subscripti
 
 - **Initial audited commit:** `0b0a99562e657d173b32c94f1f27062669e7b794` on `feat/codex-claude-subscription`.
   - `src/` is identical to `origin/main` at `70e1fdf2905a1f44b5b447eaa027f5ecfb6dbcef`, because PR #6 merged the backends.
-  - PR #7 is still open: https://github.com/ASRagab/optimize-anything/pull/7
+  - PR #7 was open during the initial audit and merged on 2026-09-27: https://github.com/ASRagab/optimize-anything/pull/7
 - **Post-fix baseline:** `279f022`; the final offline gates below ran on this code before the audit report update.
 - **Live evidence:** Verification Contract steps 8-11 (the opt-in subscription and paid-fallback gates) are recorded in `docs/verification/subscription-live-evidence-2026-09-26.md`.
   - This audit covers code and offline tests only.
