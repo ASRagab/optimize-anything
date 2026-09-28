@@ -96,6 +96,11 @@ The role stays on the API for the rest of the run, including generated
 evaluator child processes; other roles keep their own circuits. Pass
 `--no-api-fallback` to make every subscription failure terminal.
 
+When an evaluator or judge can switch from a subscription backend to API
+fallback, omit `--cache` and `--cache-from`. GEPA's evaluator cache key does
+not include the route actually used for each completion, so a cached score
+could be reused after that route changes.
+
 ### Data handling
 
 - Each request runs in a new, empty temporary workspace that is deleted
