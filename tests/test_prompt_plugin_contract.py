@@ -96,17 +96,15 @@ def test_claude_commands_use_the_bundled_launcher():
 
 
 def test_shared_skills_resolve_the_bundled_launcher_for_cli_examples():
-    expected = {
-        "generate-evaluator",
-        "optimization-guide",
-        "optimize-prompt",
-        "evaluator-patterns",
-    }
+    expected = {path.parent.name for path in SKILL_FILES}
     skill_dirs = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()}
     assert skill_dirs == expected
     for name in expected:
         skill = _read(f"skills/{name}/SKILL.md")
-        assert re.match(rf"^---\nname: {name}\ndescription: .+\n---\n", skill, re.DOTALL)
+        assert re.match(
+            rf"^---\nname: {name}\ndescription: [^\n]+\n(?:  [^\n]+\n)*---\n",
+            skill,
+        )
         if re.search(r"(?<!run-)optimize-anything\s+(?:optimize|generate-evaluator)\b", skill):
             pytest.fail(f"{name} assumes a global CLI")
         if name in {"generate-evaluator", "optimization-guide", "optimize-prompt"}:

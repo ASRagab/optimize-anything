@@ -131,6 +131,6 @@ def test_global_installer_codex_flag_adds_sdk_to_tool_environment(tmp_path: Path
         "install",
         str(REPO_ROOT),
         "--with",
-        "openai-codex==0.156.0",
+        f"openai-codex=={_SDK_VERSION}",
         "--force",
     ]
