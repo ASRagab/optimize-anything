@@ -101,7 +101,8 @@ install_tool() {
     if [ "$CODEX_EXTRA" -eq 1 ]; then
         install_args+=(--with 'openai-codex==0.156.0')
     fi
-    if uv tool install "${INSTALL_SOURCE}" "${install_args[@]}" --force 2>&1; then
+    install_args+=(--force)
+    if uv tool install "${INSTALL_SOURCE}" "${install_args[@]}" 2>&1; then
         info "optimize-anything installed successfully"
     else
         error "Installation failed"

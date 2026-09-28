@@ -7,6 +7,19 @@ description: Complete runnable evaluator templates for prompt, code, documentati
 
 Use this skill to generate evaluator scripts that follow the optimize-anything command evaluator contract.
 
+## Resolve the bundled runtime
+
+Locate this installed `SKILL.md`, then set:
+
+```bash
+EVALUATOR_PATTERNS_SKILL_DIR="/absolute/path/to/skills/evaluator-patterns"
+OPTIMIZE_ANYTHING_ROOT="$(cd "$EVALUATOR_PATTERNS_SKILL_DIR/../.." && pwd)"
+OPTIMIZE_ANYTHING_RUNNER="$OPTIMIZE_ANYTHING_ROOT/scripts/run-optimize-anything"
+```
+
+Use `$OPTIMIZE_ANYTHING_RUNNER` for CLI calls. Run the LiteLLM example with
+the plugin's locked project dependencies as shown below.
+
 ## Evaluator I/O contract (all patterns)
 - Read one JSON object from stdin: `{"candidate": "..."}`
 - Write one JSON object to stdout on a single line: `{"score": <float>, ...diagnostics...}`
@@ -124,7 +137,8 @@ if __name__ == "__main__":
 
 **Test it:**
 ```bash
-echo '{"candidate":"You are a careful coding assistant. Ask one clarifying question if needed, then provide concise steps."}' | python3 eval_prompt.py
+echo '{"candidate":"You are a careful coding assistant. Ask one clarifying question if needed, then provide concise steps."}' | \
+  uv run --project "$OPTIMIZE_ANYTHING_ROOT" --locked --no-dev --extra codex python eval_prompt.py
 ```
 
 ---

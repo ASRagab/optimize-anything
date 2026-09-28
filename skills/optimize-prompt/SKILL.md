@@ -134,7 +134,7 @@ JUDGE_MODEL="$JUDGE_MODEL" "$OPTIMIZE_ANYTHING_RUNNER" optimize "$SEED_FILE" \
   --task-model "$TASK_MODEL" --model "$PROPOSER_MODEL" \
   --budget "$BUDGET" --output "$CANDIDATE_FILE" --diff \
   --run-dir "$RUNS_DIR" --early-stop --evaluator-cwd "$WORK_DIR" \
-  --evaluator-command uv run --project "$OPTIMIZE_ANYTHING_ROOT" --locked \
+  --evaluator-command uv run --project "$OPTIMIZE_ANYTHING_ROOT" --locked --no-dev --extra codex \
   python "$OPTIMIZE_PROMPT_SKILL_DIR/scripts/prompt_execution_evaluator.py"
 ```
 

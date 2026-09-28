@@ -99,11 +99,13 @@ For dataset-aware evaluators:
 ```bash
 "$OPTIMIZE_ANYTHING_RUNNER" generate-evaluator seed.txt \
   --objective "Score correctness" \
-  --dataset examples.jsonl > eval_dataset.py
+  --dataset > eval_dataset.py
 
 echo '{"candidate":"text","example":{"input":"q","expected":"a"}}' | \
   uv run --project "$OPTIMIZE_ANYTHING_ROOT" --locked --no-dev --extra codex python eval_dataset.py
 ```
+
+`generate-evaluator --dataset` selects the dataset-aware template. Pass the JSONL file later to `optimize --dataset examples.jsonl`.
 
 ## Workflow
 1. Clarify artifact + objective + hard constraints.

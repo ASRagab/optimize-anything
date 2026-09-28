@@ -134,3 +134,38 @@ def test_global_installer_codex_flag_adds_sdk_to_tool_environment(tmp_path: Path
         f"openai-codex=={_SDK_VERSION}",
         "--force",
     ]
+
+
+def test_global_installer_without_flags_uses_plain_tool_install(tmp_path: Path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    args_file = tmp_path / "uv-args.txt"
+    _write_fake_uv(
+        bin_dir / "uv",
+        'if [ "$1" = "--version" ]; then echo "uv 0.0.0"; exit 0; fi\n'
+        'printf "%s\\n" "$@" > "$UV_ARGS_FILE"\n',
+    )
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(tmp_path),
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "UV_ARGS_FILE": str(args_file),
+            "OPTIMIZE_ANYTHING_REPO": str(REPO_ROOT),
+        }
+    )
+
+    result = subprocess.run(
+        ["/bin/bash", str(INSTALLER)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert args_file.read_text(encoding="utf-8").splitlines() == [
+        "tool",
+        "install",
+        str(REPO_ROOT),
+        "--force",
+    ]
