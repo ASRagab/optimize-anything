@@ -95,6 +95,24 @@ def test_claude_commands_use_the_bundled_launcher():
     assert not offenders, f"commands bypass bundled launcher: {offenders}"
 
 
+def test_shared_skills_resolve_the_bundled_launcher_for_cli_examples():
+    expected = {
+        "generate-evaluator",
+        "optimization-guide",
+        "optimize-prompt",
+        "evaluator-patterns",
+    }
+    skill_dirs = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()}
+    assert skill_dirs == expected
+    for name in expected:
+        skill = _read(f"skills/{name}/SKILL.md")
+        assert re.match(rf"^---\nname: {name}\ndescription: .+\n---\n", skill, re.DOTALL)
+        if re.search(r"(?<!run-)optimize-anything\s+(?:optimize|generate-evaluator)\b", skill):
+            pytest.fail(f"{name} assumes a global CLI")
+        if name in {"generate-evaluator", "optimization-guide", "optimize-prompt"}:
+            assert "scripts/run-optimize-anything" in skill
+
+
 def test_prompt_workflow_documentation_covers_both_hosts_and_evidence_modes():
     docs = "\n".join(_read(path) for path in ("README.md", "install.md", "SKILL.md"))
     normalized_docs = docs.lower()

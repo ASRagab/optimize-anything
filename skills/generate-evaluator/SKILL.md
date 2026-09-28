@@ -9,6 +9,22 @@ description: >-
 ## Objective
 Generate an evaluator that scores candidate artifacts for optimization with gepa. Include diagnostic feedback so reflections can improve weak dimensions.
 
+## Resolve the bundled runtime
+
+Locate this `SKILL.md` in the installed plugin, then set:
+
+```bash
+GENERATE_EVALUATOR_SKILL_DIR="/absolute/path/to/skills/generate-evaluator"
+OPTIMIZE_ANYTHING_ROOT="$(cd "$GENERATE_EVALUATOR_SKILL_DIR/../.." && pwd)"
+OPTIMIZE_ANYTHING_RUNNER="$OPTIMIZE_ANYTHING_ROOT/scripts/run-optimize-anything"
+```
+
+Use `$OPTIMIZE_ANYTHING_RUNNER` for every CLI call. The plugin does not require a
+global `optimize-anything` command. For Codex subscription judging, run
+`codex login` first; the launcher installs the locked `codex` SDK extra. In a
+source checkout use `uv sync --extra codex`; a global CLI needs the SDK in its
+tool environment. Use `--no-api-fallback` to prevent billed API fallback.
+
 ## Evaluator Contract
 - Input JSON on stdin (`--evaluator-command`) or HTTP POST body (`--evaluator-url`)
 - Default payload: `{"candidate": "<text>"}`
@@ -63,12 +79,13 @@ Generate a judge evaluator and test it:
 
 ```bash
 # Generate
-optimize-anything generate-evaluator seed.txt \
+"$OPTIMIZE_ANYTHING_RUNNER" generate-evaluator seed.txt \
   --objective "Score clarity and specificity" \
   --model openai/gpt-5.6-luna > eval_judge.py
 
 # Test it
-echo '{"candidate":"Your artifact text here"}' | python3 eval_judge.py
+echo '{"candidate":"Your artifact text here"}' | \
+  uv run --project "$OPTIMIZE_ANYTHING_ROOT" --locked --no-dev --extra codex python eval_judge.py
 ```
 
 This returns JSON like:
@@ -80,11 +97,12 @@ This returns JSON like:
 For dataset-aware evaluators:
 
 ```bash
-optimize-anything generate-evaluator seed.txt \
+"$OPTIMIZE_ANYTHING_RUNNER" generate-evaluator seed.txt \
   --objective "Score correctness" \
   --dataset examples.jsonl > eval_dataset.py
 
-echo '{"candidate":"text","example":{"input":"q","expected":"a"}}' | python3 eval_dataset.py
+echo '{"candidate":"text","example":{"input":"q","expected":"a"}}' | \
+  uv run --project "$OPTIMIZE_ANYTHING_ROOT" --locked --no-dev --extra codex python eval_dataset.py
 ```
 
 ## Workflow

@@ -2,15 +2,23 @@
 
 ## Optional local subscription backends
 
-The default install keeps LiteLLM/API behavior. To reuse a Codex login made
-through ChatGPT, install the pinned optional SDK and log in with the provider's
-CLI:
+The plugin launcher selects the locked `codex` SDK extra automatically. To
+reuse a Codex login made through ChatGPT, authenticate with the provider CLI:
 
 ```bash
-uv sync --extra codex
 codex login
 codex login status
 ```
+
+For a source checkout, install the optional SDK in that project environment:
+
+```bash
+uv sync --extra codex
+```
+
+For a global CLI install, pass `--codex` to `install.sh`; this installs SDK
+version 0.156.0 required by the adapter in the isolated uv tool environment.
+The default global install keeps LiteLLM/API behavior.
 
 Claude subscription support uses the locally installed `claude` executable;
 install Claude Code and run `claude auth login`. The adapter requires Claude
@@ -26,20 +34,21 @@ Choose the host integration or standalone runtime you need:
 | Method | Skills | Slash commands | Runtime | Prerequisites |
 |---|---|---|---|---|
 | **Claude Code plugin** | Yes | Yes | Bundled, locked project | uv, Python >= 3.10 |
-| **Codex plugin** | Yes | No | Bundled, locked project | uv, Python >= 3.10 |
+| **Codex plugin** | Yes | No | Bundled, locked project with `codex` extra | uv, Python >= 3.10; `codex login` for subscription use |
 | **CLI installer** | No | No | Global `optimize-anything` | None; installer adds uv |
 | **From source** | Local checkout | No | `uv run` | uv, Python >= 3.10 |
 
 The Claude Code plugin and Codex plugin discover the same `skills/` tree. Their
-launcher runs the repository project directly, so neither plugin requires a
-separately installed global CLI. The CLI installer does not install either
-plugin.
+launcher runs the repository project with the locked `codex` extra, so neither
+plugin requires a separately installed global CLI. Generated evaluator child
+processes use that same project environment. The CLI installer does not install
+either plugin.
 
 ### Supported versions
 
 | Component | Requirement | Tested (2026-09-26) |
 |---|---|---|
-| `openai-codex` Python SDK | `>=0.156.0,<0.157.0` (the `codex` extra); the adapter refuses any other SDK version | 0.156.0 |
+| `openai-codex` Python SDK | Exactly 0.156.0 (the `codex` extra and adapter) | 0.156.0 |
 | Codex CLI | Any CLI that can `codex login` with ChatGPT | 0.155.1 |
 | Claude Code (`claude`) | 2.1.278 or newer, `claude.ai` first-party auth | 2.1.283 |
 | Platform | macOS, local machine only | macOS 26.6.2 arm64, Python 3.12.14 |
@@ -130,7 +139,8 @@ subprocesses. Any other value prints a warning such as
 - Return to API defaults by omitting `--proposer-backend`, `--judge-backend`,
   and `--analysis-backend` (or passing `api`), and removing `backend` entries
   from `[model.proposer]` / `[model.judge]` tables in TOML spec files.
-- Drop the Codex SDK with a plain `uv sync` (without `--extra codex`).
+- In a source checkout, drop the Codex SDK with a plain `uv sync` (without
+  `--extra codex`). The plugin launcher reinstalls it on the next invocation.
 - Remove the plugins with the `claude plugin uninstall` and
   `codex plugin remove` commands below. Provider logins belong to the provider
   CLIs; use `codex logout` or `claude auth logout` if you also want to sign
@@ -181,7 +191,10 @@ codex plugin add optimize-anything@optimize-anything
 
 Start a new Codex thread, then invoke `$optimize-anything:optimize-prompt`.
 Codex namespaces plugin skills and discovers the canonical `skills/` tree
-through `.codex-plugin/plugin.json`.
+through `.codex-plugin/plugin.json`. The launcher installs the locked Codex SDK
+extra on first use. Run `codex login` before choosing a Codex subscription
+backend. Use `--no-api-fallback` to make missing auth or SDK failures terminal
+without a billed API request.
 
 Update the Git marketplace and reinstall the plugin, or remove it:
 
@@ -206,6 +219,13 @@ optimize-anything --help
 The installer places the command in `~/.local/bin/`. If that directory is not
 on `PATH`, add it in the shell that will run the CLI.
 
+To include Codex subscription support in the CLI tool environment:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash -s -- --codex
+codex login
+```
+
 Remove it with:
 
 ```bash
@@ -224,7 +244,7 @@ uv run optimize-anything --help
 
 The plugin-equivalent launcher is available at
 `scripts/run-optimize-anything`. It resolves this checkout, verifies the
-prerequisites, and runs `uv run --project <checkout> --locked`.
+prerequisites, and runs `uv run --project <checkout> --locked --no-dev --extra codex`.
 
 ## Verify Prompt Optimization
 
@@ -251,6 +271,8 @@ controls; see the prompt workflow in [README.md](README.md).
 |---|---|---|
 | `uv: command not found` | Plugin runtime prerequisite missing | Install uv from https://docs.astral.sh/uv/ |
 | `Python 3.10 or newer is required` | No supported interpreter is available | Run `uv python install 3.10` |
+| `Install the Codex backend` or `Codex SDK 0.156.0 is required` | Source or global CLI lacks the Codex extra, or has the wrong SDK version | Run `uv sync --extra codex` from source or reinstall the global CLI with `install.sh --codex` |
+| Codex authentication failure | No usable ChatGPT login is saved | Run `codex login`, then `codex login status`; add `--no-api-fallback` when API billing is not acceptable |
 | Model credential error | Selected proposer, task, or judge model is not authenticated | Export that provider's credential before launching the host |
 | Skill is not visible | Host loaded the prior plugin snapshot | Reinstall/update, then start a new thread or session |
 | Evaluator command fails | Script path or working directory is wrong | Set `--evaluator-cwd` and run the evaluator preflight payload manually |

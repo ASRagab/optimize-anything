@@ -3,6 +3,8 @@
 #
 # Install:
 #   curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
+# Codex subscription support:
+#   curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash -s -- --codex
 #
 # Uninstall:
 #   curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash -s -- --uninstall
@@ -15,12 +17,15 @@
 # Environment variables:
 #   OPTIMIZE_ANYTHING_REPO  - Git URL or local path to install from (default: GitHub repo)
 #   OPTIMIZE_ANYTHING_REF   - Git ref to install (default: main)
+#
+# --codex installs the pinned Codex SDK in the isolated tool environment.
 
 set -euo pipefail
 
 # --- Configuration ---
 REPO="${OPTIMIZE_ANYTHING_REPO:-git+https://github.com/ASRagab/optimize-anything}"
 REF="${OPTIMIZE_ANYTHING_REF:-main}"
+CODEX_EXTRA=0
 
 # Local paths don't use @ref syntax
 if [[ "${REPO}" == /* ]] || [[ "${REPO}" == ./* ]]; then
@@ -92,14 +97,18 @@ install_uv() {
 install_tool() {
     info "Installing optimize-anything from ${INSTALL_SOURCE}..."
 
-    if uv tool install "${INSTALL_SOURCE}" --force 2>&1; then
+    local install_args=()
+    if [ "$CODEX_EXTRA" -eq 1 ]; then
+        install_args+=(--with 'openai-codex==0.156.0')
+    fi
+    if uv tool install "${INSTALL_SOURCE}" "${install_args[@]}" --force 2>&1; then
         info "optimize-anything installed successfully"
     else
         error "Installation failed"
         echo ""
         echo "Troubleshooting:"
         echo "  - Check the repo URL: ${REPO}"
-        echo "  - Try installing manually: uv tool install '${INSTALL_SOURCE}'"
+        echo "  - Try installing manually: uv tool install '${INSTALL_SOURCE}' ${install_args[*]}"
         echo "  - For local installs: uv tool install /path/to/optimize-anything"
         exit 1
     fi
@@ -134,11 +143,16 @@ verify() {
 
 # --- Main ---
 main() {
-    # Check for --uninstall flag
+    # Check for --uninstall and optional Codex support.
     for arg in "$@"; do
         if [ "$arg" = "--uninstall" ] || [ "$arg" = "uninstall" ]; then
             uninstall
             exit 0
+        elif [ "$arg" = "--codex" ]; then
+            CODEX_EXTRA=1
+        else
+            error "Unknown option: $arg"
+            exit 2
         fi
     done
 

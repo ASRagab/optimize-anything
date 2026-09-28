@@ -13,4 +13,4 @@ if ! uv python find '>=3.10' >/dev/null 2>&1; then
   exit 1
 fi
 
-exec uv run --project "$OPTIMIZE_ANYTHING_PLUGIN_ROOT" --locked optimize-anything "$@"
+exec uv run --project "$OPTIMIZE_ANYTHING_PLUGIN_ROOT" --locked --no-dev --extra codex optimize-anything "$@"

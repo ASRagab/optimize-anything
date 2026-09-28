@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-codex = ["openai-codex>=0.156.0,<0.157.0"]
+codex = ["openai-codex==0.156.0"]
 
 [project.urls]
 Homepage = "https://github.com/ASRagab/optimize-anything"
