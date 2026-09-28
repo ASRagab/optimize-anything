@@ -6,6 +6,7 @@
 
 ### Plugin and documentation repairs
 - Made shared skills use the bundled runtime in plugin installs, including the compatible Codex SDK extra
+- Fixed the default installer on macOS Bash 3.2 and repaired dataset and LiteLLM evaluator examples
 - Clarified subscription backend prerequisites, API fallback behavior, evaluator generation, and current smoke gates across active guides
 - Aligned Python, Claude Code, and Codex plugin metadata at 0.6.0
 

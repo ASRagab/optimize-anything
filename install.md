@@ -55,6 +55,10 @@ either plugin.
 
 Other platforms, hosted runners, and newer SDK releases are untested; the
 adapters fail closed rather than guessing when a required control is missing.
+The plugin launcher always selects the Codex SDK extra. On a platform without
+a compatible Codex binary wheel, plugin commands cannot start, including API-only
+commands. For API-only use there, install the global CLI without `--codex` or
+run from source without the `codex` extra.
 
 ### Experimental Claude scope
 
