@@ -6,7 +6,12 @@ Step-by-step v2 workflow for optimize-anything.
 
 - Python 3.10+
 - `uv`
-- API key(s) for any LLM providers you plan to use
+- API key(s) for the models in this walkthrough
+
+These commands use API models and can incur provider charges. `--budget` limits
+evaluator calls approximately, not dollars; GEPA may finish an iteration after
+the limit is reached. For local subscription backends and billed fallback
+controls, see [install.md](install.md).
 
 ## Step 1: Install
 
@@ -49,8 +54,8 @@ chmod +x evaluators/eval.sh
 ## Step 4: Test evaluator contract
 
 ```bash
-echo '{"_protocol_version":2,"candidate":"test"}' | python evaluators/eval.py
-# expected: JSON with required "score"
+echo '{"_protocol_version":2,"candidate":"test"}' | uv run python evaluators/eval.py
+# expected: JSON with required "score"; the default judge makes an API call
 ```
 
 ## Step 5: Baseline score

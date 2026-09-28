@@ -19,7 +19,8 @@ node_modules/
 # miscellaneous files
 seed.txt
 docs/*
-# Exception: allow verification evidence to be committed
+# Exceptions: track active smoke instructions and verification evidence
+!docs/smoke-gates.md
 !docs/verification/
 smoke_outputs/
 artifacts/
@@ -34,3 +35,5 @@ ROADMAP*
 runs/
 .codegraph/
 todos/
+.maestro
+.cursor/

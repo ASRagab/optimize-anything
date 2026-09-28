@@ -2,6 +2,13 @@
 
 An evaluator is a function that **scores a candidate artifact**. `optimize-anything` supports three types: **shell commands**, **HTTP endpoints**, and **LLM judges**.
 
+Commands below run from a source checkout with `uv run`. Optimization examples
+use the default API proposer unless `--proposer-backend` is set; this and API
+judges can incur provider charges. `--budget` counts evaluator calls, not
+dollars, and an iteration can exceed the requested count. See
+[install.md](install.md) for local subscription backends and billed fallback
+controls.
+
 ---
 
 ## 1. Evaluator Contract
@@ -159,7 +166,8 @@ if __name__ == "__main__":
 **Run it:**
 ```bash
 python3 evaluators/json_validator.py                     # Terminal 1
-uv run optimize-anything optimize seed.json \            # Terminal 2
+# Terminal 2
+uv run optimize-anything optimize seed.json \
   --evaluator-url "http://localhost:3456" \
   --objective "Generate a valid package.json" --budget 10
 ```
@@ -536,7 +544,7 @@ Outcome: The optimizer always receives a valid score, even when your evaluator e
 1. **Start simple.** Create a minimal evaluator that returns a constant score first to verify JSON I/O works, then add real logic incrementally.
 2. **Always return rich diagnostics.** Include sub-scores (`length`, `violations`), booleans (`hasIntro`), and `improvementSuggestions`. This produces more targeted mutations because gepa's reflection LM uses these fields to guide the next proposal.
 3. **Test evaluators independently** before plugging into optimize-anything. Run `echo '{"candidate":"test"}' | bash evaluators/your-evaluator.sh` to verify JSON parsing and catch logic errors early.
-4. **Set `--budget`** to cap evaluator calls. You should never run without a budget — this prevents unexpectedly long or expensive runs.
+4. **Set `--budget`** to limit evaluator calls. It is not a dollar cap, and GEPA may finish an iteration after the limit is reached. Choose a small initial budget and monitor provider usage.
 5. **Favor determinism.** Avoid random seeds and time-based behavior — same input must produce same score for reproducible, debuggable runs.
 6. **Use `--score-range any` intentionally.** The default `unit` range catches accidental out-of-bounds scores. Only switch to `any` when your metric genuinely lives outside `[0,1]`.
 7. **Read `example` defensively.** Always guard `example = payload.get("example", {})` — the field is absent when not in dataset mode. Your evaluator must handle both cases.
