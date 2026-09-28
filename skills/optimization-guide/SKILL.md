@@ -150,7 +150,7 @@ For cache reuse across runs, copy prior disk cache entries into a new run direct
 Notes:
 1. `--cache-from` requires `--cache` and `--run-dir`.
 2. It copies `fitness_cache/` from the prior run before optimization.
-3. GEPA 0.1.4 can migrate older state forward; rollback to 0.1.1 may not load it.
+3. GEPA 0.1.4 can migrate older state forward; rollback to GEPA 0.1.1 may not load it.
 
 ### 7. Interpret Results
 
