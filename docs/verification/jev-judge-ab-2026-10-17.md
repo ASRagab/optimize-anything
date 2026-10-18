@@ -75,3 +75,40 @@ The independent LLM judge also prefers the winner, with every dimension at 0.87 
 ## Limits
 
 One seed, one objective, rubrics written by the same author as the test. This does not show that levels help on other artifact types.
+
+# Phase 4: harder rubric top levels
+
+Each dimension got one new level above its old top, written from a general standard (near-exhaustive coverage, with examples and named triggers) and not from the test artifacts. The old levels are unchanged. `specificity` and `edge_case_handling` now have 5 levels, `success_criteria` has 4. Jev with the v2 rubric was re-run against the same artifacts. Jev generic and LLM judge columns are the Phase 2 numbers (same inputs, not re-run for the table).
+
+| Artifact | Jev + levels (v1) | Jev + levels (v2) | Jev generic | LLM judge |
+|---|---|---|---|---|
+| bad | 0.039 | 0.028 (0.002) | 0.019 | 0.011 |
+| seed | 0.025 | 0.014 (0.003) | 0.023 | 0.056 |
+| mid | 0.844 | 0.617 (0.001) | 0.670 | 0.703 |
+| strong | 0.994 | 0.819 (0.005) | 0.907 | 0.807 |
+
+- **Ceiling moved.** The strong prompt dropped from 0.994 to 0.819, below the generic scale (0.907) and close to the LLM judge (0.807).
+- Mid-to-strong gap: 0.202 with v2, against 0.150 with v1.
+- Ranking is unchanged: bad and seed below mid, mid below strong. Spread stayed at most 0.005.
+- Per dimension, the strong prompt still scores 0.98 on `success_criteria` (its top level is only a bit harder than before) and 0.75 to 0.78 on the other two.
+
+## Optimize run with the v2 rubric
+
+`optimize --jev-model jev-latest --intake-file intake_v2.json --budget 5` finished in 28 s. Mean of 3 re-scores:
+
+| Artifact | Jev (v2) | LLM judge |
+|---|---|---|
+| seed | 0.013 | 0.062 |
+| winner (v2 run) | 0.750 | 0.896 |
+| winner (v1 run) | 0.727 | 0.876 |
+| strong (hand-written) | 0.819 | 0.831 |
+
+## What got worse or needs care
+
+- **The judges now disagree on the winners.** Jev v2 ranks the hand-written domain prompt (0.819) above both optimizer winners (0.750, 0.727). The LLM judge ranks both winners above it (0.896, 0.876 vs 0.831). Both winners are generic-assistant prompts, which the rubric dimensions do not reward as much as a domain-specific one.
+- The v2 winner is 562 words, against 325 words for the v1 winner. The proposer appears to add length when the top levels ask for more coverage. This is one run and not a measured trend.
+- Lower scores leave more room, but a single budget-5 run improved the seed to 0.750 and not past the hand-written prompt, so the loop did not close the gap in that budget.
+
+## Limits
+
+One seed, one objective, rubrics written by the same author as the test. The new top levels were not tuned to the artifacts, but they were written after seeing that the strong prompt saturated, so they are not independent of it.
