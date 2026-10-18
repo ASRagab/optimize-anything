@@ -301,3 +301,10 @@ def test_readme_intake_example_normalizes():
     match = re.search(r"--intake-json '(\{.*?\})'", readme)
     assert match is not None, "README intake example not found"
     normalize_intake_spec(json.loads(match.group(1)))
+
+
+def test_levels_evidence_note_exists_and_is_cited_by_the_docs():
+    note = "docs/verification/jev-judge-ab-2026-10-17.md"
+    assert (REPO_ROOT / note).is_file(), f"{note} is cited by the docs but missing"
+    for path in (Path("README.md"), Path("commands/intake.md"), Path("skills/optimization-guide/SKILL.md")):
+        assert note in _read_text(path), f"{path} makes the levels claim without citing {note}"
