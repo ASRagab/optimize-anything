@@ -45,6 +45,7 @@ Present these options and ask the user to choose one unless they already specifi
   3. Ask: **"Should we use LLM judge directly, or do you want a custom evaluator?"**
   4. If custom evaluator is needed, invoke evaluator generation workflow.
   5. If LLM judge is acceptable, use `--judge-backend claude` in optimize (subscription mode) or `--judge-model` (API mode).
+  6. If the user wants fast, repeatable scoring and has `TYPESAFE_API_KEY`, offer `--jev-model jev-latest` instead of the LLM judge. Jev only scores; `--model` or `--proposer-backend` still picks the proposer. Do not combine it with `--judge-model`, `--judge-backend`, or another evaluator source.
 
 ## Step 4: Build and run the optimize command
 Construct the command from selected mode and user inputs.

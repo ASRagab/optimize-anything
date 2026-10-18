@@ -226,3 +226,78 @@ class TestPluginManifest:
         assert expected.issubset(skill_dirs), (
             f"Missing skill directories: {expected - skill_dirs}"
         )
+
+
+# --- Jev evaluator surface -------------------------------------------------
+
+JEV_DOCS = (
+    Path("README.md"),
+    Path("CLAUDE.md"),
+    Path("PROTOCOL.md"),
+    Path("commands/score.md"),
+    Path("commands/optimize.md"),
+    Path("skills/optimization-guide/SKILL.md"),
+)
+LEVELS_DOCS = (
+    Path("README.md"),
+    Path("CLAUDE.md"),
+    Path("CONCEPTS.md"),
+    Path("commands/intake.md"),
+    Path("skills/optimization-guide/SKILL.md"),
+)
+
+
+def _help_text(command: str, capsys) -> str:
+    import pytest
+
+    from optimize_anything.cli import main
+
+    with pytest.raises(SystemExit):
+        main([command, "--help"])
+    return capsys.readouterr().out
+
+
+def test_jev_flag_is_documented_where_users_learn_evaluators():
+    for path in JEV_DOCS:
+        _assert_contains_terms(
+            text=_read_text(path), terms=["--jev-model", "TYPESAFE_API_KEY"], label=str(path)
+        )
+
+
+def test_jev_key_variable_name_matches_runtime_and_help(capsys):
+    from optimize_anything.jev_judge import API_KEY_ENV
+
+    # Docs name the variable the code actually reads, not a stale spelling.
+    assert API_KEY_ENV == "TYPESAFE_API_KEY"
+    for command in ("optimize", "score"):
+        help_text = _help_text(command, capsys)
+        _assert_contains_terms(
+            text=help_text, terms=["--jev-model", API_KEY_ENV], label=f"{command} --help"
+        )
+
+
+def test_jev_flag_documented_on_every_parser_that_accepts_it():
+    cli_source = _read_text(Path("src/optimize_anything/cli.py"))
+    assert cli_source.count('"--jev-model"') == 2  # optimize and score only
+    for command in ("analyze", "validate", "compare"):
+        doc = _read_text(Path(f"commands/{command}.md"))
+        assert "--jev-model" not in doc, f"commands/{command}.md documents a flag its CLI lacks"
+
+
+def test_rubric_levels_documented_with_the_limits_intake_enforces():
+    from optimize_anything.intake import MAX_LEVELS, MIN_LEVELS
+
+    limit_phrase = f"{MIN_LEVELS} to {MAX_LEVELS}"
+    for path in LEVELS_DOCS:
+        text = _read_text(path)
+        assert "levels" in text, f"{path} does not mention rubric levels"
+        assert limit_phrase in text, f"{path} does not state the '{limit_phrase}' level limit"
+
+
+def test_readme_intake_example_normalizes():
+    from optimize_anything.intake import normalize_intake_spec
+
+    readme = _read_text(Path("README.md"))
+    match = re.search(r"--intake-json '(\{.*?\})'", readme)
+    assert match is not None, "README intake example not found"
+    normalize_intake_spec(json.loads(match.group(1)))

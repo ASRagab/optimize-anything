@@ -110,3 +110,45 @@ def test_duplicate_dimension_name_raises():
                 ]
             }
         )
+
+
+def _dim(**extra):
+    return {"quality_dimensions": [{"name": "clarity", "weight": 1.0, **extra}]}
+
+
+def test_levels_are_kept_stripped_and_attached_to_their_dimension():
+    spec = normalize_intake_spec({
+        "quality_dimensions": [
+            {"name": "clarity", "weight": 1, "levels": [" vague ", "clear"]},
+            {"name": "brevity", "weight": 1},
+        ]
+    })
+    assert spec["quality_dimensions"] == [
+        {"name": "clarity", "weight": 0.5, "levels": ["vague", "clear"]},
+        {"name": "brevity", "weight": 0.5},
+    ]
+
+
+def test_no_levels_key_means_dimension_is_unchanged():
+    assert normalize_intake_spec(_dim())["quality_dimensions"] == [{"name": "clarity", "weight": 1.0}]
+    assert normalize_intake_spec(_dim(levels=None))["quality_dimensions"] == [{"name": "clarity", "weight": 1.0}]
+
+
+@pytest.mark.parametrize(
+    "levels, message",
+    [
+        ("poor, good", r"quality_dimensions\[0\]\.levels must be a list"),
+        (["only one"], r"must contain 2 to 10 levels"),
+        ([f"l{i}" for i in range(11)], r"must contain 2 to 10 levels"),
+        (["ok", "  "], r"levels\[1\] must be a non-empty string"),
+        (["ok", 3], r"levels\[1\] must be a non-empty string"),
+    ],
+)
+def test_invalid_levels_raise_with_field_path(levels, message):
+    with pytest.raises(ValueError, match=message):
+        normalize_intake_spec(_dim(levels=levels))
+
+
+def test_ten_levels_is_allowed():
+    levels = [f"l{i}" for i in range(10)]
+    assert normalize_intake_spec(_dim(levels=levels))["quality_dimensions"][0]["levels"] == levels

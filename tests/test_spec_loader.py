@@ -414,3 +414,19 @@ class TestSpecCliIntegration:
         ])
         assert result == 1
         assert "Error loading spec file" in capsys.readouterr().err
+
+
+def test_evaluator_jev_model_parsed_and_defaults_to_none(tmp_path: Path):
+    spec_file = tmp_path / "opt.toml"
+    spec_file.write_text('[evaluator]\njev_model = "jev-1.14.0"\n')
+    assert load_spec(spec_file)["jev_model"] == "jev-1.14.0"
+    other = tmp_path / "other.toml"
+    other.write_text("[optimization]\nbudget = 5\n")
+    assert load_spec(other)["jev_model"] is None
+
+
+def test_evaluator_jev_model_must_be_string(tmp_path: Path):
+    spec_file = tmp_path / "opt.toml"
+    spec_file.write_text("[evaluator]\njev_model = 3\n")
+    with pytest.raises(SpecLoadError, match="evaluator.jev_model must be a string"):
+        load_spec(spec_file)

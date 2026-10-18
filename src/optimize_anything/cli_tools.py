@@ -167,6 +167,7 @@ def _cmd_score(args: argparse.Namespace) -> int:
                 evaluator_command=args.evaluator_command,
                 evaluator_url=args.evaluator_url,
                 judge_model=args.judge_model,
+                jev_model=getattr(args, "jev_model", None),
                 judge_objective=args.judge_objective,
                 objective=args.objective,
                 evaluator_cwd=args.evaluator_cwd,

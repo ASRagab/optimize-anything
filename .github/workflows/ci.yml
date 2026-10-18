@@ -57,6 +57,9 @@ jobs:
           - provider: google
             secret_env: GEMINI_API_KEY
             pytest_k: integration_google
+          - provider: jev
+            secret_env: TYPESAFE_API_KEY
+            pytest_k: integration_jev
     steps:
       - uses: actions/checkout@v4
 
@@ -83,5 +86,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         # pytest skips tests internally when env vars are absent (via @pytest.mark.skipif)
-        run: uv run pytest tests/test_llm_judge.py -k "${{ matrix.pytest_k }}" -v
+        run: uv run pytest tests/test_llm_judge.py tests/test_jev_judge.py -k "${{ matrix.pytest_k }}" -v
