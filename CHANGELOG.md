@@ -1,8 +1,23 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 - 2026-10-17
 
-- Add `--jev-model` to `optimize` and `score`: TypeSafe Jev as the evaluator, scoring all quality dimensions and hard constraints in one request. Requires `TYPESAFE_API_KEY`.
+### Jev evaluator
+- Added `--jev-model` to `optimize` and `score`: TypeSafe Jev as the evaluator, scoring every quality dimension and hard constraint in one request. Jev only scores, so `--model` still selects the proposer. Requires `TYPESAFE_API_KEY`
+- Added `[evaluator] jev_model` as a spec-file key
+- Jev calls retry on 429 and 5xx, honor `retry-after`, and return a 0.0 score with an `error` key on any failure, as the LLM judge does
+- Added optional per-dimension `levels` to intake (2 to 10 rubric strings, lowest to highest). Jev uses them as that dimension's scale; dimensions without `levels` use a generic four-level scale. The LLM judge ignores `levels`
+
+### Known limits
+- Jev and the LLM judge can disagree on which candidate is best. In the recorded run, Jev ranked a hand-written domain prompt above both optimizer winners and `gpt-5.6-luna` ranked the winners above it
+- Jev scores saturate near the top of a rubric. A rubric whose top level a good prompt fully meets scores it about 0.99; add a harder top level to keep headroom
+- Results come from one seed, one objective, and budget 5. See `docs/verification/jev-judge-ab-2026-10-17.md`
+
+### Documentation and verification
+- Documented `--jev-model`, `TYPESAFE_API_KEY`, and `levels` in the README, command docs, `optimization-guide` skill, and protocol notes
+- Corrected the README intake example, which used a dimension format the normalizer rejects
+- Added drift tests that tie the docs to `--help` and the intake limits
+- Added live Jev integration tests and a `jev` entry in the CI integration matrix (needs the `TYPESAFE_API_KEY` repo secret)
 
 ## v0.6.0 - 2026-09-27
 
