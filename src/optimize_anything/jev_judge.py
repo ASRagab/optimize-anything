@@ -36,7 +36,7 @@ SCORE_LEVELS = [
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 _MAX_ATTEMPTS = 3
 _MAX_RETRY_WAIT = 30.0
-_DEFAULT_DIMENSIONS = [{"name": "overall quality", "weight": 1.0}]
+_DEFAULT_DIMENSIONS: list[dict[str, Any]] = [{"name": "overall quality", "weight": 1.0}]
 
 
 class _JevError(Exception):
