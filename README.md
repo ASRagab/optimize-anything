@@ -462,7 +462,7 @@ optimize-anything optimize seed.txt \
 `optimize-anything intake` normalizes and validates these keys:
 
 - `artifact_class`
-- `quality_dimensions` (each dimension may add optional `levels`: 2 to 10 rubric strings, lowest to highest, used by `--jev-model`)
+- `quality_dimensions` (each dimension may add optional `levels`: 2 to 10 rubric strings, lowest to highest, used by `--jev-model`; in one ground-truth test they did not beat the generic scale, see `docs/verification/jev-judge-ab-2026-10-17.md`)
 - `hard_constraints`
 - `evaluation_pattern`
 - `execution_mode`

@@ -19,7 +19,7 @@ Normalize and validate an intake specification, filling in defaults for quality 
 "${CLAUDE_PLUGIN_ROOT}/scripts/run-optimize-anything" intake --intake-file intake.json
 ```
 
-A quality dimension may carry optional `levels`: 2 to 10 strings ordered from lowest to highest. Only `--jev-model` uses them, as the rubric for that dimension.
+A quality dimension may carry optional `levels`: 2 to 10 strings ordered from lowest to highest. Only `--jev-model` uses them, as the rubric for that dimension. In one ground-truth test they did not beat the generic scale, so compare both before relying on them (see `docs/verification/jev-judge-ab-2026-10-17.md`).
 
 ```
 {"quality_dimensions": [{"name": "clarity", "weight": 1.0, "levels": ["Vague", "Mostly clear", "Clear and specific"]}]}
