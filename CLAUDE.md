@@ -34,7 +34,7 @@ uv run optimize-anything validate artifact.txt \
 - Evaluator runtimes: command / http / LLM judge
 - Protocol source of truth: `PROTOCOL.md`
 
-## Optimize flags (complete, 28)
+## Optimize flags (complete, 29)
 
 | Flag | Description |
 |---|---|
@@ -52,6 +52,7 @@ uv run optimize-anything validate artifact.txt \
 | `--output, -o <file>` | Write best artifact to file |
 | `--model <model>` | Proposer model (fallback: `OPTIMIZE_ANYTHING_MODEL`) |
 | `--judge-model <model>` | Built-in LLM judge evaluator model |
+| `--jev-model <model>` | TypeSafe Jev evaluator (e.g. `jev-latest`); needs `TYPESAFE_API_KEY` |
 | `--judge-objective <text>` | Judge objective override |
 | `--api-base <url>` | LiteLLM API base override |
 | `--diff` | Print unified diff (seed vs best) |
@@ -68,7 +69,8 @@ uv run optimize-anything validate artifact.txt \
 | `--score-range unit|any` | Score validation mode for command/http evaluators |
 
 Notes:
-- Exactly one evaluator source: `--evaluator-command` OR `--evaluator-url` OR `--judge-model`.
+- Exactly one evaluator source: `--evaluator-command` OR `--evaluator-url` OR `--judge-model` OR `--jev-model`.
+- Jev scores quality dimensions and hard constraints in one request. It cannot propose candidates, so `--model` still selects the proposer.
 - Early stop auto-activates when budget > 30.
 - The proposer defaults to `openai/gpt-5.6-sol` after checking `--model` and `OPTIMIZE_ANYTHING_MODEL`; generated judge and composite evaluators default to `openai/gpt-5.6-luna`.
 - LLM judge calls use each provider's sampling defaults unless an explicit temperature is supplied.

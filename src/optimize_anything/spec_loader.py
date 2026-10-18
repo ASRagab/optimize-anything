@@ -74,6 +74,7 @@ def _normalize_spec(raw: dict[str, Any], *, spec_dir: Path) -> dict[str, Any]:
         "evaluator_url": None,
         "evaluator_cwd": None,
         "judge_model": None,
+        "jev_model": None,
         "proposer_model": None,
         "judge_backend": None,
         "proposer_backend": None,
@@ -154,6 +155,8 @@ def _normalize_evaluator_section(
         )
     if "url" in evaluator:
         normalized["evaluator_url"] = _require_string(evaluator, "url", "evaluator")
+    if "jev_model" in evaluator:
+        normalized["jev_model"] = _require_string(evaluator, "jev_model", "evaluator")
     if "cwd" in evaluator:
         normalized["evaluator_cwd"] = str(
             _resolve_path(_require_string(evaluator, "cwd", "evaluator"), base=spec_dir)

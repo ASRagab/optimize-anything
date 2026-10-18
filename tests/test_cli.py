@@ -3809,3 +3809,117 @@ class TestHostMarkersNeverInferBackend:
         payload = json.loads(capsys.readouterr().out)
         assert payload["backend_plan"]["proposer"]["backend"] == "api"
         assert payload["backend_plan"]["judge"]["backend"] == "api"
+
+
+class TestJevModelFlag:
+    """--jev-model selects Jev as the evaluator and nothing else."""
+
+    @staticmethod
+    def _seed(tmp_path: Path) -> Path:
+        seed = tmp_path / "seed.txt"
+        seed.write_text("test artifact")
+        return seed
+
+    @staticmethod
+    def _capture_optimize(monkeypatch) -> dict:
+        captured: dict = {}
+
+        class DummyResult:
+            best_candidate = "improved"
+            total_metric_calls = 3
+
+        def fake_optimize(**kwargs):
+            captured["evaluator"] = kwargs.get("evaluator")
+            return DummyResult()
+
+        monkeypatch.setattr("gepa.optimize_anything.optimize_anything", fake_optimize)
+        return captured
+
+    def test_optimize_uses_jev_evaluator_with_intake(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+        captured = self._capture_optimize(monkeypatch)
+        seen: dict = {}
+
+        def fake_jev(objective, *, model, quality_dimensions=None, hard_constraints=None, **kw):
+            seen.update(objective=objective, model=model, dims=quality_dimensions, constraints=hard_constraints)
+            return lambda candidate, example=None: (0.5, {})
+
+        monkeypatch.setattr("optimize_anything.jev_judge.jev_judge_evaluator", fake_jev)
+        intake = json.dumps({
+            "artifact_class": "prompt",
+            "quality_dimensions": [{"name": "clarity", "weight": 1.0}],
+            "hard_constraints": ["no jargon"],
+        })
+        rc = main([
+            "optimize", str(self._seed(tmp_path)),
+            "--jev-model", "jev-1.14.0", "--objective", "be clear",
+            "--intake-json", intake, "--budget", "3",
+        ])
+        assert rc == 0
+        assert callable(captured["evaluator"])
+        assert "Jev judge (jev-1.14.0)" in capsys.readouterr().err
+        assert seen["model"] == "jev-1.14.0"
+        assert seen["objective"] == "be clear"
+        assert seen["dims"] == [{"name": "clarity", "weight": 1.0}]
+        assert seen["constraints"] == ["no jargon"]
+
+    def test_missing_api_key_fails_before_optimizing(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+        called = {"n": 0}
+        monkeypatch.setattr(
+            "gepa.optimize_anything.optimize_anything",
+            lambda **kw: called.__setitem__("n", called["n"] + 1),
+        )
+        rc = main([
+            "optimize", str(self._seed(tmp_path)),
+            "--jev-model", "jev-latest", "--objective", "be clear",
+        ])
+        assert rc == 1
+        assert "TYPESAFE_API_KEY" in capsys.readouterr().err
+        assert called["n"] == 0
+
+    def test_requires_objective(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+        rc = main(["optimize", str(self._seed(tmp_path)), "--jev-model", "jev-latest"])
+        assert rc == 1
+        assert "--jev-model requires --objective" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "other",
+        [
+            ["--judge-model", "openai/gpt-4o-mini"],
+            ["--evaluator-command", "bash", "eval.sh"],
+            ["--evaluator-url", "http://localhost:9999"],
+            ["--judge-backend", "codex"],
+        ],
+    )
+    def test_score_rejects_other_evaluator_sources(
+        self, tmp_path, capsys, monkeypatch, other, fake_backend_seam,
+    ):
+        monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+        rc = main(["score", str(artifact), "--jev-model", "jev-latest", "--objective", "o", *other])
+        assert rc == 1
+        assert "--jev-model cannot be combined" in capsys.readouterr().err
+
+    def test_score_prints_jev_result(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+        monkeypatch.setattr(
+            "optimize_anything.jev_judge.jev_judge_evaluator",
+            lambda objective, **kw: (lambda candidate, example=None: (0.42, {"reasoning": "r"})),
+        )
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+        rc = main(["score", str(artifact), "--jev-model", "jev-latest", "--objective", "o"])
+        assert rc == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["score"] == 0.42
+
+    @pytest.mark.parametrize("command", ["optimize", "score"])
+    def test_help_documents_flag_and_key(self, capsys, command):
+        with pytest.raises(SystemExit):
+            main([command, "--help"])
+        out = capsys.readouterr().out
+        assert "--jev-model" in out
+        assert "TYPESAFE_API_KEY" in out

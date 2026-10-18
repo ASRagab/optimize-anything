@@ -49,6 +49,9 @@ before launching the host and restart it after changes. `--api-base` changes the
 endpoint but does not select a provider or its credentials. Do not commit API
 keys or `.env` files.
 
+`--jev-model` (TypeSafe Jev as the evaluator) requires `TYPESAFE_API_KEY`. Jev only
+scores, so `--model` still selects the proposer.
+
 ## How It Works
 
 optimize-anything runs a GEPA (Guided Evolutionary Prompt Algorithm) loop: propose → evaluate → reflect, repeating until budget is exhausted or early stopping kicks in.

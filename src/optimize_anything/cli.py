@@ -105,6 +105,13 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     opt_parser.add_argument(
+        "--jev-model",
+        help=(
+            "TypeSafe Jev model (e.g. jev-latest, jev-1.14.0) used as the evaluator. "
+            "Requires TYPESAFE_API_KEY. Mutually exclusive with the other evaluator sources."
+        ),
+    )
+    opt_parser.add_argument(
         "--judge-backend",
         choices=["api", "codex", "claude"],
         default=None,
@@ -309,6 +316,13 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     score_parser.add_argument(
+        "--jev-model",
+        help=(
+            "TypeSafe Jev model (e.g. jev-latest, jev-1.14.0) used as the evaluator. "
+            "Requires TYPESAFE_API_KEY. Mutually exclusive with the other evaluator sources."
+        ),
+    )
+    score_parser.add_argument(
         "--judge-backend",
         choices=["api", "codex", "claude"],
         default=None,
@@ -499,6 +513,7 @@ def _resolve_evaluator(
     objective: str | None,
     evaluator_cwd: str | None,
     intake_spec: dict[str, Any] | None,
+    jev_model: str | None = None,
     allow_intake_fallback: bool = False,
     api_base: str | None = None,
     task_model: str | None = None,
@@ -517,6 +532,16 @@ def _resolve_evaluator(
     command_cwd = evaluator_cwd
     if command_cwd is None and intake_spec is not None:
         command_cwd = intake_spec.get("evaluator_cwd")
+
+    if jev_model:
+        if evaluator_command or evaluator_url or judge_model or judge_backend != "api":
+            return (None, "Error: --jev-model cannot be combined with --evaluator-command, --evaluator-url, --judge-model, or --judge-backend")
+        return _resolve_jev_evaluator_source(
+            jev_model=jev_model,
+            judge_objective=judge_objective,
+            objective=objective,
+            intake_spec=intake_spec,
+        )
 
     evaluator_sources = sum([
         bool(evaluator_command),
@@ -664,6 +689,31 @@ def _resolve_judge_evaluator_source(
     if judge_backend == "api":
         return eval_fn, f"LLM judge ({model_label})"
     return eval_fn, f"LLM judge ({judge_backend}:{model_label})"
+
+
+def _resolve_jev_evaluator_source(
+    *,
+    jev_model: str,
+    judge_objective: str | None,
+    objective: str | None,
+    intake_spec: dict[str, Any] | None,
+) -> tuple[EvaluatorFn | None, str]:
+    from optimize_anything.jev_judge import jev_judge_evaluator
+
+    jev_objective = judge_objective or objective
+    if not jev_objective:
+        return (None, "Error: --jev-model requires --objective or --judge-objective")
+    intake_spec = intake_spec or {}
+    try:
+        eval_fn = jev_judge_evaluator(
+            jev_objective,
+            model=jev_model,
+            quality_dimensions=intake_spec.get("quality_dimensions"),
+            hard_constraints=intake_spec.get("hard_constraints") or None,
+        )
+    except ValueError as exc:
+        return (None, f"Error: {exc}")
+    return eval_fn, f"Jev judge ({jev_model})"
 
 
 def _read_seed(path: str) -> str | None:

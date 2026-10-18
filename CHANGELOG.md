@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `--jev-model` to `optimize` and `score`: TypeSafe Jev as the evaluator, scoring all quality dimensions and hard constraints in one request. Requires `TYPESAFE_API_KEY`.
+
 ## v0.6.0 - 2026-09-27
 
 ### Plugin and documentation repairs
