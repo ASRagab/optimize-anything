@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Callable
 
 import httpx
@@ -212,3 +213,49 @@ def test_mixed_dimensions_use_levels_only_where_given():
     _evaluator(handler, quality_dimensions=dims)("x")
     assert seen["questions"]["d0"]["criteria"] == ["lo", "mid", "hi"]
     assert seen["questions"]["d1"]["criteria"] == jev_judge.SCORE_LEVELS
+
+
+class TestJevIntegration:
+    """Live Jev API tests. Names match the CI matrix filter `-k integration_jev`."""
+
+    _WEAK = "Be helpful."
+    _STRONG = (
+        "You are a billing-support assistant. Answer the question first, then offer at most "
+        "one next step. If the request is ambiguous, ask exactly one clarifying question. "
+        "Never state account data that is not in the provided context; say you cannot see it "
+        "and offer to escalate. Escalate refunds over $200 to a human. Keep answers under "
+        "120 words."
+    )
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(not os.environ.get("TYPESAFE_API_KEY"), reason="TYPESAFE_API_KEY required")
+    def test_integration_jev_ranks_strong_prompt_above_weak(self):
+        dims = [{
+            "name": "specificity",
+            "weight": 1.0,
+            "levels": [
+                "Gives no concrete instruction",
+                "Names a goal but no concrete behaviors",
+                "Gives concrete, checkable behaviors for the main situations",
+            ],
+        }]
+        evaluator = jev_judge_evaluator(
+            "Score the quality of this system prompt.", quality_dimensions=dims
+        )
+        weak, weak_info = evaluator(self._WEAK)
+        strong, strong_info = evaluator(self._STRONG)
+        assert "error" not in weak_info and "error" not in strong_info
+        assert strong - weak > 0.3
+        assert strong_info["jev_model"].startswith("jev-")
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(not os.environ.get("TYPESAFE_API_KEY"), reason="TYPESAFE_API_KEY required")
+    def test_integration_jev_violated_hard_constraint_scores_zero(self):
+        evaluator = jev_judge_evaluator(
+            "Score the quality of this system prompt.",
+            hard_constraints=["The text is written in French"],
+        )
+        score, info = evaluator(self._STRONG)
+        assert "error" not in info
+        assert score == 0.0
+        assert info["hard_constraint_violation"] is True
