@@ -450,7 +450,7 @@ Pass it inline or from a file:
 ```bash
 # Inline
 optimize-anything optimize seed.txt \
-  --intake-json '{"quality_dimensions": ["clarity", "specificity"], "hard_constraints": ["max 100 words"]}' \
+  --intake-json '{"quality_dimensions": [{"name": "clarity", "weight": 0.6}, {"name": "specificity", "weight": 0.4}], "hard_constraints": ["max 100 words"]}' \
   --judge-model openai/gpt-5.6-luna
 
 # From file
@@ -462,7 +462,7 @@ optimize-anything optimize seed.txt \
 `optimize-anything intake` normalizes and validates these keys:
 
 - `artifact_class`
-- `quality_dimensions`
+- `quality_dimensions` (each dimension may add optional `levels`: 2 to 10 rubric strings, lowest to highest, used by `--jev-model`)
 - `hard_constraints`
 - `evaluation_pattern`
 - `execution_mode`
@@ -470,7 +470,7 @@ optimize-anything optimize seed.txt \
 
 ### `optimize` flags (complete)
 
-Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-url` OR a built-in judge selected by `--judge-model`/`--judge-backend`.
+Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-url` OR a built-in judge selected by `--judge-model`/`--judge-backend` OR `--jev-model` (TypeSafe Jev, needs `TYPESAFE_API_KEY`).
 
 | Flag | Description | Default |
 |---|---|---|
@@ -489,6 +489,7 @@ Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-
 | `--model <model>` | Proposer model (or env fallback) | `OPTIMIZE_ANYTHING_MODEL`, then `openai/gpt-5.6-sol` |
 | `--proposer-backend api\|codex\|claude` | Proposal backend | `api` |
 | `--judge-model <model>` | Built-in LLM judge evaluator model | -- |
+| `--jev-model <model>` | TypeSafe Jev evaluator, e.g. `jev-latest` (needs `TYPESAFE_API_KEY`) | -- |
 | `--judge-backend api\|codex\|claude` | Built-in judge backend | `api` |
 | `--subscription-concurrency <int>` | Concurrent calls allowed per subscription provider | `1` |
 | `--no-api-fallback` | Prohibit subscription-to-API fallback | `false` |

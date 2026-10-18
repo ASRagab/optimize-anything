@@ -73,7 +73,7 @@ Controls validation rules for command/HTTP evaluator scores:
 
 Optional structured evaluator guidance (`--intake-json` / `--intake-file`) including:
 - `artifact_class`
-- `quality_dimensions`
+- `quality_dimensions` (each may add optional `levels`: 2 to 10 rubric strings, lowest to highest)
 - `hard_constraints`
 - `evaluation_pattern`
 - `execution_mode`

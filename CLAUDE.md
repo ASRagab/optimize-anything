@@ -108,7 +108,7 @@ Be explicit about the distinction:
 
 The intake specification (`--intake-json` / `--intake-file`) normalizes these fields:
 - `artifact_class` — type of artifact (prompt, code, config, docs)
-- `quality_dimensions` — named scoring axes with float weights
+- `quality_dimensions` — named scoring axes with float weights; each may add optional `levels` (2 to 10 rubric strings, lowest to highest) that `--jev-model` uses as that dimension's scale
 - `hard_constraints` — boolean pass/fail conditions (violation forces score to 0.0)
 - `evaluation_pattern` — scoring strategy (`verification`, `judge`, `simulation`, `composite`)
 - `execution_mode` — evaluator transport (`command`, `http`)

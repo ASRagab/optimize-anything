@@ -121,6 +121,7 @@ This env var is additive; existing env handling remains intact.
 ### 3.3 LLM judge relation
 
 - Judge model (`--judge-model`) remains the evaluator model.
+- The Jev evaluator (`--jev-model`) is a built-in evaluator like the LLM judge, not a protocol v2 evaluator. It reads `TYPESAFE_API_KEY` and uses no payload or environment keys from this document.
 - `task_model` identifies the target model under optimization and is passed through as metadata for future evaluator logic.
 
 ---
