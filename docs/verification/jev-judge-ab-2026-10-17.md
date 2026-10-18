@@ -112,3 +112,57 @@ Each dimension got one new level above its old top, written from a general stand
 ## Limits
 
 One seed, one objective, rubrics written by the same author as the test. The new top levels were not tuned to the artifacts, but they were written after seeing that the strong prompt saturated, so they are not independent of it.
+
+# Phase 7: which judge predicts real task accuracy (budget 30)
+
+**Question:** when a judge scores a system prompt, does the score predict how well the prompt works?
+
+**Ground truth.** Domain: support-ticket triage with a fixed written policy (5 categories, 3 priority levels, JSON output). A candidate prompt is run as the system prompt on 30 hand-labeled tickets with `gpt-5.6-luna`, twice, and scored by exact match on category and priority ("accuracy" below, out of 60 runs). Neither judge sees the labels. Both judges get the same objective, which contains the policy, and the same three dimensions (`policy_fidelity`, `output_format`, `clarity_and_focus`). Three scorers: `Jev + levels` (my 5/4/4-level rubric), `Jev generic` (same dimensions, no levels), and `gpt-5.6-luna`.
+
+**Optimization.** Seed: a one-sentence prompt (accuracy 0.00, because it never asks for JSON). Four runs, budget 30, same seed and proposer (`gpt-5.6-sol`): two with Jev + levels, two with the LLM judge. All 15 candidates the runs produced were scored on ground truth and by all three scorers (3 scoring runs each), together with 9 hand-written prompts: the seed, nonsense, format only, categories without priority rules, the full policy, the full policy with examples, the policy buried in filler, plausible but wrong priority rules, and the policy with a wrong threshold.
+
+## Optimizer winners, real accuracy
+
+| Run | Judge that chose it | Winner accuracy | Best candidate in that run |
+|---|---|---|---|
+| jev1 | Jev + levels | 0.867 | 0.867 (the winner) |
+| jev2 | Jev + levels | 0.817 | 0.933 |
+| llm1 | LLM judge | 0.867 | 0.933 |
+| llm2 | LLM judge | 0.933 | 0.933 (tied) |
+
+Mean winner accuracy: Jev 0.842, LLM judge 0.900. Copying the policy straight into the prompt scores 0.917, and with four examples 0.933. So the optimizer ended at the level of the policy text it was handed, not above it.
+
+In-run scores were 0.97 to 0.99 for every winner under both judges. The judges saturated within the first one or two candidates, so most of the 30 calls had little signal.
+
+## Does the score predict accuracy? (Spearman rank correlation with accuracy)
+
+| Prompts | Jev + levels | Jev generic | LLM judge | word count |
+|---|---|---|---|---|
+| 9 hand-written (wide quality range) | 0.98 | 0.98 | 0.98 | 0.90 |
+| All 24 | 0.24 | 0.48 | 0.62 | 0.26 |
+| 15 optimizer candidates (all good, close together) | -0.45 | 0.26 | 0.31 | -0.43 |
+
+Which candidate each scorer would pick among the 15 (best possible is 0.933; average candidate 0.868):
+
+| Scorer | Pick | Accuracy of the pick |
+|---|---|---|
+| Jev + levels | `c_jev2_4` | 0.817 |
+| Jev generic | `c_jev2_1` | 0.933 |
+| LLM judge | `c_jev1_2` | 0.850 |
+
+## What the data says
+
+- **Both judges separate bad prompts from good ones.** Across the wide-quality set, all three rank the 9 hand-written prompts almost identically to real accuracy (0.98).
+- **Neither judge picks the best of several good candidates.** On the 15 close candidates the correlations are weak (-0.45 to 0.31). With 60 runs per prompt, one ticket is 0.017, and the candidates differ by 0.82 to 0.93, so most of that spread is within sampling noise. This test cannot say which judge is better there.
+- **Both judges miss confidently wrong rules.** The prompt with wrong priority rules has real accuracy 0.15, about the same as the format-only prompt (0.12). Judges score it 0.57 (Jev + levels), 0.43 (Jev generic), and 0.58 (LLM judge): level with or above "categories without priority rules" (0.63 accuracy, scores 0.56 to 0.68) and well above the format-only prompt (0.38 to 0.50). A clear, well-formatted prompt with wrong rules is mostly invisible to both.
+- **My rubric levels did not help.** Jev + levels has the lowest overall correlation (0.24) and a negative one among the 15 candidates (-0.45), where it leans toward longer prompts (word count has -0.43 correlation with accuracy). Jev generic did better (0.48 overall) on the same dimensions. This contradicts the Phase 2 and Phase 4 impression that levels were an improvement; those runs had no ground truth.
+- **On this evidence the LLM judge is slightly ahead** (0.62 overall correlation, winners 0.900 against 0.842), but with 4 winners and noisy ground truth the gap is not established.
+- **Jev is far faster and cheaper per call**, and its repeated scores vary less (Phases 1 to 4).
+
+## Limits
+
+- 30 tickets and 2 repeats per prompt; accuracy has about a one-ticket (0.017) resolution and visible sampling noise.
+- Tickets, labels, policy, and rubric levels were written by the same author. The target model is the same model as the LLM judge, which could favor it.
+- One domain, one seed, 4 optimization runs. Do not read the winner means as a proven difference.
+- The judge objective contained the policy. A judge with only a vague objective would do worse at detecting wrong rules.
+- Scripts and data are in `/tmp/jev-gt`, not in the repo.
