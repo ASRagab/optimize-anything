@@ -37,3 +37,41 @@ The independent LLM judge also prefers the winner, so there is no sign the propo
 ## Limits
 
 One seed, one objective, 4 artifacts, budget 5. This shows the integration works and ranks sensibly. It does not show Jev is a better judge across artifact types.
+
+# Phase 2: three-dimension intake with rubric levels
+
+Intake: `specificity` (0.4, 4 levels), `edge_case_handling` (0.35, 4 levels), `success_criteria` (0.25, 3 levels), and one hard constraint ("The text is written as instructions for an AI assistant"). Levels were written as generic prompt-quality rubrics, not tuned to the test artifacts.
+Setups: Jev with levels, Jev with the generic scale (same dimensions, levels removed), and `openai/gpt-5.6-luna` on the same dimensions. Each cell is the mean of 3 `score` runs, with the spread in parentheses.
+
+| Artifact | Jev + levels | Jev generic | LLM judge |
+|---|---|---|---|
+| bad | 0.039 (0.008) | 0.019 (0.004) | 0.011 (0.017) |
+| seed | 0.025 (0.004) | 0.023 (0.005) | 0.056 (0.036) |
+| mid | 0.844 (0.009) | 0.670 (0.012) | 0.703 (0.054) |
+| strong | 0.994 (0.002) | 0.907 (0.003) | 0.807 (0.028) |
+
+- Ranking: all three setups agree on {bad, seed} < mid < strong. Below 0.06 the order of bad and seed differs by setup, and the gaps are small.
+- Spread: rubric levels gave the smallest spread (at most 0.009). The LLM judge's spread was up to 0.054.
+- Mid-to-strong gap: 0.150 with levels, 0.237 generic, 0.104 LLM judge. Levels narrowed the gap Jev showed.
+- Ceiling: **worse with levels.** The strong prompt scores 0.994 with levels, against 0.907 generic and 0.807 for the LLM judge. A prompt that meets the top level of each rubric maxes out, so a loop has no signal left above that point.
+- The hard constraint never failed on any artifact, including the nonsense one, so the 0.0 gate was not exercised live. It is covered by unit tests only.
+
+## Optimize run with the rubric intake
+
+`optimize --jev-model jev-latest --intake-file intake.json --budget 5` finished in 17 s. The winner, re-scored 3 times:
+
+| Judge | Seed | Winner |
+|---|---|---|
+| Jev + levels | 0.030 | 0.989 |
+| LLM judge | 0.066 | 0.885 |
+
+The independent LLM judge also prefers the winner, with every dimension at 0.87 or higher.
+
+## What got worse
+
+- The ceiling (above). Rubric levels make Jev easier to saturate, not harder.
+- `bad` outscored `seed` under Jev with levels (0.039 vs 0.025) while the LLM judge had them the other way. Both are near the floor.
+
+## Limits
+
+One seed, one objective, rubrics written by the same author as the test. This does not show that levels help on other artifact types.

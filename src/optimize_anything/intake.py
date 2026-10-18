@@ -19,6 +19,10 @@ ALLOWED_EVALUATION_PATTERNS = {
 }
 ALLOWED_EXECUTION_MODES = {"command", "http"}
 
+# Jev Score questions accept 2 to 10 ordered levels.
+MIN_LEVELS = 2
+MAX_LEVELS = 10
+
 DEFAULT_QUALITY_DIMENSIONS: tuple[tuple[str, float], ...] = (
     ("correctness", 0.4),
     ("clarity", 0.35),
@@ -105,6 +109,7 @@ def _normalize_quality_dimensions(value: Any) -> list[dict[str, Any]]:
     names: list[str] = []
     seen_names: set[str] = set()
     weights: list[float] = []
+    levels_by_name: dict[str, list[str]] = {}
 
     for idx, item in enumerate(value):
         normalized_name, weight = _normalize_quality_dimension_item(item, idx)
@@ -113,12 +118,36 @@ def _normalize_quality_dimensions(value: Any) -> list[dict[str, Any]]:
         seen_names.add(normalized_name)
         names.append(normalized_name)
         weights.append(weight)
+        levels = _normalize_levels(item, idx)
+        if levels is not None:
+            levels_by_name[normalized_name] = levels
 
     normalized_weights = _normalize_weights(weights)
     return [
-        {"name": name, "weight": normalized_weights[idx]}
+        {
+            "name": name,
+            "weight": normalized_weights[idx],
+            **({"levels": levels_by_name[name]} if name in levels_by_name else {}),
+        }
         for idx, name in enumerate(names)
     ]
+
+
+def _normalize_levels(item: Mapping[str, Any], idx: int) -> list[str] | None:
+    if item.get("levels") is None:
+        return None
+    field = f"quality_dimensions[{idx}].levels"
+    levels = item["levels"]
+    if not isinstance(levels, list):
+        raise ValueError(f"{field} must be a list of strings")
+    if not MIN_LEVELS <= len(levels) <= MAX_LEVELS:
+        raise ValueError(f"{field} must contain {MIN_LEVELS} to {MAX_LEVELS} levels")
+    normalized: list[str] = []
+    for level_idx, level in enumerate(levels):
+        if not isinstance(level, str) or not level.strip():
+            raise ValueError(f"{field}[{level_idx}] must be a non-empty string")
+        normalized.append(level.strip())
+    return normalized
 
 
 def _normalize_quality_dimension_item(

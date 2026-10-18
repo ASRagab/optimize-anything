@@ -177,3 +177,38 @@ def test_missing_key_fails_fast_at_factory(monkeypatch):
 def test_blank_objective_rejected():
     with pytest.raises(ValueError, match="objective"):
         jev_judge_evaluator("  ", api_key="k")
+
+
+def test_dimension_levels_become_score_criteria_and_set_the_top_level():
+    seen: dict[str, Any] = {}
+    five = ["f0", "f1", "f2", "f3", "f4"]
+    three = ["t0", "t1", "t2"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["questions"] = json.loads(request.content)["questions"]
+        # 2/4 on the five-level dimension, 2/2 on the three-level one.
+        return _ok({"d0": _answer(2.0), "d1": _answer(2.0)})
+
+    dims = [
+        {"name": "depth", "weight": 0.5, "levels": five},
+        {"name": "tone", "weight": 0.5, "levels": three},
+    ]
+    score, info = _evaluator(handler, quality_dimensions=dims)("x")
+    assert seen["questions"]["d0"]["criteria"] == five
+    assert seen["questions"]["d1"]["criteria"] == three
+    assert info["depth"] == 0.5 and info["tone"] == 1.0
+    assert score == pytest.approx(0.75)
+    assert "depth: 0.50 (f2;" in info["reasoning"] and "tone: 1.00 (t2;" in info["reasoning"]
+
+
+def test_mixed_dimensions_use_levels_only_where_given():
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["questions"] = json.loads(request.content)["questions"]
+        return _ok({"d0": _answer(3.0), "d1": _answer(3.0)})
+
+    dims = [{"name": "a", "weight": 0.5, "levels": ["lo", "mid", "hi"]}, {"name": "b", "weight": 0.5}]
+    _evaluator(handler, quality_dimensions=dims)("x")
+    assert seen["questions"]["d0"]["criteria"] == ["lo", "mid", "hi"]
+    assert seen["questions"]["d1"]["criteria"] == jev_judge.SCORE_LEVELS

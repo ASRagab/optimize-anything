@@ -32,7 +32,6 @@ SCORE_LEVELS = [
     "Adequate on the dimension: meets the basics with notable gaps",
     "Strong on the dimension: meets it well with only minor gaps",
 ]
-_TOP_LEVEL = len(SCORE_LEVELS) - 1
 
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 _MAX_ATTEMPTS = 3
@@ -92,6 +91,11 @@ def jev_judge_evaluator(
     return evaluate
 
 
+def _levels(dim: dict[str, Any]) -> list[str]:
+    # A dimension's own rubric (intake `levels`) wins over the generic scale.
+    return dim.get("levels") or SCORE_LEVELS
+
+
 def _build_questions(
     dims: list[dict[str, Any]], constraints: list[str]
 ) -> dict[str, dict[str, Any]]:
@@ -103,7 +107,7 @@ def _build_questions(
                 f'How well does `artifact` satisfy the quality dimension "{dim["name"]}" '
                 "for the goal stated in `objective`?"
             ),
-            "criteria": SCORE_LEVELS,
+            "criteria": _levels(dim),
         }
     for i, constraint in enumerate(constraints):
         questions[f"c{i}"] = {
@@ -169,9 +173,11 @@ def _score_response(
         answer = answers.get(f"d{i}")
         raw = _number(answer, "score", f"d{i}")
         confidence = _number(answer, "confidence", f"d{i}")
-        value = max(0.0, min(1.0, raw / _TOP_LEVEL))
+        levels = _levels(dim)
+        top_level = len(levels) - 1
+        value = max(0.0, min(1.0, raw / top_level))
         weighted += value * dim["weight"]
-        level = SCORE_LEVELS[min(_TOP_LEVEL, max(0, round(raw)))]
+        level = levels[min(top_level, max(0, round(raw)))]
         side_info[dim["name"]] = value
         parts.append(f'{dim["name"]}: {value:.2f} ({level}; confidence {confidence:.2f})')
 
