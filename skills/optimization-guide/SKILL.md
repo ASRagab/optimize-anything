@@ -35,14 +35,10 @@ Use the **generate-evaluator** skill to create one matched to your objective.
 1. Use the **Python API** for in-process Python evaluators. Pass a function that returns a score or `(score, diagnostics)`.
 2. Use `--evaluator-command` for standalone scripts or binaries. Read `{"candidate":"..."}` from stdin and write `{"score":0.5}` to stdout.
 3. Use `--evaluator-url` for remote services that accept request JSON and return score JSON.
-4. Use `--jev-model jev-latest` (needs `TYPESAFE_API_KEY`) to score with TypeSafe Jev, a fast model that returns typed scores for every quality dimension and hard constraint in one request. Repeat scores of the same artifact vary little, and calls are cheap. Jev only scores, so `--model` still picks the proposer.
-   - Add optional `levels` (2 to 10 strings, lowest to highest) to a quality dimension in the intake to give Jev your own rubric. Without `levels`, Jev uses a generic four-level scale. In the one ground-truth test so far (support-ticket triage), a hand-written rubric did not predict real accuracy better than the generic scale, so compare both on your own task before relying on `levels`. Evidence: `docs/verification/jev-judge-ab-2026-10-17.md`.
-   - Scores near the top saturate: a prompt that meets the top level of every rubric scores about 0.98 to 0.99, so a long run has no signal left above that. Prefer an LLM judge when you need to separate strong candidates.
+4. Use `--jev-model jev-latest` (needs `TYPESAFE_API_KEY`) for fast, cheap scoring of every quality dimension and hard constraint in one request. Jev only scores, so `--model` still picks the proposer.
+   - Optional `levels` (2 to 10 strings, lowest to highest) on a quality dimension give Jev your own rubric; without them it uses a generic four-level scale. In one ground-truth test the generic scale did as well or better, so compare both (`docs/verification/jev-judge-ab-2026-10-17.md`).
+   - Scores saturate near 0.98 once a prompt meets every top level, and no judge in that test reliably ranked strong candidates.
    - Do not combine it with `--judge-model`, `--judge-backend`, `--evaluator-command`, or `--evaluator-url`.
-
-Prefer the Python API. For command templates, use the **generate-evaluator** and **evaluator-patterns** skills.
-
-**Command preflight:** The CLI sends `{"candidate":"__optimize_anything_preflight__"}` with protocol version 2. Return `{"score":0.5}` within 10 seconds. Normal calls time out after 30 seconds.
 
 ### 3. Choose Optimization Mode
 
