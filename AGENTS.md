@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 Core code lives in `src/optimize_anything/`:
-- `cli.py` for `optimize-anything` subcommands (`optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `analyze`)
+- `cli.py` for `optimize-anything` subcommands (`optimize`, `generate-evaluator`, `intake`, `explain`, `budget`, `score`, `validate`, `analyze`)
 - `evaluators.py` for command/HTTP evaluator adapters
 - `llm_judge.py` for LLM-as-judge evaluator and dimension analysis
 - `intake.py` for intake schema normalization (`evaluation_pattern`, `execution_mode`, `quality_dimensions`, constraints)
