@@ -169,6 +169,19 @@ def _run_optimize(
         )
 
     print(json.dumps(summary, indent=2, default=str))
+
+    # A dead or misrouted proposer is otherwise indistinguishable from
+    # "no improvement found": GEPA swallows the errors and returns the seed.
+    attempted = getattr(model, "attempted_calls", 0)
+    failed = getattr(model, "failed_calls", 0)
+    if attempted and failed == attempted:
+        print(
+            f"Error: all {attempted} proposer call(s) failed; no candidates were "
+            "proposed and the result is the unmodified seed. Check --model, "
+            "--api-base, base-URL env vars, and API keys.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
