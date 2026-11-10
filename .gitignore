@@ -14,7 +14,8 @@ build/
 node_modules/
 .worktrees/
 .letta/
-.claude/
+.claude/*
+!.claude/skills/
 
 # miscellaneous files
 seed.txt
