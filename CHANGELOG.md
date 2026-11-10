@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+- `optimize` now exits 1 with `Error: all N proposer call(s) failed` when every proposer call fails, for example from a bad key, a misrouted `--api-base`, or an unreachable endpoint. Before, GEPA swallowed the errors and the run exited 0 with the unchanged seed, which looked the same as "no improvement found". The summary, run dir, and `-o` output are still written. Partial proposer failures still exit 0
+- `validate` now counts a provider whose judge call failed as failed: `score: null`, and the score is left out of `mean`/`stddev`/`min`/`max`. Before, the judge's fallback `0.0` counted as a successful score
+
 ## v0.7.0 - 2026-10-17
 
 ### Jev evaluator

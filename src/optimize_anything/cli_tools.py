@@ -345,6 +345,16 @@ def _validate_provider(
             "error": str(exc),
         }, None
 
+    # The judge reports call failures as (0.0, {"error": ...}) instead of
+    # raising; that 0.0 is not a real score and must not enter the stats.
+    if isinstance(side_info, dict) and side_info.get("error"):
+        return {
+            **side_info,
+            "provider": provider,
+            "score": None,
+            "error": str(side_info["error"]),
+        }, None
+
     result: dict[str, object] = {
         "provider": provider,
         "score": numeric_score,

@@ -126,18 +126,26 @@ class BackendLanguageModel:
         self.backend = backend
         self.model = model
         self.timeout_seconds = timeout_seconds
+        # GEPA swallows proposer exceptions, so count them here for the CLI.
+        self.attempted_calls = 0
+        self.failed_calls = 0
 
     def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
         messages = None
         if not isinstance(prompt, str):
             messages = tuple(prompt)
             prompt = json.dumps(prompt, ensure_ascii=False)
-        return self.backend.complete(
-            CompletionRequest(
-                prompt=prompt,
-                role="proposer",
-                model=self.model,
-                timeout_seconds=self.timeout_seconds,
-                messages=messages,
-            )
-        ).text
+        self.attempted_calls += 1
+        try:
+            return self.backend.complete(
+                CompletionRequest(
+                    prompt=prompt,
+                    role="proposer",
+                    model=self.model,
+                    timeout_seconds=self.timeout_seconds,
+                    messages=messages,
+                )
+            ).text
+        except Exception:
+            self.failed_calls += 1
+            raise

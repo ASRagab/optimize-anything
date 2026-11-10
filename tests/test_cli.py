@@ -2702,6 +2702,83 @@ class TestScoreJudgeModel:
             captured_kwargs.get("base_url") == "http://localhost:11434/v1"
 
 
+class TestOptimizeProposerFailure:
+    """A dead proposer must not look like 'no improvement found'.
+
+    GEPA swallows proposer exceptions and returns the seed, so before this
+    gate a misrouted endpoint or bad key exited 0 with an unchanged artifact.
+    These tests drive the real CLI, real GEPA, and a real command evaluator;
+    only the LLM provider call is replaced.
+    """
+
+    MARKER = "PROPOSED-MARKER"
+
+    def _setup(self, tmp_path: Path) -> list[str]:
+        (tmp_path / "seed.txt").write_text("Improve this blurb.\n")
+        (tmp_path / "eval.sh").write_text(
+            "payload=$(cat)\n"
+            f'if [[ "$payload" == *"{self.MARKER}"* ]]; then '
+            'echo \'{"score": 0.9}\'; else echo \'{"score": 0.2}\'; fi\n'
+        )
+        return [
+            "optimize", str(tmp_path / "seed.txt"),
+            "--evaluator-command", "bash", "eval.sh",
+            "--evaluator-cwd", str(tmp_path),
+            "--model", "openai/test-proposer",
+            "--no-api-fallback", "--no-parallel",
+            "--budget", "4",
+            "-o", str(tmp_path / "best.txt"),
+        ]
+
+    def test_all_proposer_calls_failing_exits_nonzero(self, tmp_path, capsys, monkeypatch):
+        calls = []
+
+        def dead_completion(**kwargs):
+            calls.append(kwargs)
+            raise ConnectionError("connection refused")
+
+        monkeypatch.setattr("litellm.completion", dead_completion)
+
+        rc = main(self._setup(tmp_path))
+
+        captured = capsys.readouterr()
+        assert calls, "proposer was never attempted; the test would prove nothing"
+        assert rc == 1
+        assert f"all {len(calls)} proposer call(s) failed" in captured.err
+        # Outputs are still written so the user can inspect the failed run.
+        assert (tmp_path / "best.txt").read_text() == "Improve this blurb.\n"
+
+    def test_working_proposer_still_exits_zero(self, tmp_path, capsys, monkeypatch):
+        from types import SimpleNamespace
+
+        def working_completion(**kwargs):
+            text = f"```\nImprove this blurb.\n{self.MARKER}\n```"
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+                model=kwargs["model"], usage=None,
+            )
+
+        monkeypatch.setattr("litellm.completion", working_completion)
+
+        rc = main(self._setup(tmp_path))
+
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "proposer call(s) failed" not in captured.err
+        assert self.MARKER in (tmp_path / "best.txt").read_text()
+
+    def test_no_proposer_attempt_is_not_an_error(self, tmp_path, monkeypatch):
+        # Budget 1 only scores the seed; zero proposer calls is not a failure.
+        def unexpected_completion(**kwargs):
+            raise AssertionError("budget 1 should not call the proposer")
+
+        monkeypatch.setattr("litellm.completion", unexpected_completion)
+        argv = self._setup(tmp_path)
+        argv[argv.index("4")] = "1"
+
+        assert main(argv) == 0
+
+
 class TestValidateCommand:
     def test_validate_help(self, capsys):
         try:
@@ -2913,6 +2990,75 @@ class TestValidateCommand:
         assert payload["stddev"] == pytest.approx(0.282842712474619)
         assert payload["min"] == pytest.approx(0.2)
         assert payload["max"] == pytest.approx(0.6)
+
+    def test_validate_judge_error_result_counts_as_failed(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        # The real judge does not raise on a failed LLM call; it returns
+        # (0.0, {"error": ...}). Seen live: a Gemini 402 was reported as
+        # successful and its 0.0 dragged the mean down. A failed call must
+        # count as failed and stay out of the aggregate stats.
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            def _eval(candidate):
+                if model == "gemini/gemini-3.6-flash":
+                    return 0.0, {
+                        "error": "LLM call failed: BackendUnavailable: API completion unavailable",
+                        "reasoning": "LLM judge call failed; returned fallback score 0.0.",
+                    }
+                return 0.93, {"reasoning": "fine"}
+
+            return _eval
+
+        monkeypatch.setattr("optimize_anything.llm_judge.llm_judge_evaluator", fake_llm_judge)
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-5.6-luna",
+            "gemini/gemini-3.6-flash",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["summary"]["successful"] == 1
+        assert payload["summary"]["failed"] == 1
+        assert payload["mean"] == pytest.approx(0.93)
+        assert payload["min"] == pytest.approx(0.93)
+        failed = [item for item in payload["results"] if item["score"] is None]
+        assert [item["provider"] for item in failed] == ["gemini/gemini-3.6-flash"]
+        assert "LLM call failed" in failed[0]["error"]
+
+    def test_validate_all_judge_error_results_exit_nonzero(
+        self, tmp_path: Path, capsys, monkeypatch
+    ):
+        # When every provider's judge call fails, validate must report the
+        # failure (exit 1) instead of a fake all-zero consensus.
+        artifact = tmp_path / "artifact.txt"
+        artifact.write_text("content")
+
+        def fake_llm_judge(objective, *, model, **kwargs):
+            return lambda candidate: (0.0, {"error": f"LLM call failed: {model}"})
+
+        monkeypatch.setattr("optimize_anything.llm_judge.llm_judge_evaluator", fake_llm_judge)
+
+        rc = main([
+            "validate",
+            str(artifact),
+            "--providers",
+            "openai/gpt-5.6-luna",
+            "gemini/gemini-3.6-flash",
+            "--objective",
+            "Score quality",
+        ])
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "Error: all providers failed" in captured.err
+        assert json.loads(captured.out)["mean"] is None
 
 
 class TestAnalyzeCommand:
