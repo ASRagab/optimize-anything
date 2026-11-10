@@ -34,31 +34,35 @@ uv run optimize-anything validate artifact.txt \
 - Evaluator runtimes: command / http / LLM judge
 - Protocol source of truth: `PROTOCOL.md`
 
-## Optimize flags (complete, 29)
+## Optimize flags
 
-| Flag | Description |
-|---|---|
-| `--no-seed` | Run without seed file; requires `--objective` and `--model` |
-| `--evaluator-command <cmd...>` | Command evaluator (stdin/stdout JSON) |
-| `--evaluator-url <url>` | HTTP evaluator endpoint |
-| `--intake-json <json>` | Inline intake spec |
-| `--intake-file <path>` | Intake spec JSON file |
-| `--evaluator-cwd <path>` | Working directory for command evaluator |
-| `--objective <text>` | Optimization objective |
-| `--background <text>` | Domain context |
-| `--dataset <path>` | Train dataset JSONL |
-| `--valset <path>` | Validation dataset JSONL (requires `--dataset`) |
-| `--budget <int>` | Max evaluator calls (default 100) |
-| `--output, -o <file>` | Write best artifact to file |
-| `--model <model>` | Proposer model (fallback: `OPTIMIZE_ANYTHING_MODEL`) |
-| `--judge-model <model>` | Built-in LLM judge evaluator model |
+| Flag                           | Description                                                 |
+| ------------------------------ | ----------------------------------------------------------- |
+| `--no-seed`                    | Run without seed file; requires `--objective` and `--model` |
+| `--evaluator-command <cmd...>` | Command evaluator (stdin/stdout JSON)                       |
+| `--evaluator-url <url>`        | HTTP evaluator endpoint                                     |
+| `--intake-json <json>`         | Inline intake spec                                          |
+| `--intake-file <path>`         | Intake spec JSON file                                       |
+| `--evaluator-cwd <path>`       | Working directory for command evaluator                     |
+| `--objective <text>`           | Optimization objective                                      |
+| `--background <text>`          | Domain context                                              |
+| `--dataset <path>`             | Train dataset JSONL                                         |
+| `--valset <path>`              | Validation dataset JSONL (requires `--dataset`)             |
+| `--budget <int>`               | Max evaluator calls (default 100)                           |
+| `--output, -o <file>`          | Write best artifact to file                                 |
+| `--model <model>`              | Proposer model (fallback: `OPTIMIZE_ANYTHING_MODEL`)        |
+| `--judge-model <model>`        | Built-in LLM judge evaluator model                          |
 | `--jev-model <model>` | TypeSafe Jev evaluator (e.g. `jev-latest`); needs `TYPESAFE_API_KEY` |
+| `--judge-backend api|codex|claude` | Backend for the built-in LLM judge (default: api) |
+| `--proposer-backend api|codex|claude` | Backend for proposal generation (default: api) |
 | `--judge-objective <text>` | Judge objective override |
 | `--api-base <url>` | LiteLLM API base override |
 | `--diff` | Print unified diff (seed vs best) |
 | `--run-dir <path>` | Persist run artifacts in timestamped dir |
-| `--parallel` | Enable parallel evaluator calls |
+| `--parallel` | Enable parallel evaluator calls (default) |
+| `--no-parallel` | Run evaluator calls serially |
 | `--workers <int>` | Max workers for parallel mode |
+| `--proposals-per-iteration <int>` | Candidate mutations per GEPA iteration (default 1) |
 | `--cache` | Enable evaluator cache |
 | `--cache-from <run-dir>` | Reuse previous run `fitness_cache` (requires `--cache`) |
 | `--early-stop` | Enable plateau-based early stopping |
@@ -69,6 +73,7 @@ uv run optimize-anything validate artifact.txt \
 | `--score-range unit|any` | Score validation mode for command/http evaluators |
 
 Notes:
+
 - Exactly one evaluator source: `--evaluator-command` OR `--evaluator-url` OR `--judge-model` OR `--jev-model`.
 - Jev scores quality dimensions and hard constraints in one request. It cannot propose candidates, so `--model` still selects the proposer.
 - Early stop auto-activates when budget > 30.
@@ -101,12 +106,14 @@ skills/evaluator-patterns/
 ```
 
 Be explicit about the distinction:
+
 - `execution_mode` = runtime transport (`command`/`http`)
 - `evaluation_pattern` = scoring strategy (`verification`/`judge`/`simulation`/`composite`)
 
 ## Intake schema
 
 The intake specification (`--intake-json` / `--intake-file`) normalizes these fields:
+
 - `artifact_class` — type of artifact (prompt, code, config, docs)
 - `quality_dimensions` — named scoring axes with float weights; each may add optional `levels` (2 to 10 rubric strings, lowest to highest) that `--jev-model` uses as that dimension's scale
 - `hard_constraints` — boolean pass/fail conditions (violation forces score to 0.0)
