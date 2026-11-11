@@ -38,3 +38,6 @@ runs/
 todos/
 .maestro
 .cursor/
+
+# Amp orb portals
+.amp/portals/*
