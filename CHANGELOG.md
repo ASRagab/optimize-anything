@@ -1,10 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.8.0 - 2026-11-11
 
 ### Fixes
 - `optimize` now exits 1 with `Error: all N proposer call(s) failed` when every proposer call fails, for example from a bad key, a misrouted `--api-base`, or an unreachable endpoint. Before, GEPA swallowed the errors and the run exited 0 with the unchanged seed, which looked the same as "no improvement found". The summary, run dir, and `-o` output are still written. Partial proposer failures still exit 0
 - `validate` now counts a provider whose judge call failed as failed: `score: null`, and the score is left out of `mean`/`stddev`/`min`/`max`. Before, the judge's fallback `0.0` counted as a successful score
+
+### Documentation and verification
+- Recorded a judge comparison against task-accuracy ground truth in `docs/verification/jev-judge-ab-2026-10-17.md`. In that test, rubric `levels` did not beat Jev's generic scale, and the README, `intake` command doc, and `optimization-guide` skill now say so
+- Restored the full optimize flag table in `CLAUDE.md`, including the backend, `--no-parallel`, and `--proposals-per-iteration` flags, and listed `validate` among the documented CLI commands
+- Added the project-local `verify-optimize-anything` skill, which drives the real CLI offline against a local OpenAI-compatible stub
 
 ## v0.7.0 - 2026-10-17
 
