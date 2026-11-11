@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb: uv, the pinned Python (.python-version), and the locked dev + codex environment.
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+step() {
+  local name="$1"; shift
+  local start=$SECONDS
+  echo "==> $name"
+  "$@"
+  echo "<== $name ($((SECONDS - start))s)"
+}
+
+if ! command -v uv >/dev/null 2>&1; then
+  step "install uv" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Reads .python-version; a no-op when that Python is already installed.
+step "install python" uv python install
+# Dev group plus the codex extra the plugin launcher uses. `uv run` syncs inexactly, so
+# neither plain `uv run` nor the launcher's `--no-dev` run removes anything installed here.
+step "uv sync" uv sync --locked --extra codex
