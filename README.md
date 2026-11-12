@@ -1,17 +1,46 @@
 # optimize-anything
 
-LLM-guided optimization for text artifacts using an iterative propose-evaluate-reflect loop with a bring-your-own evaluator.
+Improve any text artifact (a prompt, config, doc, code file, or agent skill) against an evaluator you control.
 
-## Quickstart (v2)
+optimize-anything runs a [GEPA](https://github.com/gepa-ai/gepa) (Genetic-Pareto) loop. An LLM proposes edits, your evaluator scores them, and the scores and diagnostics guide the next round. You supply the artifact and a way to score it. The tool handles proposals, reflection, caching, parallelism, and early stopping.
+
+## Install
+
+| Method | Gives you | Requirements |
+|---|---|---|
+| **Claude Code plugin** | Skills and slash commands | `uv`, Python 3.10 or newer |
+| **Codex plugin** | Skills | `uv`, Python 3.10 or newer |
+| **CLI installer** | Global `optimize-anything` command | None (the installer adds `uv`) |
+| **From source** | `uv run optimize-anything` | `uv`, Python 3.10 or newer |
 
 ```bash
-# 1) Install
+# CLI installer
 curl -fsSL https://raw.githubusercontent.com/ASRagab/optimize-anything/main/install.sh | bash
 
-# 2) Create a seed artifact
+# Claude Code plugin
+/plugin marketplace add ASRagab/optimize-anything
+/plugin install optimize-anything@optimize-anything
+
+# Codex plugin
+codex plugin marketplace add ASRagab/optimize-anything
+codex plugin add optimize-anything@optimize-anything
+```
+
+Restart Claude Code, or start a new Codex thread, after installing or updating a plugin. The plugins bundle a locked runtime, so they do not need the global CLI. [install.md](install.md) covers updates, removal, local clones, and verification.
+
+## Quickstart
+
+Export an API key for every provider you select. The default proposer and judge use OpenAI.
+
+```bash
+export OPENAI_API_KEY="..."
+```
+
+Create a seed and optimize it with the built-in LLM judge:
+
+```bash
 echo "Write a concise support prompt" > seed.txt
 
-# 3) Optimize with the built-in LLM judge
 optimize-anything optimize seed.txt \
   --judge-model openai/gpt-5.6-luna \
   --objective "Improve clarity and specificity" \
@@ -23,38 +52,27 @@ optimize-anything optimize seed.txt \
   --output result.txt
 ```
 
-CLI stdout returns a JSON summary — see [Result Contract](#result-contract) for the full shape.
+The best artifact is written to `result.txt`. Stdout is a JSON summary (see [Result contract](#result-contract)). With `--run-dir`, each run also saves `seed.txt`, `best_artifact.txt`, and `summary.json` in a timestamped directory.
+
+API calls are billed by the provider. `--budget` limits evaluator calls, not cost.
 
 ### Model defaults
 
-The proposer defaults to `openai/gpt-5.6-sol` after checking `--model` and `OPTIMIZE_ANYTHING_MODEL`. Generated judge and composite evaluators default to `openai/gpt-5.6-luna`. LLM judge calls use each provider's sampling defaults unless an explicit temperature is supplied.
+The proposer is `--model`, then `OPTIMIZE_ANYTHING_MODEL`, then `openai/gpt-5.6-sol`. Generated judge and composite evaluators default to `openai/gpt-5.6-luna`. Judge calls use each provider's sampling defaults unless you pass an explicit temperature.
 
-### LLM API authentication
+### Authentication
 
-Export the API key for every provider selected by `--model`, `--judge-model`,
-or `--providers` before launching the CLI or plugin host:
+| Selected by | Environment variable |
+|---|---|
+| `openai/...` models | `OPENAI_API_KEY` |
+| `anthropic/...` models | `ANTHROPIC_API_KEY` |
+| `gemini/...` models | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
+| `openrouter/...` models | `OPENROUTER_API_KEY` |
+| `--jev-model` | `TYPESAFE_API_KEY` |
 
-```bash
-export OPENAI_API_KEY="..."
-export ANTHROPIC_API_KEY="..."
-export GEMINI_API_KEY="..."
-export OPENROUTER_API_KEY="..."
-```
+Export the keys before you launch the CLI or the plugin host, and restart the host after a change. `--api-base` changes the endpoint, not the provider or its credentials. Claude Code and Codex logins are separate from provider API keys. Do not commit keys or `.env` files.
 
-The default proposer and judge require `OPENAI_API_KEY`. Multi-provider
-validation requires each selected provider's key; Gemini also accepts
-`GOOGLE_API_KEY`. Claude Code or Codex login is separate from provider API
-authentication. Plugin installation does not store credentials, so export keys
-before launching the host and restart it after changes. `--api-base` changes the
-endpoint but does not select a provider or its credentials. Do not commit API
-keys or `.env` files.
-
-`--jev-model` (TypeSafe Jev as the evaluator) requires `TYPESAFE_API_KEY`. Jev only
-scores, so `--model` still selects the proposer.
-
-## How It Works
-
-optimize-anything runs a GEPA (Guided Evolutionary Prompt Algorithm) loop: propose → evaluate → reflect, repeating until budget is exhausted or early stopping kicks in.
+## How it works
 
 ```
 seed.txt ──► [Propose] ──► candidates
@@ -63,17 +81,55 @@ seed.txt ──► [Propose] ──► candidates
              [Reflect] ◄──── scores + diagnostics
 ```
 
-1. **Propose** — The optimizer generates candidate artifacts from your seed (or from scratch in seedless mode).
-2. **Evaluate** — Each candidate is scored by your evaluator. Three evaluator types are supported: a **command evaluator** (any executable that reads JSON on stdin and writes a score on stdout), an **HTTP evaluator** (a service that accepts POST requests), or a built-in **LLM judge** (no evaluator script required — just pass `--judge-model`).
-3. **Reflect** — Scores and diagnostics feed back into the next proposal round. The loop continues, progressively improving the artifact toward your objective.
+1. **Propose.** The proposer model generates candidates from your seed, or from the objective alone in seedless mode.
+2. **Evaluate.** Your evaluator scores each candidate.
+3. **Reflect.** Scores and diagnostics shape the next proposal. The loop stops when the budget is spent or early stopping detects a plateau.
 
-The evaluator is the only thing you bring. Everything else — proposal strategy, reflection, early stopping, caching, parallelism — is handled by the optimizer.
+### Evaluators
 
-## Runtime Modes
+Pick exactly one evaluator source:
 
-### Dataset / Valset modes
+| Evaluator | Flag | Use it when |
+|---|---|---|
+| **LLM judge** | `--judge-model` | You want rubric scoring with no script. |
+| **Command** | `--evaluator-command <cmd...>` | Scoring is a script or program (tests, linters, checks). |
+| **HTTP** | `--evaluator-url <url>` | Scoring lives in a service. |
+| **TypeSafe Jev** | `--jev-model` | You want calibrated scores per quality dimension and hard constraint. Needs `TYPESAFE_API_KEY`. |
 
-Use `--dataset` for multi-task optimization (one evaluator call per example). Add `--valset` for generalization validation.
+A command evaluator reads JSON on stdin and writes JSON on stdout. An HTTP evaluator receives the same JSON as a POST body.
+
+```json
+{"candidate": "..."}
+```
+
+```json
+{"score": 0.75, "notes": "optional diagnostics"}
+```
+
+`score` is required and must be in `[0, 1]` unless you pass `--score-range any`. Other keys are kept as diagnostics for reflection. See [PROTOCOL.md](PROTOCOL.md) for the full contract and [evaluator-cookbook.md](evaluator-cookbook.md) for working examples. `generate-evaluator` scaffolds one from your seed and objective.
+
+Jev only scores, so `--model` still selects the proposer.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `optimize` | Run the optimization loop. |
+| `score` | Score one artifact with an evaluator. |
+| `analyze` | Discover quality dimensions for an artifact and objective. |
+| `validate` | Score one artifact with 2 or more judge providers and report mean, stddev, min, and max. |
+| `generate-evaluator` | Scaffold an evaluator script (`judge`, `command`, `http`, or `composite`). |
+| `intake` | Normalize and validate an intake spec. |
+| `explain` | Preview the optimization plan without running it. |
+| `budget` | Recommend an iteration budget for a seed. |
+
+Run `optimize-anything <command> --help` for every flag.
+
+## Common workflows
+
+### Datasets and held-out validation
+
+`--dataset` runs one evaluator call per example. Add `--valset` to measure generalization on examples the optimizer never trained on.
 
 ```bash
 optimize-anything optimize prompt.txt \
@@ -85,9 +141,11 @@ optimize-anything optimize prompt.txt \
   --budget 120 --workers 6 --cache --run-dir runs
 ```
 
-### Multi-provider validation
+Each dataset line is one JSON object. The evaluator receives it as `example`.
 
-Cross-check one artifact with multiple judge providers:
+### Cross-provider validation
+
+Check that one artifact scores consistently across judges:
 
 ```bash
 optimize-anything validate result.txt \
@@ -96,11 +154,11 @@ optimize-anything validate result.txt \
   --intake-file intake.json
 ```
 
-Gemini uses LiteLLM's `gemini/` provider prefix.
+A provider whose judge call fails reports `score: null` and is left out of the statistics. Gemini uses LiteLLM's `gemini/` prefix.
 
 ### Seedless mode
 
-No seed file required; GEPA bootstraps from objective.
+Start from an objective alone. `--no-seed` requires `--objective` and `--model`.
 
 ```bash
 optimize-anything optimize --no-seed \
@@ -109,27 +167,14 @@ optimize-anything optimize --no-seed \
   --judge-model openai/gpt-5.6-luna
 ```
 
-`--no-seed` requires both `--objective` and `--model`.
+### Budget, early stopping, caching, and parallelism
 
-### Early stopping and cache reuse
+- Early stopping turns on automatically when `--budget` is above 30. Force it with `--early-stop`, and tune it with `--early-stop-window` and `--early-stop-threshold`.
+- `--cache` stores evaluator results. `--cache-from <run-dir>` copies the fitness cache of an earlier run (it requires `--cache` and `--run-dir`).
+- Evaluator calls run in parallel by default. Pass `--no-parallel` for evaluators that write shared temp files, use process-global state, or need strict rate-limit control. `--workers` caps concurrency.
+- `--proposals-per-iteration N` asks GEPA for `N` mutations per iteration from the selected parent. It is independent of `--workers` and defaults to 1.
 
-- Early stop is auto-enabled when `--budget > 30` (or force with `--early-stop`)
-- Reuse prior evaluator cache with `--cache-from` (requires `--cache` + `--run-dir`)
-- Evaluator calls run in parallel by default; pass `--no-parallel` for evaluators
-  that write shared temp files, depend on process-global state, or need strict
-  provider rate-limit control.
-- `--proposals-per-iteration N` asks GEPA to generate `N` mutations from the
-  selected parent each iteration. It is independent of `--workers`, which only
-  controls concurrent evaluator calls, and defaults to one proposal.
-
-Proposal fan-out increases reflection and evaluation work. Small training sets
-may reuse the same minibatch across proposals, and GEPA checks the metric-call
-budget between iterations, so the final iteration can exceed `--budget` after
-its work has been scheduled.
-
-GEPA 0.1.4 can migrate older run state forward. State written by 0.1.4 is not
-expected to load under 0.1.1 after a rollback; `--cache-from` remains limited
-to copying the prior fitness cache.
+Proposal fan-out adds reflection and evaluation work. GEPA checks the budget between iterations, so the final iteration can exceed `--budget` after its work is scheduled.
 
 ```bash
 optimize-anything optimize seed.txt \
@@ -141,311 +186,9 @@ optimize-anything optimize seed.txt \
   --early-stop --early-stop-window 12 --early-stop-threshold 0.003
 ```
 
-### Score range options
-
-For command/HTTP evaluators:
-- `--score-range unit` (default): enforce score in `[0, 1]`
-- `--score-range any`: allow any finite float
-
-```bash
-optimize-anything optimize seed.txt \
-  --evaluator-command bash eval.sh \
-  --model openai/gpt-5.6-sol \
-  --score-range any
-```
-
-### Optimization observability benchmark
-
-Use the maintainer benchmark when you want evidence that an optimization loop
-improved a useful artifact and was not just a seed-only or scorer-gaming run.
-
-```bash
-uv run python scripts/optimization_observer.py setup
-uv run python scripts/optimization_observer.py report \
-  --run-dir integration_runs/optimization-observability/evaluator-generation-guidance/runs/run-YYYYMMDD-HHMMSS \
-  --benchmark examples/optimization-observability/evaluator-generation-benchmark.json \
-  --strict
-```
-
-See `examples/optimization-observability/README.md` for the full benchmark
-commands, expected report fields, acceptance criteria, and troubleshooting.
-
-## CLI Subcommands
-
-- `optimize`
-- `generate-evaluator`
-- `intake`
-- `explain`
-- `budget`
-- `score`
-- `analyze`
-- `validate`
-
-## Codex and Claude subscription backends
-
-Local Codex and Claude Code logins can power proposer and built-in evaluator
-roles without API keys. Selection is explicit; omitting backend flags preserves
-the existing LiteLLM API behavior.
-
-```bash
-# Install the pinned Codex SDK adapter, then authenticate with ChatGPT.
-uv sync --extra codex
-codex login
-
-# Codex subscription: proposer plus built-in judge.
-optimize-anything optimize seed.txt \
-  --proposer-backend codex --judge-backend codex \
-  --objective "Improve clarity"
-
-# Claude Code subscription. Install/sign in to the claude CLI first.
-optimize-anything optimize seed.txt \
-  --proposer-backend claude --judge-backend claude \
-  --objective "Improve clarity"
-```
-
-Subscription calls are serialized per provider by default. The CLI may switch
-an eligible failure to a same-vendor API only when a matching key and fallback
-model are available, and prints a billing warning first. Use
-`--no-api-fallback` to prohibit that switch. Claude support is local-only and
-experimental; neither adapter initiates login or copies credential contents.
-
-Single-role commands use `--analysis-backend` (`analyze`) or
-`--judge-backend` (`score`). `validate --providers` also accepts `codex`,
-`codex:<model>`, `claude`, and `claude:<model>`. Structured TOML uses role
-tables such as:
-
-```toml
-[model.proposer]
-backend = "codex"
-api_fallback = false
-
-[model.judge]
-backend = "claude"
-api_fallback_model = "anthropic/claude-sonnet-5"
-```
-
-Rollout notes (details in [install.md](install.md#optional-local-subscription-backends)):
-
-- **Supported versions:** `openai-codex>=0.156.0,<0.157.0` via
-  `uv sync --extra codex`; Claude Code 2.1.278 or newer; macOS local
-  machines only. Tested 2026-09-26 with openai-codex 0.156.0, Codex CLI
-  0.155.1, and Claude Code 2.1.283 on macOS 26.6.2.
-- **Claude scope:** experimental, opt-in, and local-only. Not supported for
-  hosted services, CI, or shared daemons; subscription use through a
-  third-party tool carries a provider-policy risk separate from technical
-  support.
-- **Billing and fallback:** only `backend_unavailable`, `authentication`,
-  `rate_limit`, and `quota_exceeded` can fall back; `timeout`, `cancelled`,
-  `invalid_response`, and `configuration` never do. Fallback stays with the
-  same vendor, needs its key plus `--openai-api-fallback-model` /
-  `--anthropic-api-fallback-model` (or a same-vendor role model), warns before
-  dispatch, and opens a sticky per-role circuit for the rest of the run.
-- **Data handling:** each call runs in an empty temporary workspace with no
-  repository context, user instructions, tools, or MCP servers; prompts go
-  over stdin or the SDK request body. Output records content-free
-  `llm_provenance` (backend, model, auth class, usage, fallback reason), never
-  account identity or secrets. Coordination state is a private run-scoped temp
-  directory removed when the run ends.
-- **Preflight and concurrency:** subscription roles are preflighted once and
-  `optimize` prints a `Backend plan:` line. `--subscription-concurrency`
-  defaults to `1`; other values print a warning.
-- **Disable or remove:** omit the backend flags and TOML role tables to return
-  to API defaults, run `uv sync` without `--extra codex` to drop the SDK, and
-  use the plugin removal commands in [install.md](install.md).
-
-Opt-in live gates consume local subscription quota:
-
-```bash
-OPTIMIZE_ANYTHING_RUN_SUBSCRIPTION_LIVE=1 \
-  uv run pytest tests/test_subscription_live.py
-```
-
-The separate `OPTIMIZE_ANYTHING_RUN_PAID_FALLBACK_LIVE` gate bills the OpenAI
-and Anthropic API accounts behind `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`:
-
-```bash
-OPTIMIZE_ANYTHING_RUN_PAID_FALLBACK_LIVE=1 \
-  uv run pytest tests/test_api_fallback_live.py
-```
-
-## Agent Plugins
-
-The Claude Code plugin and Codex plugin share the same `skills/` tree and
-bundled locked runtime. Plugin users need `uv` and Python 3.10 or newer, but do
-not need a global `optimize-anything` command. The standalone CLI remains a
-separate installation choice.
-
-### Prompt Optimization Workflow
-
-Claude Code users invoke `$optimize-prompt`; Codex users invoke the namespaced
-`$optimize-anything:optimize-prompt`. Both accept prompt text, a standalone
-file, an embedded prompt region, or a list of independent prompt files.
-
-| Evidence mode | Evaluation | What it proves |
-|---|---|---|
-| **Fast mode** | Scores the prompt text for clarity, constraints, and task fitness | Prompt-quality evidence only |
-| **Rigorous mode** | Runs the candidate on representative inputs, then scores task outputs | Task-performance evidence for the tested examples |
-| **Composite mode** | Runs deterministic hard constraints before the rigorous judge | No subjective score can override a failed gate |
-
-Rigorous datasets use JSONL records with `input`, optional `expected`,
-`criteria`, and `hard_constraints`. See
-[`prompt-execution-dataset.md`](skills/optimize-prompt/references/prompt-execution-dataset.md)
-for representative examples, the default system-prompt adapter, custom adapter
-guidance, and expected cost controls. Use explicit proposer, target, and judge
-models; bound calls with a small dataset, budget, and early stopping.
-
-The workflow captures the baseline and writes search output to a temporary or
-run directory. It accepts only a positive comparable score delta with all hard
-constraints satisfied, plus required held-out acceptance in rigorous mode.
-Independent prompt files receive separate decisions. Coupled components require
-an explicit structured-candidate adapter and are not optimized as unrelated
-files.
-
-Inline example:
-
-```text
-$optimize-prompt Improve this prompt in fast mode and return the accepted result:
-"Summarize this."
-```
-
-The response includes the complete accepted prompt, evidence mode, and score
-delta; it does not write a repository file.
-
-Embedded repository example:
-
-```text
-$optimize-prompt Optimize SYSTEM_PROMPT in src/agent.py with the examples in
-evals/prompt.jsonl. Apply it only if held-out acceptance passes.
-```
-
-The workflow optimizes a captured copy, replaces only `SYSTEM_PROMPT`, preserves
-the source representation, and runs the cheapest relevant parse or targeted
-test. Rejected candidates leave the file unchanged.
-
-### Plugin Regression Workflow
-
-Use the regression harness when you want to verify that Claude can actually invoke the plugin correctly end-to-end, not merely that the CLI itself still works.
-
-```bash
-# Direct plugin regression run
-uv run python scripts/plugin_regression.py
-
-# Full repo validation including plugin regression
-uv run python scripts/check.py --with-plugin
-```
-
-Requirements:
-- `claude` CLI installed and authenticated
-- `OPENAI_API_KEY` set in the shell that launches the command
-- `ANTHROPIC_API_KEY` for `validate` or the full scenario set
-
-The harness runs existing CLI scenarios plus bounded prompt inline-return and
-repository-apply scenarios. `--dry-run` verifies prompt and artifact wiring
-without credentials or model calls.
-
-### Claude Code Plugin
-
-```bash
-/plugin marketplace add ASRagab/optimize-anything
-/plugin install optimize-anything@optimize-anything
-```
-
-For a local clone, replace the repository name in the first command with its
-absolute path. Restart Claude Code after installation or update, then invoke
-`$optimize-prompt` or an existing slash command.
-
-### Codex Plugin
-
-```bash
-codex plugin marketplace add ASRagab/optimize-anything
-codex plugin add optimize-anything@optimize-anything
-```
-
-For local development, pass the clone path to `codex plugin marketplace add`.
-Start a new Codex thread after install or update, then invoke
-`$optimize-anything:optimize-prompt` so skill discovery refreshes.
-See [install.md](install.md) for update, removal, verification, and the optional
-standalone CLI path.
-
-### Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/optimize-anything:optimize` | Guided optimization workflow — walks you through mode selection, evaluator setup, execution, and results |
-| `/optimize-anything:quick` | Zero-config one-shot optimization. Just provide a file and objective. |
-| `/optimize-anything:analyze` | Discover quality dimensions for an artifact and objective |
-| `/optimize-anything:score` | Score a single artifact without optimization |
-| `/optimize-anything:validate` | Cross-validate with multiple LLM judges |
-| `/optimize-anything:compare` | Side-by-side comparison of two artifacts |
-| `/optimize-anything:budget` | Get a budget recommendation for your artifact |
-| `/optimize-anything:explain` | Preview the optimization plan without running it |
-| `/optimize-anything:intake` | Normalize and validate an intake specification |
-
-### Skills
-
-Both plugins include four skills that the host can invoke:
-
-- **optimize-prompt** — Build the rubric, choose fast or rigorous evidence, optimize outside the source, and return or safely apply an accepted prompt
-- **optimization-guide** — Full workflow walkthrough covering modes, configuration, budget, and result interpretation
-- **generate-evaluator** — Choose the right evaluator pattern (judge, command, composite) and generate a script
-- **evaluator-patterns** — Library of ready-to-use evaluator templates for prompts, code, docs, and agent instructions
-
-### Typical Plugin Workflow
-
-```
-/optimize-anything:analyze prompt.txt --objective "Score clarity"
-  → discovers quality dimensions
-
-/optimize-anything:quick prompt.txt "improve clarity and specificity"
-  → runs analyze + optimize with sensible defaults, shows diff
-
-/optimize-anything:validate result.txt --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash
-  → cross-checks the result with multiple judges
-```
-
-## Reference
-
-### Result Contract
-
-CLI stdout returns a JSON summary with these fields:
-
-- `best_artifact`
-- `total_metric_calls`
-- `score_summary` (`initial`, `latest`, `best`, deltas, `num_candidates`)
-- `top_diagnostics` (**list** of `{name, value}`)
-- `plateau_detected`, `plateau_guidance`
-- optional `evaluator_failure_signal`
-- optional `early_stopped`, `stopped_at_iteration`
-- `budget_utilization` (`requested`, `evaluator_calls`, `candidates_accepted`, `efficiency`)
-
-### Evaluator Protocol (v2)
-
-Evaluator input payload (stdin JSON for command mode, POST JSON for HTTP mode):
-
-```json
-{"_protocol_version": 2, "candidate": "...", "example": {...}, "task_model": "..."}
-```
-
-- `candidate` is required
-- `_protocol_version`, `example`, and `task_model` are optional/additive
-- legacy evaluators that only read `candidate` remain compatible
-
-Evaluator output payload:
-
-```json
-{"score": 0.75, "notes": "optional diagnostics"}
-```
-
-- `score` is required
-- additional keys are treated as side-info
-
 ### Intake
 
-Intake is optional structured guidance you pass to the optimizer to shape how evaluation works. Instead of relying solely on an `--objective` string, intake lets you declare quality dimensions, hard constraints, evaluation patterns, and execution preferences — giving you finer control over what "better" means for your artifact.
-
-Use intake when your evaluation criteria are multi-dimensional, when you need to enforce hard constraints, or when you want consistent evaluation behavior across runs.
-
-Pass it inline or from a file:
+Intake is optional structured guidance for evaluation. Declare quality dimensions, hard constraints, an evaluation pattern, and execution preferences instead of relying on `--objective` alone. Use it when criteria have several dimensions, when constraints are absolute, or when you need consistent scoring across runs.
 
 ```bash
 # Inline
@@ -459,62 +202,200 @@ optimize-anything optimize seed.txt \
   --judge-model openai/gpt-5.6-luna
 ```
 
-`optimize-anything intake` normalizes and validates these keys:
+Intake keys:
 
 - `artifact_class`
-- `quality_dimensions` (each dimension may add optional `levels`: 2 to 10 rubric strings, lowest to highest, used by `--jev-model`; in one ground-truth test they did not beat the generic scale, see `docs/verification/jev-judge-ab-2026-10-17.md`)
+- `quality_dimensions` (each may add optional `levels`: 2 to 10 rubric strings, lowest to highest, used by `--jev-model`; in one ground-truth test they did not beat the generic scale, see `docs/verification/jev-judge-ab-2026-10-17.md`)
 - `hard_constraints`
 - `evaluation_pattern`
 - `execution_mode`
 - `evaluator_cwd`
 
-### `optimize` flags (complete)
+`execution_mode` (`command` or `http`) is the transport. `evaluation_pattern` (`verification`, `judge`, `simulation`, or `composite`) is the scoring strategy. They are independent.
 
-Exactly one evaluator source is required: `--evaluator-command` OR `--evaluator-url` OR a built-in judge selected by `--judge-model`/`--judge-backend` OR `--jev-model` (TypeSafe Jev, needs `TYPESAFE_API_KEY`).
+## Codex and Claude subscription backends
+
+Local Codex and Claude Code logins can power the proposer and the built-in judge without API keys. Selection is explicit. Without backend flags, calls use the LiteLLM API.
+
+```bash
+# Codex: install the pinned SDK adapter, then sign in with ChatGPT.
+uv sync --extra codex
+codex login
+optimize-anything optimize seed.txt \
+  --proposer-backend codex --judge-backend codex \
+  --objective "Improve clarity"
+
+# Claude Code: install and sign in to the claude CLI first.
+optimize-anything optimize seed.txt \
+  --proposer-backend claude --judge-backend claude \
+  --objective "Improve clarity"
+```
+
+- Single-role commands use `--analysis-backend` (`analyze`) or `--judge-backend` (`score`). `validate --providers` also accepts `codex`, `codex:<model>`, `claude`, and `claude:<model>`.
+- Structured TOML spec files set roles with tables such as `[model.proposer] backend = "codex"` and `[model.judge] backend = "claude"`.
+- Subscription calls are serialized per provider by default (`--subscription-concurrency 1`).
+- A failed subscription call can fall back to a same-vendor API only when a matching key and fallback model exist. The CLI prints a billing warning first. `--no-api-fallback` makes every subscription failure final.
+- Claude support is local-only and experimental. Use of a subscription through a third-party tool carries provider-policy risk.
+- Each call runs in an empty temporary workspace with no repository context, tools, or MCP servers.
+
+[install.md](install.md#optional-local-subscription-backends) has supported versions, the fallback rules, data handling, and removal steps.
+
+## Agent plugins
+
+The Claude Code and Codex plugins share one `skills/` tree and one locked runtime.
+
+### Skills
+
+| Skill | Use it to |
+|---|---|
+| **optimize-prompt** | Build a rubric, pick fast or rigorous evidence, optimize outside the source, and return or safely apply an accepted prompt. |
+| **optimization-guide** | Walk through modes, configuration, budget, and result interpretation. |
+| **generate-evaluator** | Choose an evaluator pattern (judge, command, composite) and generate the script. |
+| **evaluator-patterns** | Start from ready-made evaluator templates for prompts, code, docs, and agent instructions. |
+
+Claude Code users invoke `$optimize-prompt`. Codex users invoke `$optimize-anything:optimize-prompt`.
+
+### Prompt optimization
+
+`optimize-prompt` accepts prompt text, a standalone file, an embedded prompt region, or a list of independent prompt files.
+
+| Evidence mode | Evaluation | What it proves |
+|---|---|---|
+| **Fast mode** | Scores the prompt text for clarity, constraints, and task fitness | Prompt-quality evidence only |
+| **Rigorous mode** | Runs the candidate on representative inputs, then scores the task outputs | Task-performance evidence for the tested examples |
+| **Composite mode** | Runs deterministic hard constraints before the rigorous judge | No subjective score can override a failed gate |
+
+Rigorous datasets are JSONL records with `input`, and optional `expected`, `criteria`, and `hard_constraints`. See [`prompt-execution-dataset.md`](skills/optimize-prompt/references/prompt-execution-dataset.md) for examples, the default system-prompt adapter, custom adapters, and cost controls. Use explicit proposer, target, and judge models, and bound calls with a small dataset, a budget, and early stopping.
+
+The workflow captures a baseline and writes search output to a temporary or run directory. It accepts a candidate only when the comparable score improves, every hard constraint holds, and (in rigorous mode) held-out acceptance passes. Independent prompt files get separate decisions. Coupled components need an explicit structured-candidate adapter and are not optimized as unrelated files.
+
+```text
+$optimize-prompt Improve this prompt in fast mode and return the accepted result:
+"Summarize this."
+```
+
+An inline prompt returns the full accepted prompt, the evidence mode, and the score delta. It does not write a file.
+
+```text
+$optimize-prompt Optimize SYSTEM_PROMPT in src/agent.py with the examples in
+evals/prompt.jsonl. Apply it only if held-out acceptance passes.
+```
+
+For an embedded prompt, the workflow optimizes a captured copy, replaces only `SYSTEM_PROMPT`, keeps the source representation, and runs the cheapest relevant parse or test. A rejected candidate leaves the file unchanged.
+
+### Slash commands (Claude Code)
+
+| Command | Purpose |
+|---|---|
+| `/optimize-anything:optimize` | Guided workflow: mode, evaluator setup, execution, results |
+| `/optimize-anything:quick` | Zero-config one-shot optimization from a file and an objective |
+| `/optimize-anything:analyze` | Discover quality dimensions |
+| `/optimize-anything:score` | Score one artifact |
+| `/optimize-anything:validate` | Cross-validate with multiple LLM judges |
+| `/optimize-anything:compare` | Compare two artifacts side by side |
+| `/optimize-anything:budget` | Recommend a budget |
+| `/optimize-anything:explain` | Preview the plan without running it |
+| `/optimize-anything:intake` | Normalize and validate an intake spec |
+
+A typical session:
+
+```text
+/optimize-anything:analyze prompt.txt --objective "Score clarity"
+/optimize-anything:quick prompt.txt "improve clarity and specificity"
+/optimize-anything:validate result.txt --providers openai/gpt-5.6-luna anthropic/claude-sonnet-5 gemini/gemini-3.6-flash
+```
+
+## Reference
+
+### Result contract
+
+`optimize` prints a JSON summary with these fields:
+
+- `best_artifact`
+- `total_metric_calls`
+- `score_summary` (`initial`, `latest`, `best`, deltas, `num_candidates`)
+- `top_diagnostics` (a list of `{name, value}`)
+- `plateau_detected`, `plateau_guidance`
+- `evaluator_failure_signal` (optional)
+- `early_stopped`, `stopped_at_iteration` (optional)
+- `budget_utilization` (`requested`, `evaluator_calls`, `candidates_accepted`, `efficiency`)
+
+`num_candidates` counts retained candidates. It does not count every evaluated proposal.
+
+If every proposer call fails, `optimize` exits 1 with `Error: all N proposer call(s) failed`. The summary, run directory, and `-o` output are still written.
+
+### Evaluator payload
+
+```json
+{"_protocol_version": 2, "candidate": "...", "example": {...}, "task_model": "..."}
+```
+
+`candidate` is always present. `example` appears only with `--dataset`. `task_model` appears only with `--task-model`. Evaluators may ignore any key they do not use. Details: [PROTOCOL.md](PROTOCOL.md).
+
+### `optimize` flags
+
+Exactly one evaluator source is required: `--evaluator-command`, `--evaluator-url`, a built-in judge (`--judge-model` or `--judge-backend`), or `--jev-model`.
 
 | Flag | Description | Default |
 |---|---|---|
-| `--no-seed` | Run without seed file; bootstrap from objective | `false` |
-| `--evaluator-command <cmd...>` | Command evaluator (stdin/stdout JSON) | -- |
+| `--no-seed` | Run without a seed file; bootstrap from the objective | `false` |
+| `--evaluator-command <cmd...>` | Command evaluator (stdin and stdout JSON) | -- |
 | `--evaluator-url <url>` | HTTP evaluator endpoint | -- |
 | `--intake-json <json>` | Inline intake spec | -- |
 | `--intake-file <path>` | Intake spec file | -- |
-| `--evaluator-cwd <path>` | Working dir for command evaluator | -- |
+| `--evaluator-cwd <path>` | Working directory for a command evaluator | -- |
 | `--objective <text>` | Optimization objective | -- |
 | `--background <text>` | Extra domain context | -- |
-| `--dataset <train.jsonl>` | Training dataset JSONL | -- |
-| `--valset <val.jsonl>` | Validation dataset JSONL (requires `--dataset`) | -- |
-| `--budget <int>` | Max evaluator calls | `100` |
-| `--output, -o <file>` | Write best artifact to file | -- |
-| `--model <model>` | Proposer model (or env fallback) | `OPTIMIZE_ANYTHING_MODEL`, then `openai/gpt-5.6-sol` |
+| `--dataset <train.jsonl>` | Training dataset | -- |
+| `--valset <val.jsonl>` | Validation dataset (requires `--dataset`) | -- |
+| `--budget <int>` | Maximum evaluator calls | `100` |
+| `--output, -o <file>` | Write the best artifact to a file | -- |
+| `--model <model>` | Proposer model | `OPTIMIZE_ANYTHING_MODEL`, then `openai/gpt-5.6-sol` |
 | `--proposer-backend api\|codex\|claude` | Proposal backend | `api` |
-| `--judge-model <model>` | Built-in LLM judge evaluator model | -- |
-| `--jev-model <model>` | TypeSafe Jev evaluator, e.g. `jev-latest` (needs `TYPESAFE_API_KEY`) | -- |
+| `--judge-model <model>` | Built-in LLM judge model | -- |
+| `--jev-model <model>` | TypeSafe Jev evaluator, such as `jev-latest` (needs `TYPESAFE_API_KEY`) | -- |
 | `--judge-backend api\|codex\|claude` | Built-in judge backend | `api` |
-| `--subscription-concurrency <int>` | Concurrent calls allowed per subscription provider | `1` |
-| `--no-api-fallback` | Prohibit subscription-to-API fallback | `false` |
+| `--subscription-concurrency <int>` | Concurrent calls per subscription provider | `1` |
+| `--no-api-fallback` | Forbid subscription-to-API fallback | `false` |
 | `--openai-api-fallback-model <model>` | Same-vendor API fallback for Codex | -- |
 | `--anthropic-api-fallback-model <model>` | Same-vendor API fallback for Claude | -- |
-| `--judge-objective <text>` | Judge objective override | falls back to `--objective` |
-| `--api-base <url>` | Override LiteLLM API base | -- |
-| `--diff` | Print unified diff (seed vs best) to stderr | `false` |
-| `--run-dir <path>` | Save run artifacts in timestamped run dir | -- |
-| `--parallel` | Explicitly enable parallel evaluator calls | `true` |
+| `--judge-objective <text>` | Judge objective override | `--objective` |
+| `--api-base <url>` | LiteLLM API base override | -- |
+| `--diff` | Print a unified diff (seed vs best) to stderr | `false` |
+| `--run-dir <path>` | Save run artifacts in a timestamped directory | -- |
+| `--parallel` | Enable parallel evaluator calls | `true` |
 | `--no-parallel` | Run evaluator calls serially | -- |
-| `--workers <int>` | Max workers for parallel evaluation | -- |
-| `--proposals-per-iteration <int>` | Candidate mutations per iteration; independent of evaluator workers | `1` |
-| `--cache` | Enable evaluator cache | `false` |
-| `--cache-from <run-dir>` | Copy prior `fitness_cache` into new run | -- |
-| `--early-stop` | Enable plateau early stop | auto on when budget > 30 |
+| `--workers <int>` | Maximum parallel workers | -- |
+| `--proposals-per-iteration <int>` | Candidate mutations per iteration | `1` |
+| `--cache` | Enable the evaluator cache | `false` |
+| `--cache-from <run-dir>` | Copy a prior run's `fitness_cache` | -- |
+| `--early-stop` | Enable plateau early stopping | on when budget > 30 |
 | `--early-stop-window <int>` | Plateau window size | `10` |
-| `--early-stop-threshold <float>` | Min improvement required over window | `0.005` |
+| `--early-stop-threshold <float>` | Minimum improvement over the window | `0.005` |
 | `--spec-file <path>` | Load TOML spec defaults | -- |
-| `--task-model <model>` | Optional metadata forwarded to evaluators | -- |
-| `--score-range unit\|any` | Score validation mode for cmd/http | `unit` |
+| `--task-model <model>` | Metadata forwarded to evaluators | -- |
+| `--score-range unit\|any` | Score validation for command and HTTP evaluators | `unit` |
 
-## Learn More
+## Development
 
-- [EXAMPLES.md](EXAMPLES.md)
-- [WALKTHROUGH.md](WALKTHROUGH.md)
-- [CONCEPTS.md](CONCEPTS.md)
-- [PROTOCOL.md](PROTOCOL.md)
+```bash
+uv sync
+uv run pytest
+uv run python scripts/check.py --skip-smoke   # offline gate
+```
+
+[AGENTS.md](AGENTS.md) describes the repository layout, the quality gates, and the maintainer workflows (smoke gates, live gates, plugin regression, and the optimization observability benchmark).
+
+## More documentation
+
+- [install.md](install.md): install, update, remove, and verify
+- [WALKTHROUGH.md](WALKTHROUGH.md): step-by-step first run
+- [EXAMPLES.md](EXAMPLES.md): CLI examples
+- [CONCEPTS.md](CONCEPTS.md): terms and modes
+- [PROTOCOL.md](PROTOCOL.md): evaluator contract
+- [evaluator-cookbook.md](evaluator-cookbook.md): evaluator recipes
+- [CHANGELOG.md](CHANGELOG.md): release history
+
+## License
+
+[MIT](LICENSE)

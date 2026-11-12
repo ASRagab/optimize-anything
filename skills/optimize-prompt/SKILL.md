@@ -124,7 +124,7 @@ or when the user requests task-performance evidence. Read
 [`references/prompt-execution-dataset.md`](references/prompt-execution-dataset.md),
 build training JSONL, and build a separate held-out JSONL when required.
 
-Use the bundled Protocol v2 evaluator. Put `--evaluator-command` last because it
+Use the bundled evaluator. Put `--evaluator-command` last because it
 captures all remaining command arguments:
 
 ```bash
@@ -142,7 +142,7 @@ Omit `--valset` only when held-out acceptance is not part of the declared
 contract. The default adapter treats the candidate as a system prompt and
 `example.input` as the user input. For another prompt shape, copy the evaluator
 into the temporary work directory and change only its target-message adapter;
-keep Protocol v2, preflight, hard gates, failure scores, and judge isolation.
+keep the evaluator protocol, preflight, hard gates, failure scores, and judge isolation.
 
 ### Composite mode
 
