@@ -214,7 +214,7 @@ specificity = sum(specificity_signals) / len(specificity_signals)
 
 # ---------------------------------------------------------------------------
 # 4. Conciseness (weight 0.30)
-#    Cookbook sweet spot: 800-18000 chars (wider for v2 protocol coverage)
+#    Cookbook sweet spot: 800-18000 chars (wide enough to cover the protocol section)
 # ---------------------------------------------------------------------------
 conciseness_signals = []
 

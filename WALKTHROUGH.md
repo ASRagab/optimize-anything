@@ -1,6 +1,6 @@
 # WALKTHROUGH
 
-Step-by-step v2 workflow for optimize-anything.
+Step-by-step workflow for optimize-anything.
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ EOF
 
 ## Step 3: Generate an evaluator (default is judge/Python)
 
-`generate-evaluator` now defaults to `--evaluator-type judge` (Python template), not bash command mode.
+`generate-evaluator` defaults to `--evaluator-type judge` (a Python template). Pass `--evaluator-type command` for a bash command evaluator.
 
 ```bash
 uv run optimize-anything generate-evaluator \

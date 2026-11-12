@@ -10,9 +10,9 @@ can exceed it. See [install.md](install.md) for subscription backends and fallba
 
 ## 1. Evaluator Contract
 
-### Input (Protocol v2)
+### Input
 
-Your evaluator reads a JSON object from **stdin** (command) or as a **POST body** (HTTP). As of v0.3.0, the payload follows **Protocol v2**:
+Your evaluator reads a JSON object from **stdin** (command) or as a **POST body** (HTTP):
 
 ```json
 {
@@ -26,11 +26,11 @@ Your evaluator reads a JSON object from **stdin** (command) or as a **POST body*
 | Field                | Type    | Required | Description                                                                 |
 |----------------------|---------|----------|-----------------------------------------------------------------------------|
 | `candidate`          | string  | **Yes**  | The artifact being evaluated                                                |
-| `_protocol_version`  | integer | No       | Protocol version marker; value is `2` for v2 payloads                       |
+| `_protocol_version`  | integer | No       | Protocol marker; the runtime always sends `2`                               |
 | `example`            | object  | No       | One dataset record from `--dataset`; present only in dataset-backed modes   |
 | `task_model`         | string  | No       | Identifies the model being optimized for; passed via `--task-model` flag    |
 
-> **Backward compatibility:** v1 evaluators that only read `candidate` still work. New fields are optional and must be safely ignored if unused.
+> **Compatibility:** An evaluator that reads only `candidate` is valid. Ignore any field you do not use.
 
 > **Note:** The `objective` and `background` strings are **not** passed to your evaluator — only to gepa's reflection LM. Your evaluator only sees the fields above.
 
@@ -72,7 +72,7 @@ All fields beyond `score` become **rich feedback** that gepa's reflection LM use
 
 Start with a working shell script, then adapt the scoring logic. This recipe **scores candidates by proximity to a target word count**.
 
-> **Protocol v2 note:** Your script will receive the full v2 payload. If you only need `candidate`, your existing parsing logic works unchanged — extra fields are just ignored.
+> **Payload note:** Your script receives the full payload. If you only need `candidate`, read only that key — extra fields are ignored.
 
 ```bash
 #!/usr/bin/env bash
@@ -114,7 +114,7 @@ Outcome: The optimizer repeatedly calls your script, adjusting the text toward 5
 
 Use an HTTP evaluator when you need a long-running service, access to external systems, or evaluations in any language. This example **scores JSON validity and schema compliance**.
 
-> **Protocol v2 note:** Your handler will receive the full v2 payload. Reading only `data.get("candidate", "")` is safe — `example` and `task_model` are simply unused.
+> **Payload note:** Your handler receives the full payload. Reading only `data.get("candidate", "")` is safe — `example` and `task_model` are simply unused.
 
 ```python
 #!/usr/bin/env python3
@@ -493,7 +493,7 @@ The `--task-model` flag identifies the model your prompt will run on. Evaluators
 
 **Access it in your evaluator:**
 ```python
-task_model = payload.get("task_model", "")        # from v2 payload
+task_model = payload.get("task_model", "")        # from the payload
 # or in bash: task_model="${OPTIMIZE_ANYTHING_TASK_MODEL:-}"
 
 if "mini" in task_model or "flash" in task_model:
