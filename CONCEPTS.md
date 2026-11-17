@@ -1,6 +1,6 @@
 # CONCEPTS
 
-Core concepts for optimize-anything v2.
+Core concepts for optimize-anything.
 
 ## Artifact
 
@@ -14,9 +14,9 @@ Runtime options:
 - HTTP (`--evaluator-url`)
 - LLM Judge (`--judge-model`)
 
-## Evaluator Protocol v2
+## Evaluator Protocol
 
-Evaluator input is additive and backward-compatible:
+Evaluator input is a JSON object:
 
 ```json
 {"_protocol_version": 2, "candidate": "...", "example": {...}, "task_model": "..."}
@@ -24,9 +24,9 @@ Evaluator input is additive and backward-compatible:
 
 - `candidate` required
 - `_protocol_version`, `example`, and `task_model` optional
-- Existing evaluators that only consume `candidate` still work
+- Evaluators that only consume `candidate` are valid; unused keys are ignored
 
-Evaluator output (unchanged):
+Evaluator output:
 
 ```json
 {"score": 0.73, "reasoning": "..."}

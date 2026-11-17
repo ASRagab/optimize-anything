@@ -45,5 +45,5 @@ matches rate limits.
 
 For a prompt shape other than a system prompt plus user input, copy the bundled
 evaluator into the temporary work directory and adapt `_target_messages`.
-Preserve the Protocol v2 payload, preflight fast return, hard gates, stage-based
+Preserve the evaluator protocol payload, preflight fast return, hard gates, stage-based
 failure diagnostics, and isolated judge instructions.

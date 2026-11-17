@@ -1,6 +1,6 @@
 # EXAMPLES
 
-Illustrative CLI examples for optimize-anything v2. Replace seed, evaluator,
+Illustrative CLI examples for optimize-anything. Replace seed, evaluator,
 and dataset paths with your files. These commands assume the global CLI installer
 from [install.md](install.md); use `uv run optimize-anything` from a source
 checkout. The shown API models can incur provider charges. `--budget` counts
